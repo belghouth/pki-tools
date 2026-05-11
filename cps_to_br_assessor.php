@@ -275,18 +275,24 @@ function assessCPS(string $cpsText, array $brSections): array
         );
         $matchedBy = $presentFound ? 'id+title' : '';
 
-        // ── Warn tier 2: ID alone on a heading line, title differs ────────
-        // Lookbehind (?<![.\d]) prevents "1.2.1" matching inside an OID such
-        // as "2.23.140.1.2.1". Lookahead (?![\d.]) stops "3.2" matching "3.2.6".
+        // ── Present tier 2: ID on a heading line, title may differ ───────────
+        // Lookbehind (?<![.\d]) prevents a section number like "1.2.1" from
+        // matching when it appears embedded in an OID (e.g. "2.23.140.1.2.1").
+        // Captures the CPS heading title so the note can compare it to the BR.
         $idHeadingFound = false;
+        $cpsHeadingTitle = '';
         if (!$presentFound) {
-            $idHeadingFound = (bool) preg_match(
-                '/^[\t ]*#{0,6}[\t ]*(?<![.\d])' . $qId . '(?![\d.])/im',
-                $cpsText
-            );
+            if (preg_match(
+                '/^[\t ]*#{0,6}[\t ]*(?<![.\d])' . $qId . '(?![\d.])[\t ]*(.*?)[\t ]*$/im',
+                $cpsText,
+                $hm
+            )) {
+                $idHeadingFound  = true;
+                $cpsHeadingTitle = trim($hm[1]);
+            }
         }
 
-        // ── Warn tier 3: title found somewhere but no matching heading ──────
+        // ── Warn: title found in text but no heading with ID ─────────────────
         $titleFound = !$presentFound && !$idHeadingFound
             && mb_stripos($cpsText, $title) !== false;
 
@@ -297,14 +303,17 @@ function assessCPS(string $cpsText, array $brSections): array
             $notes      = 'Section ID and title matched on same heading line.';
             $anchor     = $id;
         } elseif ($idHeadingFound) {
-            $status     = 'warn';
-            $confidence = 0.6;
-            $notes      = 'Section ID found on a heading line but title does not match the BR. Verify section content.';
+            $status     = 'present';
+            $confidence = 0.8;
+            $titleNote  = $cpsHeadingTitle !== ''
+                ? "CPS heading title: \"{$cpsHeadingTitle}\""
+                : 'No title text after the section ID.';
+            $notes      = "Section ID found on heading line; title wording differs from BR. {$titleNote}";
             $anchor     = $id;
         } elseif ($titleFound) {
             $status     = 'warn';
             $confidence = 0.4;
-            $notes      = 'BR title found in document text but no matching section heading with this ID.';
+            $notes      = 'BR title found in document text but no heading line carries this section ID.';
             $anchor     = $title;
         } else {
             $status     = 'missing';
