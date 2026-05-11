@@ -10,16 +10,6 @@ class BRFetcher
     private const BR_RAW_URL     = 'https://raw.githubusercontent.com/cabforum/servercert/main/docs/BR.md';
     private const GH_RELEASE_URL = 'https://api.github.com/repos/cabforum/servercert/releases/latest';
 
-    private const STOPWORDS = [
-        'a','an','the','and','or','of','to','in','for','on','with','as','by','at','is','are',
-        'be','been','being','was','were','that','this','which','from','not','but','have','has',
-        'had','do','does','did','will','would','should','could','may','might','shall','must',
-        'its','it','he','she','they','we','you','i','all','any','each','such','other','than',
-        'then','than','their','there','these','those','into','about','above','below','between',
-        'through','during','before','after','unless','including','where','when','if','no','per',
-        'can','also','whether','both','either','every','more','only','same','so','very','just',
-        'own','such','following','specific','used','use','uses','using','used','applies','apply',
-    ];
 
     public function __construct(string $cachePath)
     {
@@ -188,36 +178,13 @@ class BRFetcher
     private function finaliseSection(array $section, string $body): array
     {
         $shallCount = preg_match_all('/\b(SHALL|MUST|REQUIRED)\b/i', $body, $sm);
-        $normative  = $shallCount > 0;
-        $keywords   = $this->extractKeywords($body, 10);
 
         return [
             'id'          => $section['id'],
             'title'       => $section['title'],
-            'keywords'    => $keywords,
-            'normative'   => $normative,
+            'normative'   => $shallCount > 0,
             'shall_count' => (int)$shallCount,
         ];
-    }
-
-    private function extractKeywords(string $text, int $limit): array
-    {
-        $text = strtolower($text);
-        // Remove markdown syntax and punctuation
-        $text = preg_replace('/```.*?```/s', ' ', $text);
-        $text = preg_replace('/[^\w\s\-]/', ' ', $text);
-
-        $words = preg_split('/\s+/', $text, -1, PREG_SPLIT_NO_EMPTY);
-        $freq  = [];
-        foreach ($words as $w) {
-            $w = trim($w, '-_');
-            if (strlen($w) < 4 || in_array($w, self::STOPWORDS, true)) {
-                continue;
-            }
-            $freq[$w] = ($freq[$w] ?? 0) + 1;
-        }
-        arsort($freq);
-        return array_slice(array_keys($freq), 0, $limit);
     }
 
     private function writeCache(array $payload): bool

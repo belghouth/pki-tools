@@ -278,128 +278,78 @@ function extractPdfText(string $filePath): array
     return ['text' => $text, 'pages' => $pages, 'error' => null];
 }
 
-/**
- * Extract section IDs actually present as headings in the CPS body.
- * Skips TOC entries (dotted leaders, or trailing page number with no other text).
- * Returns an array like ["1", "1.1", "3.1", "3.2.2", ...].
- */
-function detectCPSSectionIds(string $text): array
-{
-    $found = [];
-    foreach (explode("\n", $text) as $line) {
-        $line = trim($line);
-        if (strlen($line) < 3 || strlen($line) > 150) continue;
-        // Skip lines with TOC dotted leaders
-        if (preg_match('/\.{4,}/', $line)) continue;
-        // Must start with a digit-dot section number pattern
-        if (!preg_match('/^(\d+(?:\.\d+){0,5})(?:\s+|\.|$)/', $line, $m)) continue;
-        $id   = rtrim($m[1], '.');
-        $rest = trim(substr($line, strlen($m[0])));
-        // Skip if remainder is just a page number (TOC without dotted leaders)
-        if (preg_match('/^\d{1,4}$/', $rest)) continue;
-        $found[$id] = true;
-    }
-    return array_keys($found);
-}
-
-/**
- * Returns structural confidence (0.0–0.75) based on whether the CPS body
- * contains a heading that matches the BR section ID.
- * Exact match → 0.75; parent section present → 0.35 (section exists but is merged).
- */
-function structuralConfidence(string $brId, array $cpsSectionIds): float
-{
-    if (empty($cpsSectionIds)) return 0.0;
-    $idSet = array_flip($cpsSectionIds);
-    if (isset($idSet[$brId])) return 0.75;
-    $parts = explode('.', $brId);
-    while (count($parts) > 1) {
-        array_pop($parts);
-        if (isset($idSet[implode('.', $parts)])) return 0.35;
-    }
-    return 0.0;
-}
-
 function assessCPS(string $cpsText, array $brSections): array
 {
-    $lowerText  = strtolower($cpsText);
-    // Split into paragraphs for reference finding
-    $paragraphs = array_filter(
-        array_map('trim', preg_split('/\n{2,}/', $cpsText)),
-        fn($p) => strlen($p) >= 20
-    );
-    $paraList = array_values($paragraphs);
-
-    // Pre-compute structural section IDs present in the CPS body
-    $cpsSectionIds = detectCPSSectionIds($cpsText);
-
     $results = [];
 
     foreach ($brSections as $section) {
-        $keywords = $section['keywords'] ?? [];
+        $id    = $section['id'];
+        $title = $section['title'];
 
-        // ── Keyword confidence ──────────────────────────────────────────────
-        $matched    = 0;
-        $matchedKws = [];
-        if (!empty($keywords)) {
-            foreach ($keywords as $kw) {
-                if (str_contains($lowerText, strtolower($kw))) {
-                    $matched++;
-                    $matchedKws[] = $kw;
+        // ── 1. Exact section-ID match ──────────────────────────────────────
+        // Use negative look-around so "3.2" does not match "3.20" or "3.2.1".
+        $idRegex  = '/(?<![.\d])' . preg_quote($id, '/') . '(?![.\d])/';
+        $idFound  = (bool) preg_match($idRegex, $cpsText);
+
+        // ── 2. Title match (case-insensitive) ──────────────────────────────
+        $titleFound = !$idFound && mb_stripos($cpsText, $title) !== false;
+
+        // ── 3. Parent-ID match → thin coverage ────────────────────────────
+        $parentId   = '';
+        $parentFound = false;
+        if (!$idFound && !$titleFound) {
+            $parts = explode('.', $id);
+            while (count($parts) > 1) {
+                array_pop($parts);
+                $candidate    = implode('.', $parts);
+                $parentRegex  = '/(?<![.\d])' . preg_quote($candidate, '/') . '(?![.\d])/';
+                if (preg_match($parentRegex, $cpsText)) {
+                    $parentId    = $candidate;
+                    $parentFound = true;
+                    break;
                 }
             }
         }
-        $kwConf = !empty($keywords) ? $matched / count($keywords) : 0.0;
 
-        // ── Structural confidence ───────────────────────────────────────────
-        $structConf = structuralConfidence($section['id'], $cpsSectionIds);
-
-        // Final confidence: take the better signal
-        $confidence = max($kwConf, $structConf);
-
-        $status = 'missing';
-        if ($confidence >= 0.6)      $status = 'present';
-        elseif ($confidence >= 0.25) $status = 'thin';
-
-        // Build notes explaining the signal source
-        $notesParts = [];
-        if ($structConf >= 0.6) {
-            $notesParts[] = 'Section heading found in body text.';
-        } elseif ($structConf > 0) {
-            $notesParts[] = 'Parent section heading found.';
+        // ── Status & confidence ────────────────────────────────────────────
+        if ($idFound) {
+            $status     = 'present';
+            $confidence = 1.0;
+            $notes      = "Section ID {$id} found.";
+            $anchor     = $id;
+        } elseif ($titleFound) {
+            $status     = 'present';
+            $confidence = 0.8;
+            $notes      = "Section title matched: \"{$title}\".";
+            $anchor     = $title;
+        } elseif ($parentFound) {
+            $status     = 'thin';
+            $confidence = 0.4;
+            $notes      = "Parent section {$parentId} found; subsection may be merged.";
+            $anchor     = $parentId;
+        } else {
+            $status     = 'missing';
+            $confidence = 0.0;
+            $notes      = '';
+            $anchor     = '';
         }
-        if ($matched > 0) {
-            $notesParts[] = 'Keywords matched: ' . implode(', ', $matchedKws) . '.';
-        }
-        $notes = implode(' ', $notesParts);
 
-        // Find best-matching paragraph for the reference field
+        // ── Reference snippet (context around the match) ───────────────────
         $reference = '';
-        if (!empty($matchedKws) && !empty($paraList)) {
-            $bestScore = 0;
-            $bestPara  = '';
-            foreach ($paraList as $para) {
-                $lowerPara = strtolower($para);
-                $score = 0;
-                foreach ($matchedKws as $kw) {
-                    if (str_contains($lowerPara, strtolower($kw))) $score++;
-                }
-                if ($score > $bestScore) {
-                    $bestScore = $score;
-                    $bestPara  = $para;
-                }
-            }
-            if ($bestPara !== '') {
-                $snippet   = mb_substr(strip_tags($bestPara), 0, 120);
-                $reference = rtrim($snippet, ' .,;') . '…';
+        if ($anchor !== '') {
+            $pos = mb_stripos($cpsText, $anchor);
+            if ($pos !== false) {
+                $start     = max(0, $pos - 30);
+                $snippet   = mb_substr($cpsText, $start, 160);
+                $reference = rtrim(preg_replace('/\s+/', ' ', strip_tags($snippet)), ' .,;') . '…';
             }
         }
 
         $results[] = [
-            'br_section'    => $section['id'],
-            'br_title'      => $section['title'],
+            'br_section'    => $id,
+            'br_title'      => $title,
             'status'        => $status,
-            'confidence'    => round($confidence, 3),
+            'confidence'    => $confidence,
             'cps_reference' => $reference,
             'notes'         => $notes,
         ];
