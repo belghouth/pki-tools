@@ -1,3 +1,4 @@
 .secrets
 debug_*.php
 .well-known/
+includes/br_cache.json
