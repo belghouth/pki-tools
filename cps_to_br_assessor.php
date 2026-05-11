@@ -197,7 +197,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
 
         $counts   = array_count_values(array_column($sections, 'status'));
         $total    = count($sections);
-        $covered  = ($counts['present'] ?? 0) + ($counts['thin'] ?? 0);
+        $covered  = ($counts['present'] ?? 0) + ($counts['warn'] ?? 0);
         $coverage = $total > 0 ? round(($covered / $total) * 100, 1) : 0;
 
         $result = [
@@ -275,34 +275,36 @@ function assessCPS(string $cpsText, array $brSections): array
         );
         $matchedBy = $presentFound ? 'id+title' : '';
 
-        // ── Present tier 2: ID alone on a heading line ─────────────────────
-        // Catches sections where the CPS title wording differs from the BR
-        // cache (e.g. "Authentication of Organization Identity" vs "… and
-        // Domain Identity"). The negative lookahead (?![\d.]) prevents "3.2"
-        // from matching "3.2.6" and "3.2.6" from matching "3.2.60".
+        // ── Warn tier 2: ID alone on a heading line, title differs ────────
+        // Lookbehind (?<![.\d]) prevents "1.2.1" matching inside an OID such
+        // as "2.23.140.1.2.1". Lookahead (?![\d.]) stops "3.2" matching "3.2.6".
+        $idHeadingFound = false;
         if (!$presentFound) {
-            $presentFound = (bool) preg_match(
-                '/^[\t ]*#{0,6}[\t ]*' . $qId . '(?![\d.])/im',
+            $idHeadingFound = (bool) preg_match(
+                '/^[\t ]*#{0,6}[\t ]*(?<![.\d])' . $qId . '(?![\d.])/im',
                 $cpsText
             );
-            if ($presentFound) $matchedBy = 'id-heading';
         }
 
-        // ── Thin: title found somewhere but not on a heading line with ID ──
-        $titleFound = !$presentFound && mb_stripos($cpsText, $title) !== false;
+        // ── Warn tier 3: title found somewhere but no matching heading ──────
+        $titleFound = !$presentFound && !$idHeadingFound
+            && mb_stripos($cpsText, $title) !== false;
 
         // ── Status ─────────────────────────────────────────────────────────
         if ($presentFound) {
             $status     = 'present';
             $confidence = 1.0;
-            $notes      = $matchedBy === 'id+title'
-                ? 'Section ID and title matched on same line.'
-                : 'Section ID found on heading line (title wording may differ).';
+            $notes      = 'Section ID and title matched on same heading line.';
+            $anchor     = $id;
+        } elseif ($idHeadingFound) {
+            $status     = 'warn';
+            $confidence = 0.6;
+            $notes      = 'Section ID found on a heading line but title does not match the BR. Verify section content.';
             $anchor     = $id;
         } elseif ($titleFound) {
-            $status     = 'thin';
-            $confidence = 0.5;
-            $notes      = 'Title found in text; section ID not found as a heading.';
+            $status     = 'warn';
+            $confidence = 0.4;
+            $notes      = 'BR title found in document text but no matching section heading with this ID.';
             $anchor     = $title;
         } else {
             $status     = 'missing';
@@ -375,7 +377,7 @@ $brSectionCount = count($cache['sections'] ?? []);
     --transition: 140ms ease;
 
     --status-present: #22c55e;
-    --status-thin:    #f59e0b;
+    --status-warn:    #f59e0b;
     --status-missing: #ef4444;
   }
 
@@ -683,7 +685,7 @@ $brSectionCount = count($cache['sections'] ?? []);
     color: var(--text);
   }
   .stat-value--present { color: var(--status-present); }
-  .stat-value--thin    { color: var(--status-thin); }
+  .stat-value--warn    { color: var(--status-warn); }
   .stat-value--missing { color: var(--status-missing); }
   .stat-value--accent  { color: var(--accent); }
 
@@ -702,7 +704,7 @@ $brSectionCount = count($cache['sections'] ?? []);
     transition: width 0.6s ease;
   }
   .coverage-fill--good { background: var(--status-present); }
-  .coverage-fill--warn { background: var(--status-thin); }
+  .coverage-fill--warn { background: var(--status-warn); }
   .coverage-fill--bad  { background: var(--status-missing); }
 
   /* ── Result card (mirrors linters.php) ── */
@@ -776,7 +778,7 @@ $brSectionCount = count($cache['sections'] ?? []);
   .filter-btn:hover             { border-color: var(--accent2); color: var(--accent2); }
   .filter-btn--active           { border-color: var(--accent); color: var(--accent); background: rgba(0,212,170,0.08); }
   .filter-btn[data-filter="present"].filter-btn--active { border-color: var(--status-present); color: var(--status-present); background: rgba(34,197,94,0.08); }
-  .filter-btn[data-filter="thin"].filter-btn--active    { border-color: var(--status-thin);    color: var(--status-thin);    background: rgba(245,158,11,0.08); }
+  .  .filter-btn[data-filter="warn"].filter-btn--active  { border-color: var(--status-warn);    color: var(--status-warn);    background: rgba(245,158,11,0.08); }
   .filter-btn[data-filter="missing"].filter-btn--active { border-color: var(--status-missing); color: var(--status-missing); background: rgba(239,68,68,0.08); }
 
   .toolbar-sep { color: var(--border2); margin: 0 0.15rem; }
@@ -808,7 +810,7 @@ $brSectionCount = count($cache['sections'] ?? []);
     transition: border-color var(--transition);
   }
   .tree-row--present { border-color: rgba(34,197,94,0.15);  background: rgba(34,197,94,0.04); }
-  .tree-row--thin    { border-color: rgba(245,158,11,0.15); background: rgba(245,158,11,0.04); }
+  .tree-row--warn    { border-color: rgba(245,158,11,0.15); background: rgba(245,158,11,0.04); }
   .tree-row--missing { border-color: rgba(239,68,68,0.15);  background: rgba(239,68,68,0.04); }
   .tree-row:hover { border-color: var(--border2); }
 
@@ -840,7 +842,7 @@ $brSectionCount = count($cache['sections'] ?? []);
     flex-shrink: 0;
   }
   .status-badge--present { background: rgba(34,197,94,0.15);  color: var(--status-present); border: 1px solid rgba(34,197,94,0.3); }
-  .status-badge--thin    { background: rgba(245,158,11,0.15); color: var(--status-thin);    border: 1px solid rgba(245,158,11,0.3); }
+  .status-badge--warn    { background: rgba(245,158,11,0.15); color: var(--status-warn);    border: 1px solid rgba(245,158,11,0.3); }
   .status-badge--missing { background: rgba(239,68,68,0.15);  color: var(--status-missing); border: 1px solid rgba(239,68,68,0.3); }
 
   .tree-section-id {
@@ -866,7 +868,7 @@ $brSectionCount = count($cache['sections'] ?? []);
   .tree-conf-bar  { width: 60px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
   .tree-conf-fill { height: 100%; border-radius: 2px; }
   .tree-conf-fill--present { background: var(--status-present); }
-  .tree-conf-fill--thin    { background: var(--status-thin); }
+  .tree-conf-fill--warn    { background: var(--status-warn); }
   .tree-conf-fill--missing { background: var(--status-missing); }
   .tree-conf-pct {
     font-family: var(--mono);
@@ -1018,8 +1020,8 @@ $brSectionCount = count($cache['sections'] ?? []);
       <span class="stat-value stat-value--present" id="stat-covered">—</span>
     </div>
     <div class="stat-cell">
-      <span class="stat-label">Thin</span>
-      <span class="stat-value stat-value--thin" id="stat-thin">—</span>
+      <span class="stat-label">Warn</span>
+      <span class="stat-value stat-value--warn" id="stat-warn">—</span>
     </div>
     <div class="stat-cell">
       <span class="stat-label">Missing</span>
@@ -1058,7 +1060,7 @@ $brSectionCount = count($cache['sections'] ?? []);
         <div class="report-toolbar">
           <button type="button" class="filter-btn filter-btn--active" data-filter="all">All</button>
           <button type="button" class="filter-btn" data-filter="present">&#x25CF; Present</button>
-          <button type="button" class="filter-btn" data-filter="thin">&#x25CF; Thin</button>
+          <button type="button" class="filter-btn" data-filter="warn">&#x25CF; Warn</button>
           <button type="button" class="filter-btn" data-filter="missing">&#x25CF; Missing</button>
           <span class="toolbar-sep">|</span>
           <button type="button" class="toolbar-btn" id="btn-expand-all">Expand All</button>

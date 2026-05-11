@@ -198,12 +198,12 @@
     const meta     = data.meta     || {};
     const sections = data.sections || [];
 
-    const counts = { present: 0, thin: 0, missing: 0 };
+    const counts = { present: 0, warn: 0, missing: 0 };
     sections.forEach(s => { counts[s.status] = (counts[s.status] || 0) + 1; });
 
     const total    = sections.length;
     const coverage = total > 0
-      ? Math.round(((counts.present + counts.thin) / total) * 1000) / 10
+      ? Math.round(((counts.present + counts.warn) / total) * 1000) / 10
       : 0;
 
     const set = (id, val) => {
@@ -216,7 +216,7 @@
     set('stat-br-version', meta.br_version      ?? '—');
     set('stat-br-total',   total);
     set('stat-covered',    counts.present);
-    set('stat-thin',       counts.thin);
+    set('stat-warn',       counts.warn);
     set('stat-missing',    counts.missing);
     set('stat-coverage',   coverage.toFixed(1) + '%');
 
@@ -257,8 +257,8 @@
   }
 
   function makeSectionRow(section, idx) {
-    const statusColor = { present: 'var(--status-present)', thin: 'var(--status-thin)', missing: 'var(--status-missing)' };
-    const statusLabel = { present: 'PRESENT', thin: 'THIN', missing: 'MISSING' };
+    const statusColor = { present: 'var(--status-present)', warn: 'var(--status-warn)', missing: 'var(--status-missing)' };
+    const statusLabel = { present: 'PRESENT', warn: 'WARN', missing: 'MISSING' };
 
     const row = document.createElement('div');
     row.className = 'tree-row tree-row--' + section.status;
