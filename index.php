@@ -478,6 +478,27 @@ if ($secondsRemaining !== null) {
     <span style="font-size:14px;">⬡</span> PKI Linters
 </a>
 
+<a href="cps_to_br_assessor.php" style="
+    display: inline-flex; align-items: center; gap: 8px;
+    align-self: flex-start;
+    padding: 8px 16px;
+    background: rgba(0,212,170,0.08);
+    border: 1px solid rgba(0,212,170,0.3);
+    border-radius: 6px;
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    text-decoration: none;
+    transition: background 0.2s, border-color 0.2s;
+" onmouseover="this.style.background='rgba(0,212,170,0.16)';this.style.borderColor='rgba(0,212,170,0.55)'"
+   onmouseout="this.style.background='rgba(0,212,170,0.08)';this.style.borderColor='rgba(0,212,170,0.3)'"
+   title="Upload or link a CP/CPS document and check coverage against the CAB Forum Baseline Requirements.">
+    <span style="font-size:14px;">&#x2261;</span> CP/CPS to BR Assessor
+</a>
+
 
 
 
