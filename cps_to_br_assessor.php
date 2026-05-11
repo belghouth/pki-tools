@@ -197,7 +197,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
 
         $counts   = array_count_values(array_column($sections, 'status'));
         $total    = count($sections);
-        $covered  = ($counts['present'] ?? 0) + ($counts['warn'] ?? 0);
+        $covered  = ($counts['present'] ?? 0) + ($counts['review'] ?? 0);
         $coverage = $total > 0 ? round(($covered / $total) * 100, 1) : 0;
 
         $result = [
@@ -303,7 +303,7 @@ function assessCPS(string $cpsText, array $brSections): array
             $notes      = 'Section ID and title matched on same heading line.';
             $anchor     = $id;
         } elseif ($idHeadingFound) {
-            $status     = 'present';
+            $status     = 'review';
             $confidence = 0.8;
             $titleNote  = $cpsHeadingTitle !== ''
                 ? "CPS heading title: \"{$cpsHeadingTitle}\""
@@ -386,6 +386,7 @@ $brSectionCount = count($cache['sections'] ?? []);
     --transition: 140ms ease;
 
     --status-present: #22c55e;
+    --status-review:  #3b82f6;
     --status-warn:    #f59e0b;
     --status-missing: #ef4444;
   }
@@ -694,6 +695,7 @@ $brSectionCount = count($cache['sections'] ?? []);
     color: var(--text);
   }
   .stat-value--present { color: var(--status-present); }
+  .stat-value--review  { color: var(--status-review);  }
   .stat-value--warn    { color: var(--status-warn); }
   .stat-value--missing { color: var(--status-missing); }
   .stat-value--accent  { color: var(--accent); }
@@ -787,7 +789,8 @@ $brSectionCount = count($cache['sections'] ?? []);
   .filter-btn:hover             { border-color: var(--accent2); color: var(--accent2); }
   .filter-btn--active           { border-color: var(--accent); color: var(--accent); background: rgba(0,212,170,0.08); }
   .filter-btn[data-filter="present"].filter-btn--active { border-color: var(--status-present); color: var(--status-present); background: rgba(34,197,94,0.08); }
-  .  .filter-btn[data-filter="warn"].filter-btn--active  { border-color: var(--status-warn);    color: var(--status-warn);    background: rgba(245,158,11,0.08); }
+  .filter-btn[data-filter="review"].filter-btn--active  { border-color: var(--status-review);  color: var(--status-review);  background: rgba(59,130,246,0.08); }
+  .filter-btn[data-filter="warn"].filter-btn--active    { border-color: var(--status-warn);    color: var(--status-warn);    background: rgba(245,158,11,0.08); }
   .filter-btn[data-filter="missing"].filter-btn--active { border-color: var(--status-missing); color: var(--status-missing); background: rgba(239,68,68,0.08); }
 
   .toolbar-sep { color: var(--border2); margin: 0 0.15rem; }
@@ -819,6 +822,7 @@ $brSectionCount = count($cache['sections'] ?? []);
     transition: border-color var(--transition);
   }
   .tree-row--present { border-color: rgba(34,197,94,0.15);  background: rgba(34,197,94,0.04); }
+  .tree-row--review  { border-color: rgba(59,130,246,0.15); background: rgba(59,130,246,0.04); }
   .tree-row--warn    { border-color: rgba(245,158,11,0.15); background: rgba(245,158,11,0.04); }
   .tree-row--missing { border-color: rgba(239,68,68,0.15);  background: rgba(239,68,68,0.04); }
   .tree-row:hover { border-color: var(--border2); }
@@ -851,6 +855,7 @@ $brSectionCount = count($cache['sections'] ?? []);
     flex-shrink: 0;
   }
   .status-badge--present { background: rgba(34,197,94,0.15);  color: var(--status-present); border: 1px solid rgba(34,197,94,0.3); }
+  .status-badge--review  { background: rgba(59,130,246,0.15); color: var(--status-review);  border: 1px solid rgba(59,130,246,0.3); }
   .status-badge--warn    { background: rgba(245,158,11,0.15); color: var(--status-warn);    border: 1px solid rgba(245,158,11,0.3); }
   .status-badge--missing { background: rgba(239,68,68,0.15);  color: var(--status-missing); border: 1px solid rgba(239,68,68,0.3); }
 
@@ -877,6 +882,7 @@ $brSectionCount = count($cache['sections'] ?? []);
   .tree-conf-bar  { width: 60px; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
   .tree-conf-fill { height: 100%; border-radius: 2px; }
   .tree-conf-fill--present { background: var(--status-present); }
+  .tree-conf-fill--review  { background: var(--status-review);  }
   .tree-conf-fill--warn    { background: var(--status-warn); }
   .tree-conf-fill--missing { background: var(--status-missing); }
   .tree-conf-pct {
@@ -1025,8 +1031,12 @@ $brSectionCount = count($cache['sections'] ?? []);
       <span class="stat-value" id="stat-br-total">—</span>
     </div>
     <div class="stat-cell">
-      <span class="stat-label">Covered</span>
+      <span class="stat-label">Present</span>
       <span class="stat-value stat-value--present" id="stat-covered">—</span>
+    </div>
+    <div class="stat-cell">
+      <span class="stat-label">Review</span>
+      <span class="stat-value stat-value--review" id="stat-review">—</span>
     </div>
     <div class="stat-cell">
       <span class="stat-label">Warn</span>
@@ -1069,6 +1079,7 @@ $brSectionCount = count($cache['sections'] ?? []);
         <div class="report-toolbar">
           <button type="button" class="filter-btn filter-btn--active" data-filter="all">All</button>
           <button type="button" class="filter-btn" data-filter="present">&#x25CF; Present</button>
+          <button type="button" class="filter-btn" data-filter="review">&#x25CF; Review</button>
           <button type="button" class="filter-btn" data-filter="warn">&#x25CF; Warn</button>
           <button type="button" class="filter-btn" data-filter="missing">&#x25CF; Missing</button>
           <span class="toolbar-sep">|</span>
