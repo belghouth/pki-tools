@@ -263,32 +263,46 @@ function assessCPS(string $cpsText, array $brSections): array
     foreach ($brSections as $section) {
         $id    = $section['id'];
         $title = $section['title'];
+        $qId   = preg_quote($id, '/');
 
-        // ── Present: ID and title on the same line ─────────────────────────
-        // Allows optional leading whitespace, then the section number, then
-        // one or more spaces/tabs (no CR/LF), then the title (case-insensitive
-        // so uppercase titles in CPS documents match), then optional trailing
-        // whitespace to end-of-line.
-        $presentPattern = '/^[\t ]*'
-            . preg_quote($id, '/')
-            . '[\t ]+'
-            . preg_quote($title, '/')
-            . '[\t ]*$/im';
-        $presentFound = (bool) preg_match($presentPattern, $cpsText);
+        // ── Present tier 1: ID + exact title on the same heading line ──────
+        // Handles plain text ("3.2.6 Title") and markdown ("### 3.2.6 Title").
+        // #{0,6} absorbs any number of # markers; case-insensitive for titles
+        // that appear in ALL-CAPS in the CPS.
+        $presentFound = (bool) preg_match(
+            '/^[\t ]*#{0,6}[\t ]*' . $qId . '[\t ]+' . preg_quote($title, '/') . '[\t ]*$/im',
+            $cpsText
+        );
+        $matchedBy = $presentFound ? 'id+title' : '';
 
-        // ── Thin: title found somewhere but not paired with the ID ─────────
+        // ── Present tier 2: ID alone on a heading line ─────────────────────
+        // Catches sections where the CPS title wording differs from the BR
+        // cache (e.g. "Authentication of Organization Identity" vs "… and
+        // Domain Identity"). The negative lookahead (?![\d.]) prevents "3.2"
+        // from matching "3.2.6" and "3.2.6" from matching "3.2.60".
+        if (!$presentFound) {
+            $presentFound = (bool) preg_match(
+                '/^[\t ]*#{0,6}[\t ]*' . $qId . '(?![\d.])/im',
+                $cpsText
+            );
+            if ($presentFound) $matchedBy = 'id-heading';
+        }
+
+        // ── Thin: title found somewhere but not on a heading line with ID ──
         $titleFound = !$presentFound && mb_stripos($cpsText, $title) !== false;
 
         // ── Status ─────────────────────────────────────────────────────────
         if ($presentFound) {
             $status     = 'present';
             $confidence = 1.0;
-            $notes      = 'ID and title on same line.';
+            $notes      = $matchedBy === 'id+title'
+                ? 'Section ID and title matched on same line.'
+                : 'Section ID found on heading line (title wording may differ).';
             $anchor     = $id;
         } elseif ($titleFound) {
             $status     = 'thin';
             $confidence = 0.5;
-            $notes      = 'Title found in text; not paired with section ID.';
+            $notes      = 'Title found in text; section ID not found as a heading.';
             $anchor     = $title;
         } else {
             $status     = 'missing';
