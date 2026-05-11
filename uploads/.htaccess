@@ -1,0 +1,22 @@
+# Deny all direct HTTP access — files here are processed server-side only.
+# Belt-and-suspenders: even if a script were uploaded it cannot be executed.
+
+Options -Indexes -ExecCGI
+
+# Strip PHP (and other script) handlers from every file in this directory.
+RemoveHandler .php .php3 .php4 .php5 .php7 .php8 .phtml .phar .shtml .pl .py .cgi .sh
+RemoveType    .php .php3 .php4 .php5 .php7 .php8 .phtml .phar
+
+# Block execution via mod_php / FPM proxying by file extension.
+<FilesMatch "\.ph(?:p\d*|tml|ar)$">
+    Require all denied
+</FilesMatch>
+
+# Deny all direct HTTP access regardless of filename.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+</IfModule>

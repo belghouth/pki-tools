@@ -116,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 exit;
             }
 
-            // MIME validation
+            // MIME validation — never trust $_FILES['type'], use finfo on the actual bytes
             $finfo    = new finfo(FILEINFO_MIME_TYPE);
             $mimeType = $finfo->file($file['tmp_name']);
 
@@ -125,7 +125,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                     echo json_encode(['error' => 'Only PDF and Markdown files are accepted.']);
                     exit;
                 }
-                $extracted = extractPdfText($file['tmp_name']);
+            } else {
+                $allowedMimes = ['text/plain', 'text/markdown', 'text/x-markdown', 'application/octet-stream'];
+                if (!in_array($mimeType, $allowedMimes, true)) {
+                    echo json_encode(['error' => 'Only PDF and Markdown files are accepted.']);
+                    exit;
+                }
+            }
+
+            // Move to uploads/ with a random, non-executable filename.
+            // The .upload extension has no registered handler so the web server
+            // cannot execute it even if the uploads directory becomes reachable.
+            $safeFilename = bin2hex(random_bytes(8)) . '.upload';
+            $safePath     = __DIR__ . '/uploads/' . $safeFilename;
+
+            if (!move_uploaded_file($file['tmp_name'], $safePath)) {
+                echo json_encode(['error' => 'Failed to save uploaded file.']);
+                exit;
+            }
+            register_shutdown_function('unlink', $safePath);
+
+            if ($method === 'pdf') {
+                $extracted = extractPdfText($safePath);
                 if ($extracted['error']) {
                     echo json_encode(['error' => $extracted['error']]);
                     exit;
@@ -133,13 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 $cpsText  = $extracted['text'];
                 $cpsPages = $extracted['pages'];
             } else {
-                // Markdown / plain text
-                $allowedMimes = ['text/plain', 'text/markdown', 'text/x-markdown', 'application/octet-stream'];
-                if (!in_array($mimeType, $allowedMimes, true)) {
-                    echo json_encode(['error' => 'Only PDF and Markdown files are accepted.']);
-                    exit;
-                }
-                $cpsText  = file_get_contents($file['tmp_name']);
+                $cpsText  = (string) file_get_contents($safePath);
                 $cpsPages = 0;
             }
             $cpsFile = $file['name'];
