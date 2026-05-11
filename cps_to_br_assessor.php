@@ -286,47 +286,32 @@ function assessCPS(string $cpsText, array $brSections): array
         $id    = $section['id'];
         $title = $section['title'];
 
-        // ── 1. Exact section-ID match ──────────────────────────────────────
-        // Use negative look-around so "3.2" does not match "3.20" or "3.2.1".
-        $idRegex  = '/(?<![.\d])' . preg_quote($id, '/') . '(?![.\d])/';
-        $idFound  = (bool) preg_match($idRegex, $cpsText);
+        // ── Present: ID and title on the same line ─────────────────────────
+        // Allows optional leading whitespace, then the section number, then
+        // one or more spaces/tabs (no CR/LF), then the title (case-insensitive
+        // so uppercase titles in CPS documents match), then optional trailing
+        // whitespace to end-of-line.
+        $presentPattern = '/^[\t ]*'
+            . preg_quote($id, '/')
+            . '[\t ]+'
+            . preg_quote($title, '/')
+            . '[\t ]*$/im';
+        $presentFound = (bool) preg_match($presentPattern, $cpsText);
 
-        // ── 2. Title match (case-insensitive) ──────────────────────────────
-        $titleFound = !$idFound && mb_stripos($cpsText, $title) !== false;
+        // ── Thin: title found somewhere but not paired with the ID ─────────
+        $titleFound = !$presentFound && mb_stripos($cpsText, $title) !== false;
 
-        // ── 3. Parent-ID match → thin coverage ────────────────────────────
-        $parentId   = '';
-        $parentFound = false;
-        if (!$idFound && !$titleFound) {
-            $parts = explode('.', $id);
-            while (count($parts) > 1) {
-                array_pop($parts);
-                $candidate    = implode('.', $parts);
-                $parentRegex  = '/(?<![.\d])' . preg_quote($candidate, '/') . '(?![.\d])/';
-                if (preg_match($parentRegex, $cpsText)) {
-                    $parentId    = $candidate;
-                    $parentFound = true;
-                    break;
-                }
-            }
-        }
-
-        // ── Status & confidence ────────────────────────────────────────────
-        if ($idFound) {
+        // ── Status ─────────────────────────────────────────────────────────
+        if ($presentFound) {
             $status     = 'present';
             $confidence = 1.0;
-            $notes      = "Section ID {$id} found.";
+            $notes      = 'ID and title on same line.';
             $anchor     = $id;
         } elseif ($titleFound) {
-            $status     = 'present';
-            $confidence = 0.8;
-            $notes      = "Section title matched: \"{$title}\".";
-            $anchor     = $title;
-        } elseif ($parentFound) {
             $status     = 'thin';
-            $confidence = 0.4;
-            $notes      = "Parent section {$parentId} found; subsection may be merged.";
-            $anchor     = $parentId;
+            $confidence = 0.5;
+            $notes      = 'Title found in text; not paired with section ID.';
+            $anchor     = $title;
         } else {
             $status     = 'missing';
             $confidence = 0.0;
@@ -334,12 +319,12 @@ function assessCPS(string $cpsText, array $brSections): array
             $anchor     = '';
         }
 
-        // ── Reference snippet (context around the match) ───────────────────
+        // ── Reference snippet ──────────────────────────────────────────────
         $reference = '';
         if ($anchor !== '') {
             $pos = mb_stripos($cpsText, $anchor);
             if ($pos !== false) {
-                $start     = max(0, $pos - 30);
+                $start     = max(0, $pos - 20);
                 $snippet   = mb_substr($cpsText, $start, 160);
                 $reference = rtrim(preg_replace('/\s+/', ' ', strip_tags($snippet)), ' .,;') . '…';
             }
