@@ -17,7 +17,11 @@ if (!file_exists($brCachePath)) {
 // ── AJAX endpoint — must respond before any HTML ──────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
 
+    ini_set('display_errors', '0'); // never let PHP warnings corrupt the JSON response
     header('Content-Type: application/json; charset=utf-8');
+
+    try {
+
     $action = $_POST['action'];
 
     // ── Refresh cache ───────────────────────────────────────────────────────
@@ -75,11 +79,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 echo json_encode(['error' => 'URL did not respond within 10 seconds.']);
                 exit;
             }
+            if (strlen($body) > 20 * 1024 * 1024) {
+                echo json_encode(['error' => 'File exceeds 20 MB limit.']);
+                exit;
+            }
 
-            // If it looks like a PDF, try pdftotext via temp file
+            // If it looks like a PDF, write to uploads/ with a safe name then extract
             $isPdf = str_starts_with($body, '%PDF') || str_ends_with(strtolower(parse_url($rawUrl, PHP_URL_PATH) ?? ''), '.pdf');
             if ($isPdf) {
-                $tmp = tempnam(sys_get_temp_dir(), 'cps_');
+                $tmp = __DIR__ . '/uploads/' . bin2hex(random_bytes(8)) . '.upload';
                 file_put_contents($tmp, $body);
                 register_shutdown_function('unlink', $tmp);
                 $extracted = extractPdfText($tmp);
@@ -190,7 +198,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
         exit;
     }
 
-    echo json_encode(['error' => 'Unknown action.']);
+        echo json_encode(['error' => 'Unknown action.']);
+
+    } catch (Throwable $e) {
+        echo json_encode(['error' => $e->getMessage()]);
+    }
     exit;
 }
 
