@@ -239,7 +239,7 @@
     {
       "id": "3.2.2",
       "title": "Authentication of Organization and Domain Identity",
-      "keywords": ["domain control verification", "dcv", "domain validation", "authorization domain", "dns", "caa", "http token", "tls alpn", "email dcv", "control over domain"],
+      "keywords": ["organization identity", "legal entity", "legal existence", "legal name", "organization validation", "reliable data source", "authentication of organization", "domain identity", "jurisdiction", "third party"],
       "normative": true,
       "shall_count": 0
     },

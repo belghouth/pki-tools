@@ -3,7 +3,19 @@
 header("X-Content-Type-Options: nosniff");
 header("X-Frame-Options: SAMEORIGIN");
 header("Referrer-Policy: strict-origin-when-cross-origin");
+header("Content-Security-Policy: "
+    . "default-src 'self'; "
+    . "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    . "font-src https://fonts.gstatic.com; "
+    . "script-src 'self' 'unsafe-inline' https://www.google.com https://www.gstatic.com; "
+    . "frame-src https://www.google.com; "
+    . "connect-src 'self' https://www.google.com; "
+    . "object-src 'none'; "
+    . "base-uri 'self'; "
+    . "form-action 'self';"
+);
 
+require_once __DIR__ . '/recaptcha.php';
 require_once __DIR__ . '/includes/br_fetcher.php';
 
 $brCachePath = __DIR__ . '/includes/br_cache.json';
@@ -26,6 +38,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
 
     // ── Refresh cache ───────────────────────────────────────────────────────
     if ($action === 'refresh_cache') {
+        if (recaptcha_configured()) {
+            $rcToken = trim($_POST['g_recaptcha_token'] ?? '');
+            if (!recaptcha_verify($rcToken, 'refresh_br_cache')) {
+                echo json_encode(['error' => 'reCAPTCHA verification failed. Please try again.', 'ok' => false]);
+                exit;
+            }
+        }
         echo json_encode($fetcher->refresh(true));
         exit;
     }
@@ -259,6 +278,48 @@ function extractPdfText(string $filePath): array
     return ['text' => $text, 'pages' => $pages, 'error' => null];
 }
 
+/**
+ * Extract section IDs actually present as headings in the CPS body.
+ * Skips TOC entries (dotted leaders, or trailing page number with no other text).
+ * Returns an array like ["1", "1.1", "3.1", "3.2.2", ...].
+ */
+function detectCPSSectionIds(string $text): array
+{
+    $found = [];
+    foreach (explode("\n", $text) as $line) {
+        $line = trim($line);
+        if (strlen($line) < 3 || strlen($line) > 150) continue;
+        // Skip lines with TOC dotted leaders
+        if (preg_match('/\.{4,}/', $line)) continue;
+        // Must start with a digit-dot section number pattern
+        if (!preg_match('/^(\d+(?:\.\d+){0,5})(?:\s+|\.|$)/', $line, $m)) continue;
+        $id   = rtrim($m[1], '.');
+        $rest = trim(substr($line, strlen($m[0])));
+        // Skip if remainder is just a page number (TOC without dotted leaders)
+        if (preg_match('/^\d{1,4}$/', $rest)) continue;
+        $found[$id] = true;
+    }
+    return array_keys($found);
+}
+
+/**
+ * Returns structural confidence (0.0–0.75) based on whether the CPS body
+ * contains a heading that matches the BR section ID.
+ * Exact match → 0.75; parent section present → 0.35 (section exists but is merged).
+ */
+function structuralConfidence(string $brId, array $cpsSectionIds): float
+{
+    if (empty($cpsSectionIds)) return 0.0;
+    $idSet = array_flip($cpsSectionIds);
+    if (isset($idSet[$brId])) return 0.75;
+    $parts = explode('.', $brId);
+    while (count($parts) > 1) {
+        array_pop($parts);
+        if (isset($idSet[implode('.', $parts)])) return 0.35;
+    }
+    return 0.0;
+}
+
 function assessCPS(string $cpsText, array $brSections): array
 {
     $lowerText  = strtolower($cpsText);
@@ -268,41 +329,53 @@ function assessCPS(string $cpsText, array $brSections): array
         fn($p) => strlen($p) >= 20
     );
     $paraList = array_values($paragraphs);
-    $results  = [];
+
+    // Pre-compute structural section IDs present in the CPS body
+    $cpsSectionIds = detectCPSSectionIds($cpsText);
+
+    $results = [];
 
     foreach ($brSections as $section) {
         $keywords = $section['keywords'] ?? [];
-        if (empty($keywords)) {
-            $results[] = [
-                'br_section'    => $section['id'],
-                'br_title'      => $section['title'],
-                'status'        => 'missing',
-                'confidence'    => 0.0,
-                'cps_reference' => '',
-                'notes'         => '',
-            ];
-            continue;
-        }
 
-        $matched     = 0;
-        $matchedKws  = [];
-        foreach ($keywords as $kw) {
-            if (str_contains($lowerText, strtolower($kw))) {
-                $matched++;
-                $matchedKws[] = $kw;
+        // ── Keyword confidence ──────────────────────────────────────────────
+        $matched    = 0;
+        $matchedKws = [];
+        if (!empty($keywords)) {
+            foreach ($keywords as $kw) {
+                if (str_contains($lowerText, strtolower($kw))) {
+                    $matched++;
+                    $matchedKws[] = $kw;
+                }
             }
         }
+        $kwConf = !empty($keywords) ? $matched / count($keywords) : 0.0;
 
-        $total      = count($keywords);
-        $confidence = $total > 0 ? $matched / $total : 0.0;
+        // ── Structural confidence ───────────────────────────────────────────
+        $structConf = structuralConfidence($section['id'], $cpsSectionIds);
+
+        // Final confidence: take the better signal
+        $confidence = max($kwConf, $structConf);
 
         $status = 'missing';
         if ($confidence >= 0.6)      $status = 'present';
         elseif ($confidence >= 0.25) $status = 'thin';
 
+        // Build notes explaining the signal source
+        $notesParts = [];
+        if ($structConf >= 0.6) {
+            $notesParts[] = 'Section heading found in body text.';
+        } elseif ($structConf > 0) {
+            $notesParts[] = 'Parent section heading found.';
+        }
+        if ($matched > 0) {
+            $notesParts[] = 'Keywords matched: ' . implode(', ', $matchedKws) . '.';
+        }
+        $notes = implode(' ', $notesParts);
+
         // Find best-matching paragraph for the reference field
         $reference = '';
-        if ($matched > 0 && !empty($paraList)) {
+        if (!empty($matchedKws) && !empty($paraList)) {
             $bestScore = 0;
             $bestPara  = '';
             foreach ($paraList as $para) {
@@ -328,7 +401,7 @@ function assessCPS(string $cpsText, array $brSections): array
             'status'        => $status,
             'confidence'    => round($confidence, 3),
             'cps_reference' => $reference,
-            'notes'         => '',
+            'notes'         => $notes,
         ];
     }
 
@@ -348,6 +421,10 @@ $brSectionCount = count($cache['sections'] ?? []);
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CP/CPS to BR Assessor</title>
+<?php if (recaptcha_configured()): ?>
+<?= recaptcha_head() ?>
+<script>window.RECAPTCHA_SITE_KEY = <?= json_encode(RECAPTCHA_SITE_KEY) ?>;</script>
+<?php endif; ?>
 <style>
   /* ── Fonts ── */
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Sans:wght@300;400;500&display=swap');

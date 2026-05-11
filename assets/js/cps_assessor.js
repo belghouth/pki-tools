@@ -101,29 +101,50 @@
 
   // ── Cache refresh ──────────────────────────────────────────────────────────
   function initRefreshCache() {
-    const btn       = document.getElementById('btn-refresh-cache');
-    const statusEl  = document.getElementById('cache-status-msg');
+    const btn      = document.getElementById('btn-refresh-cache');
+    const statusEl = document.getElementById('cache-status-msg');
     if (!btn) return;
 
     btn.addEventListener('click', async () => {
-      btn.disabled = true;
+      btn.disabled    = true;
       btn.textContent = 'Refreshing…';
       if (statusEl) statusEl.textContent = '';
 
       const fd = new FormData();
       fd.set('action', 'refresh_cache');
 
+      // Obtain a reCAPTCHA v3 token before sending if the site key is present.
+      if (window.RECAPTCHA_SITE_KEY && window.grecaptcha) {
+        try {
+          const token = await new Promise((resolve, reject) => {
+            grecaptcha.ready(() => {
+              grecaptcha.execute(window.RECAPTCHA_SITE_KEY, { action: 'refresh_br_cache' })
+                .then(resolve)
+                .catch(reject);
+            });
+          });
+          fd.set('g_recaptcha_token', token);
+        } catch {
+          // Token acquisition failed — server will reject if reCAPTCHA is required.
+        }
+      }
+
       try {
         const resp = await fetch(window.location.href, { method: 'POST', body: fd });
         const data = await resp.json();
-        if (statusEl) {
-          statusEl.textContent = data.message || (data.ok ? 'Cache updated.' : 'Refresh failed.');
-          statusEl.className   = 'cache-status-msg ' + (data.ok ? 'cache-status-ok' : 'cache-status-err');
+        if (data.error) {
+          if (statusEl) {
+            statusEl.textContent = data.error;
+            statusEl.className   = 'cache-status-msg cache-status-err';
+          }
+        } else {
+          if (statusEl) {
+            statusEl.textContent = data.message || (data.ok ? 'Cache updated.' : 'Refresh failed.');
+            statusEl.className   = 'cache-status-msg ' + (data.ok ? 'cache-status-ok' : 'cache-status-err');
+          }
+          const verEl = document.getElementById('br-version-indicator');
+          if (verEl && data.version) verEl.textContent = 'BR v' + data.version;
         }
-        // Update the version indicator in the UI
-        const verEl = document.getElementById('br-version-indicator');
-        if (verEl && data.version) verEl.textContent = 'BR v' + data.version;
-
       } catch {
         if (statusEl) {
           statusEl.textContent = 'Network error during refresh.';
