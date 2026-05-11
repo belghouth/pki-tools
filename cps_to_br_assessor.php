@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
     // ── Run assessment ──────────────────────────────────────────────────────
     if ($action === 'assess') {
 
-        $method = $_POST['input_method'] ?? 'pdf';
+        $method = $_POST['input_method'] ?? 'file';
 
         // Load BR sections
         $cache = $fetcher->loadCache();
@@ -64,9 +64,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
         $brVersion  = $cache['meta']['version'] ?? 'unknown';
 
         // Extract CPS text
-        $cpsText  = '';
-        $cpsPages = 0;
-        $cpsFile  = '';
+        $cpsText = '';
+        $cpsFile = '';
 
         if ($method === 'url') {
             // ── URL input ───────────────────────────────────────────────────
@@ -79,6 +78,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
             $host   = $parsed['host'] ?? '';
             if ($host === '') {
                 echo json_encode(['error' => 'Invalid URL.']);
+                exit;
+            }
+
+            // Reject PDF URLs immediately (extension check)
+            $urlPath = strtolower($parsed['path'] ?? '');
+            if (str_ends_with($urlPath, '.pdf')) {
+                echo json_encode(['error' => 'PDF files are not supported. Please provide a Markdown, plain text, or HTML URL.']);
                 exit;
             }
 
@@ -103,30 +109,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 exit;
             }
 
-            // If it looks like a PDF, write to uploads/ with a safe name then extract
-            $isPdf = str_starts_with($body, '%PDF') || str_ends_with(strtolower(parse_url($rawUrl, PHP_URL_PATH) ?? ''), '.pdf');
-            if ($isPdf) {
-                $tmp = __DIR__ . '/uploads/' . bin2hex(random_bytes(8)) . '.upload';
-                file_put_contents($tmp, $body);
-                register_shutdown_function('unlink', $tmp);
-                $extracted = extractPdfText($tmp);
-                if ($extracted['error']) {
-                    echo json_encode(['error' => $extracted['error']]);
-                    exit;
-                }
-                $cpsText  = $extracted['text'];
-                $cpsPages = $extracted['pages'];
-            } else {
-                $cpsText  = $body;
-                $cpsPages = 0;
+            // Reject PDFs detected by magic bytes even if extension looked fine
+            if (str_starts_with($body, '%PDF')) {
+                echo json_encode(['error' => 'PDF files are not supported. Please provide a Markdown, plain text, or HTML URL.']);
+                exit;
             }
-            $cpsFile = $host . (parse_url($rawUrl, PHP_URL_PATH) ?? '');
+
+            // Parse Content-Type from response headers
+            $contentType = '';
+            foreach ($http_response_header ?? [] as $h) {
+                if (stripos($h, 'Content-Type:') === 0) {
+                    $contentType = strtolower(trim(explode(';', substr($h, 13))[0]));
+                    break;
+                }
+            }
+
+            $allowedUrlTypes = ['text/plain', 'text/markdown', 'text/x-markdown', 'text/html'];
+            if ($contentType !== '' && !in_array($contentType, $allowedUrlTypes, true)) {
+                echo json_encode(['error' => 'Unsupported content type "' . htmlspecialchars($contentType) . '". Only Markdown, plain text, and HTML are accepted.']);
+                exit;
+            }
+
+            // For HTML: strip tags and decode entities to get plain text
+            if ($contentType === 'text/html' || str_contains($body, '<html') || str_contains($body, '<!DOCTYPE')) {
+                $cpsText = html_entity_decode(strip_tags($body), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            } else {
+                $cpsText = $body;
+            }
+            $cpsFile = $host . ($parsed['path'] ?? '');
 
         } else {
-            // ── File upload ────────────────────────────────────────────────
-            $key = ($method === 'md') ? 'cps_md' : 'cps_pdf';
-            if (empty($_FILES[$key]) || $_FILES[$key]['error'] !== UPLOAD_ERR_OK) {
-                $uploadErr = $_FILES[$key]['error'] ?? UPLOAD_ERR_NO_FILE;
+            // ── File upload (MD / TXT only) ────────────────────────────────
+            if (empty($_FILES['cps_file']) || $_FILES['cps_file']['error'] !== UPLOAD_ERR_OK) {
+                $uploadErr = $_FILES['cps_file']['error'] ?? UPLOAD_ERR_NO_FILE;
                 if ($uploadErr === UPLOAD_ERR_INI_SIZE || $uploadErr === UPLOAD_ERR_FORM_SIZE) {
                     echo json_encode(['error' => 'File exceeds 20 MB limit.']);
                 } else {
@@ -135,34 +150,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 exit;
             }
 
-            $file = $_FILES[$key];
+            $file = $_FILES['cps_file'];
 
-            // Size check (20 MB)
             if ($file['size'] > 20 * 1024 * 1024) {
                 echo json_encode(['error' => 'File exceeds 20 MB limit.']);
                 exit;
             }
 
-            // MIME validation — never trust $_FILES['type'], use finfo on the actual bytes
-            $finfo    = new finfo(FILEINFO_MIME_TYPE);
-            $mimeType = $finfo->file($file['tmp_name']);
-
-            if ($method === 'pdf') {
-                if ($mimeType !== 'application/pdf') {
-                    echo json_encode(['error' => 'Only PDF and Markdown files are accepted.']);
-                    exit;
-                }
-            } else {
-                $allowedMimes = ['text/plain', 'text/markdown', 'text/x-markdown', 'application/octet-stream'];
-                if (!in_array($mimeType, $allowedMimes, true)) {
-                    echo json_encode(['error' => 'Only PDF and Markdown files are accepted.']);
-                    exit;
-                }
+            // Extension check
+            $origExt = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+            if (!in_array($origExt, ['md', 'txt', 'markdown'], true)) {
+                echo json_encode(['error' => 'Only .md, .txt, and .markdown files are accepted.']);
+                exit;
             }
 
-            // Move to uploads/ with a random, non-executable filename.
-            // The .upload extension has no registered handler so the web server
-            // cannot execute it even if the uploads directory becomes reachable.
+            // MIME check — finfo on actual bytes
+            $finfo    = new finfo(FILEINFO_MIME_TYPE);
+            $mimeType = $finfo->file($file['tmp_name']);
+            $allowedMimes = ['text/plain', 'text/markdown', 'text/x-markdown', 'application/octet-stream'];
+            if (!in_array($mimeType, $allowedMimes, true)) {
+                echo json_encode(['error' => 'File content does not appear to be plain text or Markdown.']);
+                exit;
+            }
+
             $safeFilename = bin2hex(random_bytes(8)) . '.upload';
             $safePath     = __DIR__ . '/uploads/' . $safeFilename;
 
@@ -172,18 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
             }
             register_shutdown_function('unlink', $safePath);
 
-            if ($method === 'pdf') {
-                $extracted = extractPdfText($safePath);
-                if ($extracted['error']) {
-                    echo json_encode(['error' => $extracted['error']]);
-                    exit;
-                }
-                $cpsText  = $extracted['text'];
-                $cpsPages = $extracted['pages'];
-            } else {
-                $cpsText  = (string) file_get_contents($safePath);
-                $cpsPages = 0;
-            }
+            $cpsText = (string) file_get_contents($safePath);
             $cpsFile = $file['name'];
         }
 
@@ -204,7 +203,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
         $result = [
             'meta' => [
                 'cps_filename'     => $cpsFile,
-                'cps_pages'        => $cpsPages,
+
                 'cps_word_count'   => $wordCount,
                 'br_version'       => $brVersion,
                 'assessed_at'      => gmdate('Y-m-d\TH:i:s\Z'),
@@ -256,27 +255,6 @@ function ipInCidr(string $ip, string $cidr): bool
     return ($ipLong & $mask) === ($netLong & $mask);
 }
 
-function extractPdfText(string $filePath): array
-{
-    $which = trim((string)shell_exec('which pdftotext 2>/dev/null'));
-    if ($which === '') {
-        return ['text' => '', 'pages' => 0, 'error' => 'Could not extract text. Ensure pdftotext is installed or upload as Markdown.'];
-    }
-
-    $escaped = escapeshellarg($filePath);
-    $text    = (string)shell_exec("pdftotext {$escaped} - 2>/dev/null");
-
-    // Page count from pdfinfo
-    $pages = 0;
-    $pdfinfo = shell_exec("pdfinfo {$escaped} 2>/dev/null");
-    if ($pdfinfo && preg_match('/Pages:\s+(\d+)/i', $pdfinfo, $m)) {
-        $pages = (int)$m[1];
-    } elseif (preg_match_all('/%%Page:/', $text, $pm)) {
-        $pages = count($pm[0]);
-    }
-
-    return ['text' => $text, 'pages' => $pages, 'error' => null];
-}
 
 function assessCPS(string $cpsText, array $brSections): array
 {
@@ -963,26 +941,16 @@ $brSectionCount = count($cache['sections'] ?? []);
 
         <!-- Tab selector -->
         <div class="input-tabs">
-          <button type="button" class="input-tab input-tab--active" data-tab="pdf">Upload PDF</button>
-          <button type="button" class="input-tab" data-tab="md">Upload Markdown</button>
+          <button type="button" class="input-tab input-tab--active" data-tab="file">Upload File</button>
           <button type="button" class="input-tab" data-tab="url">URL</button>
         </div>
 
-        <!-- PDF pane -->
-        <div class="input-pane" id="pane-pdf">
+        <!-- Upload pane (MD / TXT only) -->
+        <div class="input-pane" id="pane-file">
           <div class="field">
-            <label>PDF File</label>
-            <input type="file" name="cps_pdf" accept=".pdf" id="input-pdf">
-            <span class="field-hint">PDF format &mdash; text is extracted server-side via pdftotext. Max 20&nbsp;MB.</span>
-          </div>
-        </div>
-
-        <!-- Markdown pane -->
-        <div class="input-pane input-pane--hidden" id="pane-md">
-          <div class="field">
-            <label>Markdown / Plain Text File</label>
-            <input type="file" name="cps_md" accept=".md,.txt,.markdown" id="input-md">
-            <span class="field-hint">.md, .txt, or .markdown. Max 20&nbsp;MB.</span>
+            <label>Markdown or Plain Text File</label>
+            <input type="file" name="cps_file" accept=".md,.txt,.markdown" id="input-file">
+            <span class="field-hint">Accepted formats: .md, .txt, .markdown &mdash; Max 20&nbsp;MB. PDF is not supported.</span>
           </div>
         </div>
 
@@ -990,8 +958,8 @@ $brSectionCount = count($cache['sections'] ?? []);
         <div class="input-pane input-pane--hidden" id="pane-url">
           <div class="field">
             <label>Document URL</label>
-            <input type="url" name="cps_url" id="input-url" placeholder="https://ca.example.com/cps.pdf" autocomplete="off" spellcheck="false">
-            <span class="field-hint">Must be publicly reachable. PDF URLs are piped through pdftotext. Private/loopback addresses are blocked.</span>
+            <input type="url" name="cps_url" id="input-url" placeholder="https://ca.example.com/cps.md" autocomplete="off" spellcheck="false">
+            <span class="field-hint">Accepted: Markdown, plain text, or HTML. PDF URLs are not supported. Must be publicly reachable &mdash; private/loopback addresses are blocked.</span>
           </div>
         </div>
 
@@ -1019,10 +987,6 @@ $brSectionCount = count($cache['sections'] ?? []);
 
   <!-- Stats bar (shown after assessment) -->
   <div id="stats-bar">
-    <div class="stat-cell">
-      <span class="stat-label">CPS Pages</span>
-      <span class="stat-value" id="stat-pages">—</span>
-    </div>
     <div class="stat-cell">
       <span class="stat-label">CPS Words</span>
       <span class="stat-value" id="stat-words">—</span>

@@ -62,7 +62,43 @@
 
     // Include the active tab so PHP knows which input method is in use.
     const activeTab = document.querySelector('.input-tab--active');
-    if (activeTab) formData.set('input_method', activeTab.dataset.tab);
+    const method = activeTab ? activeTab.dataset.tab : 'file';
+    formData.set('input_method', method);
+
+    // ── Client-side validation ─────────────────────────────────────────────
+    const allowedExts = ['md', 'txt', 'markdown'];
+
+    if (method === 'file') {
+      const fileInput = document.getElementById('input-file');
+      const file = fileInput && fileInput.files[0];
+      if (!file) {
+        showError(errorBox, 'Please select a file to upload.');
+        setLoading(btn, spinner, false);
+        return;
+      }
+      const ext = file.name.split('.').pop().toLowerCase();
+      if (!allowedExts.includes(ext)) {
+        showError(errorBox, 'Only .md, .txt, and .markdown files are accepted. PDF is not supported.');
+        setLoading(btn, spinner, false);
+        return;
+      }
+    }
+
+    if (method === 'url') {
+      const urlInput = document.getElementById('input-url');
+      const url = (urlInput ? urlInput.value : '').trim();
+      if (!url) {
+        showError(errorBox, 'Please enter a URL.');
+        setLoading(btn, spinner, false);
+        return;
+      }
+      const urlLower = url.toLowerCase().split('?')[0];
+      if (urlLower.endsWith('.pdf')) {
+        showError(errorBox, 'PDF URLs are not supported. Please provide a Markdown, plain text, or HTML URL.');
+        setLoading(btn, spinner, false);
+        return;
+      }
+    }
 
     try {
       const resp = await fetch(form.action || window.location.href, {
@@ -175,7 +211,6 @@
       if (el) el.textContent = val;
     };
 
-    set('stat-pages',      meta.cps_pages      ?? '—');
     set('stat-words',      meta.cps_word_count  != null
           ? Number(meta.cps_word_count).toLocaleString() : '—');
     set('stat-br-version', meta.br_version      ?? '—');
