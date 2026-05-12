@@ -302,10 +302,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
 
     .about-body p { color: var(--muted); margin-bottom: 1rem; font-size: 0.95rem; }
     .about-body p:last-of-type { margin-bottom: 0; }
-    .about-lead-label {
+    .about-body .about-lead-label {
       font-family: var(--mono);
       font-size: 0.68rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
-      color: var(--accent); margin-bottom: 0.5rem !important;
+      color: var(--accent); margin-bottom: 0.5rem;
     }
 
     .about-links { display: flex; gap: 0.75rem; margin-top: 1.8rem; flex-wrap: wrap; }
