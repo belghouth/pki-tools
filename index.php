@@ -561,6 +561,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
           </div>
         </div>
 
+        <div class="tool-card">
+          <div class="tool-card-bar tool-card-bar--amber"></div>
+          <div class="tool-card-body">
+            <div class="tool-card-icon">🔍</div>
+            <div class="tool-card-name">Meerkat Artifact Parser</div>
+            <div class="tool-card-desc">Paste or upload any PKI artifact — certificate, CSR, CRL, OCSP response, public key, PKCS#7, or timestamp token — and get an instant structured breakdown. Supports PEM and DER. Private key material is detected and rejected server-side.</div>
+            <div class="tool-card-tags">
+              <span class="tag">X.509</span>
+              <span class="tag">CSR</span>
+              <span class="tag">CRL</span>
+              <span class="tag">PKCS#7</span>
+              <span class="tag">RFC 3161</span>
+            </div>
+            <a href="/artifact_parser.php" class="tool-card-link">Open Tool →</a>
+          </div>
+        </div>
+
       </div>
     </div>
   </section>
