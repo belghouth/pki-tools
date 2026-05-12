@@ -58,7 +58,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Thameur Belghith — PKI &amp; Trust Services Engineer</title>
   <meta name="description" content="PKI and Trust Services Engineer building open tools for WebPKI compliance, certificate linting, and CA audit support.">
-  <link rel="icon" href="/favicon.ico">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,600;1,300&display=swap" rel="stylesheet">
@@ -155,6 +157,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     }
 
     .hero-inner { position: relative; max-width: 760px; }
+
+    .hero-meerkat {
+      width: 96px; height: 96px;
+      object-fit: contain;
+      margin-bottom: 1.4rem;
+      filter: drop-shadow(0 0 18px rgba(0,212,170,0.28));
+      animation: meerkat-float 4s ease-in-out infinite;
+    }
+    @keyframes meerkat-float {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(-6px); }
+    }
+
+    .header-meerkat {
+      width: 28px; height: 28px;
+      object-fit: contain;
+      filter: drop-shadow(0 0 6px rgba(0,212,170,0.3));
+    }
 
     .hero-eyebrow {
       font-family: var(--mono);
@@ -431,6 +451,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
 <!-- ── Header ─────────────────────────────────────────────────────────────── -->
 <header class="site-header">
   <span class="header-logo">thameur.org</span>
+  <img src="/img/meerkat_120.png" alt="Meerkat" class="header-meerkat">
   <nav class="site-nav">
     <a href="#about">About</a>
     <a href="#tools">Tools</a>
@@ -443,6 +464,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
   <!-- ── Hero ───────────────────────────────────────────────────────────────── -->
   <section class="hero">
     <div class="hero-inner">
+      <img src="/img/meerkat_240.png" alt="Meerkat" class="hero-meerkat">
       <p class="hero-eyebrow">Hello, I'm</p>
       <h1 class="hero-name">Thameur Belghith</h1>
       <p class="hero-role">PKI &amp; Trust Services Engineer</p>
