@@ -109,7 +109,7 @@ $_navLabel = $navLabel ?? '';
 /* ── Mobile layout ── */
 @media (max-width: 820px) {
   .snav { padding: 0 1.1rem; }
-  .snav-burger { display: flex; }
+  .snav-burger { display: flex; margin-left: auto; }
   .snav-label  { display: none; }
 
   .snav-links {
