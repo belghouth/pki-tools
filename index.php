@@ -495,21 +495,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       <div class="tools-grid">
 
         <div class="tool-card">
-          <div class="tool-card-bar tool-card-bar--teal"></div>
-          <div class="tool-card-body">
-            <div class="tool-card-icon">🔍</div>
-            <div class="tool-card-name">X.509 Certificate Parser</div>
-            <div class="tool-card-desc">Paste or fetch a certificate to inspect every field — extensions, SANs, policy OIDs, CT SCTs, validity, and more. Supports PEM, DER, and live domain fetch.</div>
-            <div class="tool-card-tags">
-              <span class="tag">X.509</span>
-              <span class="tag">TLS</span>
-              <span class="tag">Extensions</span>
-            </div>
-            <a href="/x509parse.php" class="tool-card-link">Open Tool →</a>
-          </div>
-        </div>
-
-        <div class="tool-card">
           <div class="tool-card-bar tool-card-bar--blue"></div>
           <div class="tool-card-body">
             <div class="tool-card-icon">🧾</div>
@@ -540,17 +525,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
         </div>
 
         <div class="tool-card">
-          <div class="tool-card-bar tool-card-bar--amber"></div>
+          <div class="tool-card-bar tool-card-bar--teal"></div>
           <div class="tool-card-body">
-            <div class="tool-card-icon">🔒</div>
-            <div class="tool-card-name">Revocation Checker</div>
-            <div class="tool-card-desc">Check the revocation status of a certificate via OCSP and CRL. Verifies the response signature, parses the response fields, and highlights anomalies.</div>
+            <div class="tool-card-icon">⚡</div>
+            <div class="tool-card-name">ACME Automation Endpoint</div>
+            <div class="tool-card-desc">A live reference implementation of an automated certificate renewal endpoint as required by the Chrome Root Program and validated by Mozilla. Demonstrates RFC 8555 renewal verification in a production environment.</div>
             <div class="tool-card-tags">
-              <span class="tag">OCSP</span>
-              <span class="tag">CRL</span>
-              <span class="tag">Revocation</span>
+              <span class="tag">ACME</span>
+              <span class="tag">RFC 8555</span>
+              <span class="tag">Chrome Root</span>
             </div>
-            <a href="/revocation.php" class="tool-card-link">Open Tool →</a>
+            <a href="/acme-endpoint.php" class="tool-card-link">View Demo →</a>
           </div>
         </div>
 
