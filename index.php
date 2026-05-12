@@ -505,6 +505,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       .hero-badges  { gap: 0.35rem; }
       .site-nav a:not(:first-child):not(:last-child) { display: none; }
     }
+
+    /* ── Back-to-top button (mobile only) ── */
+    .back-top {
+      display: none;
+    }
+    @media (max-width: 820px) {
+      .back-top {
+        display: flex;
+        align-items: center; justify-content: center;
+        position: fixed;
+        top: 68px; right: 1rem;
+        z-index: 90;
+        width: 36px; height: 36px;
+        background: rgba(13,15,20,0.88);
+        border: 1px solid rgba(0,212,170,0.35);
+        border-radius: 8px;
+        color: var(--accent);
+        cursor: pointer;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(-6px);
+        transition: opacity 220ms ease, transform 220ms ease, background 150ms ease, border-color 150ms ease;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+      }
+      .back-top--visible {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+      }
+      .back-top:active {
+        background: rgba(0,212,170,0.12);
+        border-color: rgba(0,212,170,0.7);
+      }
+    }
   </style>
 </head>
 <body>
@@ -694,6 +729,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
 
 <?php require __DIR__ . '/includes/cookie_banner.php'; ?>
 
+<button class="back-top" id="backTop" aria-label="Back to top">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <polyline points="18 15 12 9 6 15"/>
+  </svg>
+</button>
+
+<script>
+(function () {
+  var btn = document.getElementById('backTop');
+  var threshold = document.getElementById('tools');
+
+  function update() {
+    var show = threshold
+      ? window.scrollY >= threshold.offsetTop - 80
+      : window.scrollY > 400;
+    btn.classList.toggle('back-top--visible', show);
+  }
+
+  window.addEventListener('scroll', update, { passive: true });
+  btn.addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
 
 </body>
 </html>
