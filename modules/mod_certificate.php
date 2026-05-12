@@ -3,11 +3,13 @@ if (!defined('ARTIFACT_PARSER')) { http_response_code(403); exit; }
 
 class CertificateModule extends ArtifactModule {
 
+    // RFC 6962 §3.1 — CT Precertificate Poison OID
+    private const POISON_OID = '1.3.6.1.4.1.11129.2.4.3';
+
     public function label(): string { return 'X.509 Certificate'; }
 
     public function recognize(string $bytes, string $ext): bool {
         if (artifact_has_pem_header($bytes, 'CERTIFICATE')) return true;
-        // DER with cert-friendly extension: try openssl_x509_read
         if (artifact_is_der($bytes) && in_array($ext, ['crt', 'cer', 'der', 'pem'], true)) {
             $pem = artifact_to_pem($bytes, 'CERTIFICATE');
             return $pem !== null && (@openssl_x509_read($pem) !== false);
@@ -21,38 +23,76 @@ class CertificateModule extends ArtifactModule {
         $cert = @openssl_x509_read($pem);
         if ($cert === false) throw new \RuntimeException('openssl_x509_read failed — not a valid certificate.');
         openssl_x509_export($cert, $clean_pem);
-        return ['pem' => $clean_pem];
-    }
 
-    public function render(array $parsed): string {
-        return x509parse_render($parsed['pem']);
-    }
-
-    public function subtype(array $parsed): ?string {
-        $cert = @openssl_x509_read($parsed['pem']);
-        if (!$cert) return null;
-        $d = openssl_x509_parse($cert, false);
-        if (!$d) return null;
-
+        $d    = openssl_x509_parse($cert, false);
         $exts = $d['extensions'] ?? [];
-        $bc   = strtolower($exts['basicConstraints'] ?? '');
-        $isCA = str_contains($bc, 'ca:true');
 
+        // Precertificate detection: match exact OID or any OpenSSL-assigned short name
+        $is_precert = false;
+        foreach (array_keys($exts) as $k) {
+            if ($k === self::POISON_OID
+                || stripos($k, 'poison')   !== false
+                || stripos($k, 'precert')  !== false) {
+                $is_precert = true;
+                break;
+            }
+        }
+
+        $bc  = strtolower($exts['basicConstraints'] ?? '');
         $sub = $d['subject'] ?? [];
         $iss = $d['issuer']  ?? [];
         ksort($sub); ksort($iss);
-        $selfSigned = ($sub === $iss);
 
-        if ($isCA && $selfSigned) return 'Root CA';
-        if ($isCA)                return 'Issuing CA';
+        return [
+            'pem'         => $clean_pem,
+            'is_precert'  => $is_precert,
+            'is_ca'       => str_contains($bc, 'ca:true'),
+            'self_signed' => ($sub === $iss),
+            'eku'         => $exts['extendedKeyUsage'] ?? '',
+        ];
+    }
 
-        $eku = $exts['extendedKeyUsage'] ?? '';
-        if (str_contains($eku, 'serverAuth'))      return 'End-Entity — TLS Server';
-        if (str_contains($eku, 'emailProtection')) return 'End-Entity — S/MIME';
-        if (str_contains($eku, 'codeSigning'))     return 'End-Entity — Code Signing';
-        if (str_contains($eku, 'OCSPSigning'))     return 'End-Entity — OCSP Signer';
-        if (str_contains($eku, 'timeStamping'))    return 'End-Entity — Timestamping';
-        return 'End-Entity (EE)';
+    public function render(array $parsed): string {
+        $out = '';
+
+        if ($parsed['is_precert']) {
+            $out .= '<div class="xp-wrap" style="margin-bottom:.5rem">'
+                  . '<div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.4);'
+                  .      'border-radius:5px;padding:.65rem 1rem;font-size:.8rem;color:#f59e0b;'
+                  .      'display:flex;align-items:center;gap:.6rem">'
+                  . '<span style="font-size:1.1rem;flex-shrink:0">⚠</span>'
+                  . '<span><strong>Precertificate</strong> — CT poison extension detected '
+                  .       '(OID&nbsp;' . self::POISON_OID . ', RFC&nbsp;6962&nbsp;§3.1). '
+                  .       'This artefact was submitted to Certificate Transparency logs and is '
+                  .       '<em>not</em> a valid end-entity certificate.</span>'
+                  . '</div></div>';
+        }
+
+        $out .= x509parse_render($parsed['pem']);
+        return $out;
+    }
+
+    public function subtype(array $parsed): ?string {
+        // CA certificates keep their own labels (precert CA is theoretically possible)
+        if ($parsed['is_ca'] && $parsed['self_signed']) {
+            return $parsed['is_precert'] ? 'Precertificate — Root CA'    : 'Root CA';
+        }
+        if ($parsed['is_ca']) {
+            return $parsed['is_precert'] ? 'Precertificate — Issuing CA' : 'Issuing CA';
+        }
+
+        $eku  = $parsed['eku'];
+        $type = match(true) {
+            str_contains($eku, 'serverAuth')      => 'TLS Server',
+            str_contains($eku, 'emailProtection') => 'S/MIME',
+            str_contains($eku, 'codeSigning')     => 'Code Signing',
+            str_contains($eku, 'OCSPSigning')     => 'OCSP Signer',
+            str_contains($eku, 'timeStamping')    => 'Timestamping',
+            default                               => '',
+        };
+
+        $label = $parsed['is_precert'] ? 'Precertificate' : 'Leaf';
+        return $type ? "$label — $type" : $label;
     }
 }
 
