@@ -738,7 +738,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
 <script>
 (function () {
   var btn = document.getElementById('backTop');
-  var threshold = document.getElementById('tools');
+  var threshold = document.getElementById('about');
 
   function update() {
     var show = threshold
