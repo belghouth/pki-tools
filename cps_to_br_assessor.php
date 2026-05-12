@@ -173,8 +173,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 exit;
             }
 
+            // Write to system temp dir (never under the web root)
             $safeFilename = bin2hex(random_bytes(8)) . '.upload';
-            $safePath     = __DIR__ . '/uploads/' . $safeFilename;
+            $safePath     = sys_get_temp_dir() . DIRECTORY_SEPARATOR . $safeFilename;
 
             if (!move_uploaded_file($file['tmp_name'], $safePath)) {
                 echo json_encode(['error' => 'Failed to save uploaded file.']);
