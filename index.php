@@ -164,12 +164,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
 
     /* ── Hero ───────────────────────────────────────────────────────────────── */
     .hero {
-      min-height: 90vh;
+      min-height: 80vh;
       display: flex; align-items: center; justify-content: center;
       text-align: center;
-      padding: 5rem 2rem;
+      padding: 4.5rem 2rem;
       background:
-        radial-gradient(ellipse 800px 600px at 50% 30%, rgba(0,212,170,0.04) 0%, transparent 70%),
+        radial-gradient(ellipse 800px 600px at 50% 30%, rgba(0,212,170,0.05) 0%, transparent 70%),
         var(--bg);
       border-bottom: 1px solid var(--border);
       position: relative; overflow: hidden;
@@ -186,18 +186,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       pointer-events: none;
     }
 
-    .hero-inner { position: relative; max-width: 760px; }
+    .hero-inner { position: relative; max-width: 780px; }
 
     .hero-meerkat {
-      width: 96px; height: 96px;
+      width: 140px; height: 140px;
       object-fit: contain;
-      margin-bottom: 1.4rem;
-      filter: drop-shadow(0 0 18px rgba(0,212,170,0.28));
+      margin-bottom: 1.6rem;
+      filter: drop-shadow(0 0 28px rgba(0,212,170,0.35));
       animation: meerkat-float 4s ease-in-out infinite;
     }
     @keyframes meerkat-float {
       0%, 100% { transform: translateY(0); }
-      50%       { transform: translateY(-6px); }
+      50%       { transform: translateY(-8px); }
     }
 
     .header-meerkat {
@@ -206,28 +206,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       filter: drop-shadow(0 0 6px rgba(0,212,170,0.3));
     }
 
-    .hero-eyebrow {
+    .hero-byline {
       font-family: var(--mono);
-      font-size: 0.8rem; letter-spacing: 0.18em; text-transform: uppercase;
-      color: var(--accent); margin-bottom: 1rem;
+      font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase;
+      color: #3d4f68; margin-bottom: 1.1rem;
     }
 
-    .hero-name {
-      font-size: clamp(2.4rem, 6vw, 4.2rem);
-      font-weight: 600; letter-spacing: -0.02em; line-height: 1.1;
-      color: #fff; margin-bottom: 0.6rem;
-    }
-
-    .hero-role {
-      font-family: var(--mono);
-      font-size: clamp(0.85rem, 2vw, 1.05rem);
-      color: var(--accent2); margin-bottom: 1.6rem;
+    .hero-headline {
+      font-size: clamp(1.7rem, 4.5vw, 3rem);
+      font-weight: 600; letter-spacing: -0.02em; line-height: 1.15;
+      color: #fff; margin-bottom: 0.9rem;
     }
 
     .hero-tagline {
       font-size: 1.05rem; color: var(--muted);
-      max-width: 520px; margin: 0 auto 2.4rem;
+      max-width: 540px; margin: 0 auto 0.55rem;
+      line-height: 1.65;
     }
+
+    .hero-subline {
+      font-family: var(--mono);
+      font-size: 0.75rem; color: #3d4f68;
+      margin-bottom: 1.8rem;
+      letter-spacing: 0.02em;
+    }
+
+    .hero-badges {
+      display: flex; flex-wrap: wrap; gap: 0.45rem;
+      justify-content: center;
+      margin-bottom: 2.2rem;
+    }
+    .hero-badge {
+      font-family: var(--mono);
+      font-size: 0.68rem; letter-spacing: 0.06em;
+      color: #5a7090;
+      border: 1px solid #1e2d40;
+      border-radius: 4px;
+      padding: 0.25rem 0.6rem;
+      background: rgba(0,212,170,0.03);
+      transition: color 150ms ease, border-color 150ms ease;
+    }
+    .hero-badge:hover { color: var(--accent); border-color: rgba(0,212,170,0.3); }
 
     .hero-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
 
@@ -475,7 +494,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     @media (max-width: 520px) {
       .site-header { padding: 0 1rem; }
       .section     { padding: 3.5rem 1.25rem; }
-      .hero        { padding: 4rem 1.25rem; }
+      .hero        { padding: 3rem 1.25rem; min-height: 0; }
+      .hero-meerkat { width: 96px; height: 96px; margin-bottom: 1.1rem; }
+      .hero-headline { font-size: clamp(1.35rem, 6vw, 2rem); }
+      .hero-byline  { font-size: 0.65rem; }
+      .hero-tagline { font-size: 0.92rem; }
+      .hero-subline { font-size: 0.7rem; }
+      .hero-badges  { gap: 0.35rem; }
       .site-nav a:not(:first-child):not(:last-child) { display: none; }
     }
   </style>
@@ -489,13 +514,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
   <!-- ── Hero ───────────────────────────────────────────────────────────────── -->
   <section class="hero">
     <div class="hero-inner">
-      <img src="/img/meerkat_240.png" alt="Meerkat" class="hero-meerkat">
-      <h1 class="hero-name">Thameur Belghith</h1>
-      <p class="hero-role">PKI &amp; Trust Services Engineer</p>
-      <p class="hero-tagline">Building open tools for WebPKI compliance, certificate management, and CA audit support.</p>
+      <img src="/img/meerkat_240.png" alt="Meerkat mascot" class="hero-meerkat">
+      <p class="hero-byline">by Thameur Belghith &mdash; PKI &amp; Trust Services Engineer</p>
+      <h1 class="hero-headline">WebPKI Tools, Compliance &amp; Certificate Engineering</h1>
+      <p class="hero-tagline">Tools for people who would rather catch problems before Chrome does.</p>
+      <p class="hero-subline">Built with enough vigilance to survive Bugzilla.</p>
+      <div class="hero-badges">
+        <span class="hero-badge">zlint</span>
+        <span class="hero-badge">pkilint</span>
+        <span class="hero-badge">x509lint</span>
+        <span class="hero-badge">ACME</span>
+        <span class="hero-badge">CT</span>
+        <span class="hero-badge">RFC 5280</span>
+        <span class="hero-badge">CABF BRs</span>
+      </div>
       <div class="hero-actions">
         <a href="#tools" class="btn btn--primary">Explore Tools</a>
-        <a href="mailto:me@thameur.org" class="btn btn--outline">Get in Touch</a>
+        <a href="#about" class="btn btn--outline">About</a>
       </div>
     </div>
   </section>
@@ -549,7 +584,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
   <!-- ── Tools ──────────────────────────────────────────────────────────────── -->
   <section class="section section--alt" id="tools">
     <div class="container">
-      <p class="section-eyebrow">Open Source</p>
       <h2 class="section-heading">PKI Tools</h2>
       <p class="section-sub">Free, browser-based tools for PKI practitioners, CA auditors, and security engineers.</p>
 
