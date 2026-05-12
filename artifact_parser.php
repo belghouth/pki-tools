@@ -23,7 +23,7 @@ const PRIVATE_KEY_MARKERS = [
 
 const ALLOWED_EXTS = ['pem','crt','cer','csr','der','p7b','p7c','p7s','p7m','p10','req','tsr','tst','ocsp','crl'];
 const BLOCKED_EXTS = ['key','p12','pfx','jks','keystore','pvk','ppk'];
-const MAX_BYTES    = 524288; // 512 KB
+const MAX_BYTES    = 51200; // 50 KB
 
 // ── Process submission ────────────────────────────────────────────────────────
 
@@ -41,7 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($up['error'] !== UPLOAD_ERR_OK) {
             $error = 'Upload error (code ' . $up['error'] . ').';
         } elseif ($up['size'] > MAX_BYTES) {
-            $error = 'File exceeds 512 KB limit.';
+            $error = 'File exceeds 50 KB limit.';
             @unlink($up['tmp_name']);
         } else {
             $fname = basename($up['name']);
@@ -78,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($raw !== null && $error === null) {
         if (strlen((string)$raw) > MAX_BYTES) {
-            $error = 'Input exceeds 512 KB limit.';
+            $error = 'Input exceeds 50 KB limit.';
         } elseif (strlen(trim((string)$raw)) === 0) {
             $error = 'No input provided.';
         } else {
@@ -396,7 +396,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                accept=".pem,.crt,.cer,.csr,.der,.p7b,.p7c,.p7s,.p7m,.p10,.req,.tsr,.tst,.ocsp,.crl">
         <div class="dz-icon">📂</div>
         <p>Drop a file here, or click to browse</p>
-        <p class="dz-hint">.pem .crt .cer .csr .der .p7b .p7c .p10 .tsr .ocsp .crl &nbsp;·&nbsp; max 512 KB</p>
+        <p class="dz-hint">.pem .crt .cer .csr .der .p7b .p7c .p10 .tsr .ocsp .crl &nbsp;·&nbsp; max 50 KB</p>
         <p class="dz-selected" id="dzSelected" hidden></p>
       </div>
     </div>
@@ -487,8 +487,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     dz.querySelector('p').hidden = true;
   }
 
+  var MAX_UPLOAD = <?= MAX_BYTES ?>;
+
+  function checkSize(file) {
+    if (file.size > MAX_UPLOAD) {
+      var kb = Math.round(file.size / 1024);
+      alert('File is too large (' + kb + ' KB). PKI artifacts must be under 50 KB.');
+      inp.value = '';
+      return false;
+    }
+    return true;
+  }
+
   inp.addEventListener('change', function () {
-    if (inp.files.length) showFile(inp.files[0].name);
+    if (inp.files.length && checkSize(inp.files[0])) showFile(inp.files[0].name);
   });
   dz.addEventListener('dragover',  function (e) { e.preventDefault(); dz.classList.add('dragover'); });
   dz.addEventListener('dragleave', function ()  { dz.classList.remove('dragover'); });
@@ -496,7 +508,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     e.preventDefault();
     dz.classList.remove('dragover');
     var files = e.dataTransfer.files;
-    if (files.length) {
+    if (files.length && checkSize(files[0])) {
       inp.files = files; // DataTransfer → input (modern browsers)
       showFile(files[0].name);
     }
