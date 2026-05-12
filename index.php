@@ -609,6 +609,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
           </div>
         </div>
 
+        <div class="tool-card">
+          <div class="tool-card-bar" style="background:#a78bfa"></div>
+          <div class="tool-card-body">
+            <div class="tool-card-icon">🌐</div>
+            <div class="tool-card-name">Community Tools Index</div>
+            <div class="tool-card-desc">Curated directory of free, open-source online PKI testing tools from the community — ASN.1 decoders, TLS analysers, digital signature validators, CT log search, DNSSEC visualisers, and more. No commercial products.</div>
+            <div class="tool-card-tags">
+              <span class="tag">Open Source</span>
+              <span class="tag">Community</span>
+              <span class="tag">Free</span>
+            </div>
+            <a href="/community_tools.php" class="tool-card-link">Browse Index →</a>
+          </div>
+        </div>
+
       </div>
     </div>
   </section>
@@ -641,8 +656,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     <a href="https://github.com/belghouth" target="_blank" rel="noopener">GitHub</a>
     <a href="https://www.linkedin.com/in/belghouth/" target="_blank" rel="noopener">LinkedIn</a>
     <a href="/feed.php">PKI News</a>
-    <a href="/references.php">PKI References</a>
-    <a href="/privacy.php">Privacy Policy</a>
+    <a href="/community_tools.php">Community Tools</a>
+    <a href="/references.php">References</a>
+    <a href="/privacy.php">Privacy</a>
     <a href="mailto:me@thameur.org">me@thameur.org</a>
   </div>
 </footer>

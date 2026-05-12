@@ -2,83 +2,228 @@
 /**
  * Shared site navigation bar.
  *
- * Usage — include near the top of <body>, before any page content:
- *   <?php
- *   $navLabel = 'Certificate Linters'; // optional page label shown centred
+ * Set $navLabel before including to show the current page name in the bar.
+ *   $navLabel = 'Certificate Linters';
  *   require __DIR__ . '/includes/site_nav.php';
- *   ?>
- *
- * If $navLabel is not set the centre slot is empty.
  */
 $_navLabel = $navLabel ?? '';
 ?>
 <style>
-/* ── Shared site nav ─────────────────────────────────────────────────────── */
+/* ── Shared site nav ──────────────────────────────────────────────────────── */
 .snav {
   position: sticky; top: 0; z-index: 100;
-  background: rgba(14,16,20,0.94);
-  backdrop-filter: blur(12px) saturate(1.4);
-  -webkit-backdrop-filter: blur(12px) saturate(1.4);
-  border-bottom: 1px solid #2a3040;
+  background: rgba(13,15,20,0.96);
+  backdrop-filter: blur(14px) saturate(1.6);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6);
+  border-bottom: 1px solid #1e2535;
+  height: 56px;
   padding: 0 1.75rem;
-  display: flex; align-items: center;
-  height: 52px; gap: 1rem;
+  display: flex; align-items: center; gap: 1rem;
 }
+
+/* ── Logo ── */
 .snav-home {
-  display: flex; align-items: center; gap: 0.5rem;
+  display: flex; align-items: center; gap: 0.55rem;
   text-decoration: none; flex-shrink: 0;
 }
 .snav-home img {
-  width: 26px; height: 26px; object-fit: contain;
-  filter: drop-shadow(0 0 5px rgba(0,212,170,0.3));
-  transition: filter 150ms ease;
+  width: 28px; height: 28px; object-fit: contain;
+  filter: drop-shadow(0 0 6px rgba(0,212,170,0.35));
+  transition: filter 180ms ease;
 }
-.snav-home:hover img { filter: drop-shadow(0 0 10px rgba(0,212,170,0.65)); }
+.snav-home:hover img { filter: drop-shadow(0 0 12px rgba(0,212,170,0.75)); }
 .snav-wordmark {
   font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace;
-  font-size: 0.8rem; font-weight: 600;
+  font-size: 0.85rem; font-weight: 600;
   letter-spacing: 0.1em; text-transform: uppercase;
   color: #00d4aa; text-decoration: none;
 }
+
+/* ── Page label (centre slot) ── */
 .snav-label {
   flex: 1; text-align: center;
-  font-family: 'IBM Plex Mono', 'JetBrains Mono', monospace;
-  font-size: 0.72rem; letter-spacing: 0.08em;
-  color: #6b7a90; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase;
+  color: #3d4f68; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none;
 }
+
+/* ── Desktop links ── */
 .snav-links {
-  display: flex; gap: 1.6rem; flex-shrink: 0;
+  display: flex; align-items: center; gap: 0.25rem; flex-shrink: 0;
 }
-.snav-links a {
+
+.snav-link {
+  display: flex; align-items: center; gap: 0.38rem;
   font-family: 'IBM Plex Sans', system-ui, sans-serif;
-  font-size: 0.75rem; font-weight: 400;
-  letter-spacing: 0.05em; text-transform: uppercase;
-  color: #6b7a90; text-decoration: none;
-  transition: color 150ms ease;
+  font-size: 0.8rem; font-weight: 400;
+  color: #8a9ab8;
+  text-decoration: none;
+  padding: 0.35rem 0.65rem;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  transition: color 150ms ease, background 150ms ease, border-color 150ms ease;
+  white-space: nowrap;
 }
-.snav-links a:hover { color: #d4dae6; }
-@media (max-width: 600px) {
-  .snav { padding: 0 1rem; }
-  .snav-label { display: none; }
-  .snav-links { gap: 1rem; }
+.snav-link svg { flex-shrink: 0; opacity: 0.75; transition: opacity 150ms ease; }
+.snav-link:hover {
+  color: #e8edf5;
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.07);
+}
+.snav-link:hover svg { opacity: 1; }
+
+/* active page highlight */
+.snav-link[aria-current="page"] {
+  color: #00d4aa;
+  background: rgba(0,212,170,0.08);
+  border-color: rgba(0,212,170,0.18);
+}
+.snav-link[aria-current="page"] svg { opacity: 1; }
+
+/* ── Hamburger button (mobile only) ── */
+.snav-burger {
+  display: none;
+  flex-direction: column; justify-content: center; align-items: center;
+  gap: 5px;
+  width: 38px; height: 38px;
+  background: transparent; border: 1px solid #1e2535;
+  border-radius: 6px; cursor: pointer;
+  padding: 0; flex-shrink: 0;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.snav-burger:hover { border-color: #3a4458; background: rgba(255,255,255,0.04); }
+.snav-burger span {
+  display: block; width: 18px; height: 1.5px;
+  background: #8a9ab8; border-radius: 2px;
+  transition: transform 220ms ease, opacity 220ms ease, background 150ms ease;
+  transform-origin: center;
+}
+.snav-burger:hover span { background: #c8d4e6; }
+
+/* animated X when open */
+.snav--open .snav-burger span:nth-child(1) { transform: rotate(45deg) translate(3px, 4.5px); }
+.snav--open .snav-burger span:nth-child(2) { opacity: 0; transform: scaleX(0); }
+.snav--open .snav-burger span:nth-child(3) { transform: rotate(-45deg) translate(3px, -4.5px); }
+
+/* ── Mobile layout ── */
+@media (max-width: 820px) {
+  .snav { padding: 0 1.1rem; }
+  .snav-burger { display: flex; }
+  .snav-label  { display: none; }
+
+  .snav-links {
+    display: none;
+    position: absolute;
+    top: 56px; left: 0; right: 0;
+    flex-direction: column; align-items: stretch;
+    gap: 0;
+    background: #0d0f14;
+    border-bottom: 1px solid #1e2535;
+    padding: 0.5rem 0.75rem 0.75rem;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  }
+  .snav--open .snav-links { display: flex; }
+
+  .snav-link {
+    padding: 0.65rem 0.75rem;
+    font-size: 0.88rem;
+    border-radius: 6px;
+  }
 }
 </style>
 
-<nav class="snav">
+<nav class="snav" id="siteNav">
+
   <a href="/" class="snav-home">
-    <img src="/img/meerkat_120.png" alt="Meerkat">
+    <img src="/img/meerkat_120.png" alt="">
     <span class="snav-wordmark">thameur.org</span>
   </a>
+
   <?php if ($_navLabel !== ''): ?>
   <span class="snav-label"><?= htmlspecialchars($_navLabel) ?></span>
   <?php else: ?>
   <span class="snav-label"></span>
   <?php endif; ?>
-  <div class="snav-links">
-    <a href="/#about">About</a>
-    <a href="/#tools">Tools</a>
-    <a href="/feed.php">News</a>
-    <a href="/references.php">References</a>
-    <a href="mailto:me@thameur.org">Contact</a>
+
+  <button class="snav-burger" id="snavBurger" aria-label="Toggle navigation" aria-expanded="false" aria-controls="snavLinks">
+    <span></span><span></span><span></span>
+  </button>
+
+  <div class="snav-links" id="snavLinks" role="menubar">
+
+    <a href="/#about" class="snav-link" role="menuitem">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+      </svg>
+      About
+    </a>
+
+    <a href="/#tools" class="snav-link" role="menuitem">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+      </svg>
+      Tools
+    </a>
+
+    <a href="/feed.php" class="snav-link" role="menuitem">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 11a9 9 0 019 9"/><path d="M4 4a16 16 0 0116 16"/><circle cx="5" cy="19" r="1" fill="currentColor" stroke="none"/>
+      </svg>
+      News
+    </a>
+
+    <a href="/community_tools.php" class="snav-link" role="menuitem">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
+        <path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+      </svg>
+      Community
+    </a>
+
+    <a href="/references.php" class="snav-link" role="menuitem">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
+      </svg>
+      References
+    </a>
+
+    <a href="mailto:me@thameur.org" class="snav-link" role="menuitem">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
+      </svg>
+      Contact
+    </a>
+
   </div>
 </nav>
+
+<script>
+(function () {
+  var nav    = document.getElementById('siteNav');
+  var burger = document.getElementById('snavBurger');
+  var links  = document.getElementById('snavLinks');
+
+  function open()  { nav.classList.add('snav--open');    burger.setAttribute('aria-expanded', 'true');  }
+  function close() { nav.classList.remove('snav--open'); burger.setAttribute('aria-expanded', 'false'); }
+  function toggle(){ nav.classList.contains('snav--open') ? close() : open(); }
+
+  burger.addEventListener('click', function (e) { e.stopPropagation(); toggle(); });
+
+  document.addEventListener('click', function (e) {
+    if (!nav.contains(e.target)) close();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') close();
+  });
+
+  // Mark the current page link
+  var cur = location.pathname;
+  links.querySelectorAll('a.snav-link').forEach(function (a) {
+    var href = a.getAttribute('href');
+    if (href === cur || (href !== '/' && cur.startsWith(href.split('#')[0]))) {
+      a.setAttribute('aria-current', 'page');
+    }
+  });
+})();
+</script>
