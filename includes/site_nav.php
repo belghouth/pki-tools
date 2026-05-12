@@ -217,11 +217,13 @@ $_navLabel = $navLabel ?? '';
     if (e.key === 'Escape') close();
   });
 
-  // Mark the current page link
+  // Mark the current page link (skip anchor-only and mailto links)
   var cur = location.pathname;
   links.querySelectorAll('a.snav-link').forEach(function (a) {
     var href = a.getAttribute('href');
-    if (href === cur || (href !== '/' && cur.startsWith(href.split('#')[0]))) {
+    if (!href || href.startsWith('mailto:')) return;
+    var hrefPath = href.split('#')[0];
+    if (hrefPath && hrefPath !== '/' && hrefPath === cur) {
       a.setAttribute('aria-current', 'page');
     }
   });
