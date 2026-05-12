@@ -283,6 +283,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
 
     .about-body p { color: var(--muted); margin-bottom: 1rem; font-size: 0.95rem; }
     .about-body p:last-of-type { margin-bottom: 0; }
+    .about-lead-label {
+      font-family: var(--mono);
+      font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--accent); margin-bottom: 0.5rem !important;
+    }
 
     .about-links { display: flex; gap: 0.75rem; margin-top: 1.8rem; flex-wrap: wrap; }
     .pill-link {
@@ -498,19 +503,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
   <!-- ── About ──────────────────────────────────────────────────────────────── -->
   <section class="section" id="about">
     <div class="container">
-      <h2 class="section-heading">About Me</h2>
+      <h2 class="section-heading">About</h2>
       <div class="about-grid">
         <div class="about-body">
-          <p>I work at the intersection of cryptography, web security, and standards compliance, with a focus on Public Key Infrastructure and the WebPKI ecosystem. My day-to-day spans everything from certificate profile engineering and CA system design to audit preparation and compliance tooling.</p>
-          <p>The CA/Browser Forum Baseline Requirements define the ground rules every publicly-trusted CA must follow. I actively study and implement those requirements — the tools on this site were born from real gaps I encountered while doing that work, and I open them up so the wider PKI community can benefit.</p>
-          <p>I'm also interested in automated certificate lifecycle management (ACME protocol), multi-perspective issuance corroboration, and making PKI tooling more accessible to practitioners who aren't full-time cryptographers.</p>
+
+          <p class="about-lead-label">What this site is</p>
+          <p>A free, no-account resource for PKI practitioners — certificates, compliance, and the full toolbox in one place. It hosts tools I built to cover gaps I kept running into: a multi-linter that runs zlint, pkilint, and x509lint in a single shot; a CPS-to-BR coverage checker; a universal artifact parser that handles anything from a certificate to a timestamp token; and a live ACME endpoint demo. Next to those, there is a curated directory of the best open-source testing tools the community produces — ASN.1 decoders, TLS analysers, digital signature validators, CT log search, and more. One place, everything PKI.</p>
+
+          <p class="about-lead-label" style="margin-top:1.6rem">Who built it</p>
+          <p>I work in PKI and Trust Services. Day-to-day: certificate profile engineering, CA system design, CPS/CP authoring, compliance against the CA/Browser Forum Baseline Requirements, audit support. These tools started as internal utilities for problems I kept running into. I open-sourced them because the gap between what the BRs require and what most teams have available to check against it is real — and not worth solving from scratch every time.</p>
+
           <div class="about-links">
             <a href="https://github.com/belghouth" class="pill-link" target="_blank" rel="noopener">GitHub</a>
             <a href="https://www.linkedin.com/in/belghouth/" class="pill-link" target="_blank" rel="noopener">LinkedIn</a>
             <a href="mailto:me@thameur.org" class="pill-link">Email</a>
           </div>
 
-          <!-- LinkedIn profile card -->
           <a href="https://www.linkedin.com/in/belghouth/" class="li-card" target="_blank" rel="noopener" aria-label="LinkedIn profile">
             <div class="li-card-logo">
               <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
