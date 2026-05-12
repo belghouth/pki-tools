@@ -24,8 +24,8 @@ class TsrModule extends ArtifactModule {
             if (preg_match('/TSA:\s*(.+)/i',          $shell, $m)) $data['tsa']            = trim($m[1]);
             if (preg_match('/Policy OID:\s*(.+)/i',   $shell, $m)) $data['policy']         = trim($m[1]);
             if (preg_match('/Hash Algorithm:\s*(.+)/i',$shell,$m)) $data['hash_algorithm'] = trim($m[1]);
-            if (preg_match('/Serial number:\s*(.+)/i, $shell, $m)) $data['serial']         = trim($m[1]);
-            if (preg_match('/Ordering:\s*(.+)/i,      $shell, $m)) $data['ordering']       = trim($m[1]);
+            if (preg_match('/Serial number:\s*(.+)/i', $shell, $m)) $data['serial']         = trim($m[1]);
+            if (preg_match('/Ordering:\s*(.+)/i',      $shell, $m)) $data['ordering']       = trim($m[1]);
             // Message imprint is on the line after "Message data:"
             if (preg_match('/Message data:\s*\n\s*0000\s*-\s*(.+)/i', $shell, $m)) {
                 $data['message_imprint'] = trim($m[1]);
