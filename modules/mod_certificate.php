@@ -27,16 +27,11 @@ class CertificateModule extends ArtifactModule {
         $d    = openssl_x509_parse($cert, false);
         $exts = $d['extensions'] ?? [];
 
-        // Precertificate detection: match exact OID or any OpenSSL-assigned short name
-        $is_precert = false;
-        foreach (array_keys($exts) as $k) {
-            if ($k === self::POISON_OID
-                || stripos($k, 'poison')   !== false
-                || stripos($k, 'precert')  !== false) {
-                $is_precert = true;
-                break;
-            }
-        }
+        // Precertificate detection: RFC 6962 §3.1 poison OID or its OpenSSL short name.
+        // Do NOT match 'precert' as a substring — ct_precert_scts (OID .2.4.2) is the
+        // embedded SCT list present in every CT-compliant leaf cert, not the poison.
+        $is_precert = isset($exts[self::POISON_OID])
+            || (bool) preg_grep('/\bpoison\b/i', array_keys($exts));
 
         $bc  = strtolower($exts['basicConstraints'] ?? '');
         $sub = $d['subject'] ?? [];
