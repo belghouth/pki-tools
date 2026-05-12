@@ -455,7 +455,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
   <section class="hero">
     <div class="hero-inner">
       <img src="/img/meerkat_240.png" alt="Meerkat" class="hero-meerkat">
-      <p class="hero-eyebrow">Hello, I'm</p>
       <h1 class="hero-name">Thameur Belghith</h1>
       <p class="hero-role">PKI &amp; Trust Services Engineer</p>
       <p class="hero-tagline">Building open tools for WebPKI compliance, certificate management, and CA audit support.</p>
@@ -469,7 +468,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
   <!-- ── About ──────────────────────────────────────────────────────────────── -->
   <section class="section" id="about">
     <div class="container">
-      <p class="section-eyebrow">Background</p>
       <h2 class="section-heading">About Me</h2>
       <div class="about-grid">
         <div class="about-body">
@@ -584,7 +582,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
   <!-- ── Contact ────────────────────────────────────────────────────────────── -->
   <section class="section" id="contact">
     <div class="container--sm" style="text-align:center;">
-      <p class="section-eyebrow">Say Hello</p>
       <h2 class="section-heading">Get in Touch</h2>
       <p class="section-sub">Questions about the tools, PKI consulting, or just want to connect.</p>
 
@@ -594,8 +591,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       </a>
 
       <p class="contact-note">
-        <span class="coming-soon-badge">Contact form coming soon</span><br>
-        A contact form will be available once mail delivery is configured.
+        <span class="coming-soon-badge">Contact form coming soon</span>
       </p>
     </div>
   </section>
