@@ -439,7 +439,7 @@ if ($secondsRemaining !== null) {
     </header>
     -->	
    
-    <a href="/" style="position:fixed;top:14px;left:16px;z-index:100;font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:rgba(180,190,210,0.55);text-decoration:none;letter-spacing:0.06em;transition:color 140ms ease;" onmouseover="this.style.color='#00d4aa'" onmouseout="this.style.color='rgba(180,190,210,0.55)'">← thameur.org</a>
+    <?php $navLabel = 'ACME Automation Test Endpoint'; require __DIR__ . '/includes/site_nav.php'; ?>
 
     <header class="header">
        <div class="header-left">
@@ -700,5 +700,6 @@ if ($secondsRemaining !== null) {
     setInterval(updateClock, 1000);
 </script>
 
+<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
 </body>
 </html>

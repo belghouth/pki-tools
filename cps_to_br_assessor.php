@@ -944,11 +944,7 @@ $brSectionCount = count($cache['sections'] ?? []);
 </head>
 <body>
 
-<header class="site-header">
-  <a href="/" class="home-link" title="Home">&#8592;</a>
-  <div class="logo">CP/CPS &rarr; BR Assessor</div>
-  <div class="version">CAB Forum Baseline Requirements</div>
-</header>
+<?php $navLabel = 'CP/CPS → BR Assessor'; require __DIR__ . '/includes/site_nav.php'; ?>
 
 <main>
 
@@ -1105,5 +1101,6 @@ $brSectionCount = count($cache['sections'] ?? []);
 </footer>
 
 <script src="assets/js/cps_assessor.js"></script>
+<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
 </body>
 </html>

@@ -265,6 +265,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     }
     .pill-link:hover { border-color: var(--accent); color: var(--accent); }
 
+    /* LinkedIn card */
+    .li-card {
+      display: flex; align-items: center; gap: 0.9rem;
+      margin-top: 1.4rem; padding: 0.9rem 1.1rem;
+      background: rgba(10,102,194,0.07);
+      border: 1px solid rgba(10,102,194,0.3);
+      border-radius: var(--radius);
+      text-decoration: none;
+      transition: border-color var(--tr), background var(--tr);
+    }
+    .li-card:hover { border-color: rgba(10,102,194,0.7); background: rgba(10,102,194,0.12); }
+    .li-card-logo { color: #0a66c2; flex-shrink: 0; }
+    .li-card-body { flex: 1; min-width: 0; }
+    .li-card-name { font-size: 0.88rem; font-weight: 600; color: #fff; }
+    .li-card-title { font-size: 0.75rem; color: var(--muted); margin-top: 0.1rem; }
+    .li-card-cta { font-family: var(--mono); font-size: 0.72rem; color: #0a66c2; flex-shrink: 0; }
+
     .about-focus {
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -373,47 +390,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       margin-bottom: 0.5rem;
     }
 
-    /* ── Contact form ───────────────────────────────────────────────────────── */
-    .contact-form { display: flex; flex-direction: column; gap: 1rem; }
-
-    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-
-    .form-group { display: flex; flex-direction: column; gap: 0.35rem; }
-
-    .form-group label {
-      font-family: var(--mono);
-      font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase;
+    /* ── Contact (email card) ───────────────────────────────────────────────── */
+    .contact-email-card {
+      display: inline-flex; align-items: center; gap: 0.75rem;
+      margin: 0 auto 1.6rem;
+      padding: 1rem 2rem;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: var(--radius);
+      color: var(--accent); text-decoration: none;
+      font-size: 1.05rem;
+      transition: border-color var(--tr), background var(--tr);
+    }
+    .contact-email-card:hover { border-color: var(--accent); background: rgba(0,212,170,0.06); color: var(--accent); }
+    .contact-note { font-size: 0.82rem; color: var(--muted); margin-top: 0.5rem; line-height: 1.8; }
+    .coming-soon-badge {
+      display: inline-block;
+      font-family: var(--mono); font-size: 0.68rem;
+      letter-spacing: 0.08em; text-transform: uppercase;
+      padding: 0.2rem 0.65rem;
+      border-radius: 100px;
+      border: 1px solid var(--border2);
       color: var(--muted);
     }
-
-    .form-group input,
-    .form-group textarea {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      color: var(--text);
-      font-family: var(--sans);
-      font-size: 0.9rem;
-      padding: 0.65rem 0.85rem;
-      transition: border-color var(--tr);
-      width: 100%;
-    }
-    .form-group input:focus,
-    .form-group textarea:focus {
-      outline: none;
-      border-color: var(--accent);
-    }
-    .form-group input::placeholder,
-    .form-group textarea::placeholder { color: var(--border2); }
-    .form-group textarea { resize: vertical; min-height: 130px; }
-
-    #contact-status {
-      font-size: 0.85rem; padding: 0.7rem 1rem;
-      border-radius: var(--radius);
-      display: none;
-    }
-    #contact-status.ok  { background: rgba(0,212,170,0.1); border: 1px solid rgba(0,212,170,0.3); color: var(--accent); }
-    #contact-status.err { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.3); color: #f87171; }
 
     /* ── Footer ─────────────────────────────────────────────────────────────── */
     .site-footer {
@@ -448,16 +447,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
 </head>
 <body>
 
-<!-- ── Header ─────────────────────────────────────────────────────────────── -->
-<header class="site-header">
-  <span class="header-logo">thameur.org</span>
-  <img src="/img/meerkat_120.png" alt="Meerkat" class="header-meerkat">
-  <nav class="site-nav">
-    <a href="#about">About</a>
-    <a href="#tools">Tools</a>
-    <a href="#contact">Contact</a>
-  </nav>
-</header>
+<?php require __DIR__ . '/includes/site_nav.php'; ?>
 
 <main>
 
@@ -471,7 +461,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       <p class="hero-tagline">Building open tools for WebPKI compliance, certificate management, and CA audit support.</p>
       <div class="hero-actions">
         <a href="#tools" class="btn btn--primary">Explore Tools</a>
-        <a href="#contact" class="btn btn--outline">Get in Touch</a>
+        <a href="mailto:me@thameur.org" class="btn btn--outline">Get in Touch</a>
       </div>
     </div>
   </section>
@@ -488,8 +478,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
           <p>I'm also interested in automated certificate lifecycle management (ACME protocol), multi-perspective issuance corroboration, and making PKI tooling more accessible to practitioners who aren't full-time cryptographers.</p>
           <div class="about-links">
             <a href="https://github.com/belghouth" class="pill-link" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://www.linkedin.com/in/belghouth/" class="pill-link" target="_blank" rel="noopener">LinkedIn</a>
             <a href="mailto:me@thameur.org" class="pill-link">Email</a>
           </div>
+
+          <!-- LinkedIn profile card -->
+          <a href="https://www.linkedin.com/in/belghouth/" class="li-card" target="_blank" rel="noopener" aria-label="LinkedIn profile">
+            <div class="li-card-logo">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+            </div>
+            <div class="li-card-body">
+              <div class="li-card-name">Thameur Belghith</div>
+              <div class="li-card-title">PKI &amp; Trust Services Engineer</div>
+            </div>
+            <div class="li-card-cta">Connect ↗</div>
+          </a>
         </div>
         <div class="about-focus">
           <h3>Areas of Focus</h3>
@@ -580,35 +583,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
 
   <!-- ── Contact ────────────────────────────────────────────────────────────── -->
   <section class="section" id="contact">
-    <div class="container--sm">
+    <div class="container--sm" style="text-align:center;">
       <p class="section-eyebrow">Say Hello</p>
       <h2 class="section-heading">Get in Touch</h2>
-      <p class="section-sub">Questions about the tools, PKI consulting, or just want to connect — drop me a line.</p>
+      <p class="section-sub">Questions about the tools, PKI consulting, or just want to connect.</p>
 
-      <form class="contact-form" id="contact-form" novalidate>
-        <div class="form-row">
-          <div class="form-group">
-            <label for="cf-name">Name</label>
-            <input type="text" id="cf-name" name="name" placeholder="Your name" required>
-          </div>
-          <div class="form-group">
-            <label for="cf-email">Email</label>
-            <input type="email" id="cf-email" name="email" placeholder="you@example.com" required>
-          </div>
-        </div>
-        <div class="form-group">
-          <label for="cf-subject">Subject <span style="color:var(--border2)">(optional)</span></label>
-          <input type="text" id="cf-subject" name="subject" placeholder="What's this about?">
-        </div>
-        <div class="form-group">
-          <label for="cf-message">Message</label>
-          <textarea id="cf-message" name="message" placeholder="Your message…" required></textarea>
-        </div>
+      <a href="mailto:me@thameur.org" class="contact-email-card">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28"><path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+        <span>me@thameur.org</span>
+      </a>
 
-        <div id="contact-status" role="alert"></div>
-
-        <button type="submit" class="btn btn--primary" id="cf-submit">Send Message</button>
-      </form>
+      <p class="contact-note">
+        <span class="coming-soon-badge">Contact form coming soon</span><br>
+        A contact form will be available once mail delivery is configured.
+      </p>
     </div>
   </section>
 
@@ -619,67 +607,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
   <span class="site-footer-left">&copy; <?= date('Y') ?> Thameur Belghith</span>
   <div class="site-footer-links">
     <a href="https://github.com/belghouth" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://www.linkedin.com/in/belghouth/" target="_blank" rel="noopener">LinkedIn</a>
+    <a href="/privacy.php">Privacy Policy</a>
     <a href="mailto:me@thameur.org">me@thameur.org</a>
   </div>
 </footer>
 
-<script>
-(function () {
-  'use strict';
+<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
 
-  const form      = document.getElementById('contact-form');
-  const statusEl  = document.getElementById('contact-status');
-  const submitBtn = document.getElementById('cf-submit');
-
-  if (!form) return;
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Sending…';
-    statusEl.style.display = 'none';
-    statusEl.className = '';
-
-    const fd = new FormData(form);
-    fd.set('action', 'contact');
-
-    // Attach reCAPTCHA v3 token if available.
-    if (window.RECAPTCHA_SITE_KEY && window.grecaptcha) {
-      try {
-        const token = await new Promise((resolve, reject) => {
-          grecaptcha.ready(() => {
-            grecaptcha.execute(window.RECAPTCHA_SITE_KEY, { action: 'contact' })
-              .then(resolve).catch(reject);
-          });
-        });
-        fd.set('g_recaptcha_token', token);
-      } catch { /* server will handle missing token */ }
-    }
-
-    try {
-      const resp = await fetch(window.location.href, { method: 'POST', body: fd });
-      const data = await resp.json();
-
-      if (data.error) {
-        statusEl.textContent = data.error;
-        statusEl.className   = 'err';
-      } else {
-        statusEl.textContent = data.message || 'Message sent — thank you!';
-        statusEl.className   = 'ok';
-        form.reset();
-      }
-    } catch {
-      statusEl.textContent = 'Network error. Please email me directly at me@thameur.org';
-      statusEl.className   = 'err';
-    } finally {
-      statusEl.style.display = 'block';
-      submitBtn.disabled     = false;
-      submitBtn.textContent  = 'Send Message';
-    }
-  });
-})();
-</script>
 
 </body>
 </html>

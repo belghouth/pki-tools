@@ -1067,11 +1067,7 @@ if ($fetched_domain === '') {
 </head>
 <body>
 
-<header class="site-header">
-  <a href="/" class="home-link" title="Home">&#8592;</a>
-  <div class="logo">PKI Linters</div>
-  <div class="version">WebPKI / CAB Forum / RFC 5280</div>
-</header>
+<?php $navLabel = 'Certificate Linters'; require __DIR__ . '/includes/site_nav.php'; ?>
 
 <main>
 
@@ -1318,6 +1314,7 @@ if ($parse_pem !== '' && parse_pem($parse_pem) !== null):
 ]) ?>
 <?php endif; ?>
 
+<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
 </body>
 </html>
 
