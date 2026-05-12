@@ -185,7 +185,25 @@ if ($secondsRemaining !== null) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ACME Automation Test Endpoint</title>
+    <?php
+    require_once __DIR__ . '/includes/seo.php';
+    seo_head([
+      'title'       => 'ACME Automation Endpoint — RFC 8555 Live Demo | thameur.org',
+      'description' => 'Live reference implementation of an automated certificate renewal endpoint as required by the Chrome Root Program and validated by Mozilla. Demonstrates RFC 8555 ACME renewal verification in a production environment.',
+      'url'         => 'https://thameur.org/acme-endpoint.php',
+      'jsonld'      => json_encode([
+        '@context'            => 'https://schema.org',
+        '@type'               => 'WebApplication',
+        'name'                => 'ACME Automation Endpoint Demo',
+        'url'                 => 'https://thameur.org/acme-endpoint.php',
+        'description'         => 'Live reference implementation of an automated certificate renewal endpoint demonstrating RFC 8555 ACME renewal verification.',
+        'applicationCategory' => 'SecurityApplication',
+        'operatingSystem'     => 'Any',
+        'isAccessibleForFree' => true,
+        'author'              => ['@id' => 'https://thameur.org/#person', 'name' => 'Thameur Belghith'],
+      ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+    ]);
+    ?>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
     <style>

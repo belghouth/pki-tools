@@ -19,8 +19,14 @@ if (file_exists($cacheFile)) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PKI News — thameur.org</title>
-  <meta name="description" content="Daily PKI news aggregated from mozilla.dev.security.policy, CA/Browser Forum, IETF LAMPS, Mozilla Security Blog, Let's Encrypt, and more.">
+  <?php
+  require_once __DIR__ . '/includes/seo.php';
+  seo_head([
+    'title'       => 'PKI News — Daily WebPKI & CA/Browser Forum Updates | thameur.org',
+    'description' => "Daily PKI news aggregated from mozilla.dev.security.policy, CA/Browser Forum GitHub, IETF LAMPS WG, Mozilla Security Blog, Let's Encrypt, and more. Refreshed every 24 hours.",
+    'url'         => 'https://thameur.org/feed.php',
+  ]);
+  ?>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">

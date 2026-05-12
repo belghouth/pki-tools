@@ -5,8 +5,14 @@ $navLabel = 'PKI References';
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PKI References — thameur.org</title>
-  <meta name="description" content="Essential reference links for PKI practitioners: CA/Browser Forum, root programs, audit standards, CCADB, Certificate Transparency, RFCs, and community resources.">
+  <?php
+  require_once __DIR__ . '/includes/seo.php';
+  seo_head([
+    'title'       => 'PKI References — Essential Links for CA/Browser Forum & WebPKI Practitioners | thameur.org',
+    'description' => 'Curated essential references for PKI practitioners: CABF Baseline Requirements, Apple & Chrome & Mozilla root programs, ETSI & WebTrust audit standards, CCADB, CT logs, key RFCs, and community resources.',
+    'url'         => 'https://thameur.org/references.php',
+  ]);
+  ?>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">

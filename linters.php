@@ -453,7 +453,25 @@ if ($fetched_domain === '') {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PKI Linters</title>
+<?php
+require_once __DIR__ . '/includes/seo.php';
+seo_head([
+  'title'       => 'Certificate Linters — zlint, pkilint & x509lint Online | thameur.org',
+  'description' => 'Run any X.509 certificate through zlint, pkilint, and x509lint simultaneously. Flags CA/Browser Forum Baseline Requirement violations and RFC 5280 issues with direct requirement references.',
+  'url'         => 'https://thameur.org/linters.php',
+  'jsonld'      => json_encode([
+    '@context'            => 'https://schema.org',
+    '@type'               => 'WebApplication',
+    'name'                => 'PKI Certificate Linters',
+    'url'                 => 'https://thameur.org/linters.php',
+    'description'         => 'Run any X.509 certificate through zlint, pkilint, and x509lint simultaneously.',
+    'applicationCategory' => 'SecurityApplication',
+    'operatingSystem'     => 'Any',
+    'isAccessibleForFree' => true,
+    'author'              => ['@id' => 'https://thameur.org/#person', 'name' => 'Thameur Belghith'],
+  ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+]);
+?>
 <?php if (recaptcha_configured()): ?>
 <?= recaptcha_head() ?>
 <?php endif; ?>

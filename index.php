@@ -56,8 +56,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Thameur Belghith — PKI &amp; Trust Services Engineer</title>
-  <meta name="description" content="PKI and Trust Services Engineer building open tools for WebPKI compliance, certificate linting, and CA audit support.">
+  <?php
+  require_once __DIR__ . '/includes/seo.php';
+  seo_head([
+    'title'       => 'Thameur Belghith — PKI & Trust Services Engineer',
+    'description' => 'Free browser-based PKI tools for WebPKI compliance, certificate linting, CPS analysis, and CA audit support. Built by Thameur Belghith, PKI & Trust Services Engineer.',
+    'url'         => 'https://thameur.org/',
+    'jsonld'      => json_encode([
+      '@context' => 'https://schema.org',
+      '@graph'   => [
+        [
+          '@type'    => 'Person',
+          '@id'      => 'https://thameur.org/#person',
+          'name'     => 'Thameur Belghith',
+          'jobTitle' => 'PKI & Trust Services Engineer',
+          'url'      => 'https://thameur.org/',
+          'email'    => 'mailto:me@thameur.org',
+          'sameAs'   => [
+            'https://github.com/belghouth',
+            'https://www.linkedin.com/in/belghouth/',
+          ],
+        ],
+        [
+          '@type'       => 'WebSite',
+          '@id'         => 'https://thameur.org/#website',
+          'url'         => 'https://thameur.org/',
+          'name'        => 'thameur.org',
+          'description' => 'Free PKI tools and resources for WebPKI practitioners and CA auditors.',
+          'author'      => ['@id' => 'https://thameur.org/#person'],
+        ],
+      ],
+    ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+  ]);
+  ?>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">

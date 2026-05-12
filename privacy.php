@@ -5,8 +5,15 @@ $navLabel = 'Privacy Policy';
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Privacy Policy — thameur.org</title>
-  <meta name="description" content="Privacy policy for thameur.org — how we use cookies, advertising, and your data.">
+  <?php
+  require_once __DIR__ . '/includes/seo.php';
+  seo_head([
+    'title'       => 'Privacy Policy — thameur.org',
+    'description' => 'Privacy policy for thameur.org — how we handle cookies, Google AdSense advertising, and your data.',
+    'url'         => 'https://thameur.org/privacy.php',
+    'robots'      => 'noindex, follow',
+  ]);
+  ?>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">

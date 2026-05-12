@@ -358,7 +358,25 @@ $brSectionCount = count($cache['sections'] ?? []);
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CP/CPS to BR Assessor</title>
+<?php
+require_once __DIR__ . '/includes/seo.php';
+seo_head([
+  'title'       => 'CPS-to-BR Assessor — CA/Browser Forum Compliance Checker | thameur.org',
+  'description' => 'Automated section-by-section coverage analysis of your CPS or CP document against the CA/Browser Forum Baseline Requirements. Free tool for CAs, auditors, and PKI practitioners.',
+  'url'         => 'https://thameur.org/cps_to_br_assessor.php',
+  'jsonld'      => json_encode([
+    '@context'            => 'https://schema.org',
+    '@type'               => 'WebApplication',
+    'name'                => 'CPS-to-BR Assessor',
+    'url'                 => 'https://thameur.org/cps_to_br_assessor.php',
+    'description'         => 'Automated coverage analysis of CPS/CP documents against the CA/Browser Forum Baseline Requirements.',
+    'applicationCategory' => 'SecurityApplication',
+    'operatingSystem'     => 'Any',
+    'isAccessibleForFree' => true,
+    'author'              => ['@id' => 'https://thameur.org/#person', 'name' => 'Thameur Belghith'],
+  ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+]);
+?>
 <?php if (recaptcha_configured()): ?>
 <?= recaptcha_head() ?>
 <script>window.RECAPTCHA_SITE_KEY = <?= json_encode(RECAPTCHA_SITE_KEY) ?>;</script>

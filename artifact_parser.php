@@ -111,8 +111,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Meerkat Artifact Parser — thameur.org</title>
-  <meta name="description" content="Universal PKI artifact identifier and parser. Recognises X.509 certificates, CSRs, CRLs, public keys, CMS/PKCS#7, OCSP responses, and RFC 3161 timestamp tokens.">
+  <?php
+  require_once __DIR__ . '/includes/seo.php';
+  seo_head([
+    'title'       => 'Meerkat Artifact Parser — Universal PKI Artifact Identifier | thameur.org',
+    'description' => 'Identify and parse any PKI artifact instantly: X.509 certificates, CSRs, CRLs, public keys, CMS/PKCS#7, OCSP responses, and RFC 3161 timestamp tokens. Supports PEM and DER. Private keys rejected server-side.',
+    'url'         => 'https://thameur.org/artifact_parser.php',
+    'jsonld'      => json_encode([
+      '@context'            => 'https://schema.org',
+      '@type'               => 'WebApplication',
+      'name'                => 'Meerkat Artifact Parser',
+      'url'                 => 'https://thameur.org/artifact_parser.php',
+      'description'         => 'Universal PKI artifact identifier and parser. Recognises X.509 certificates, CSRs, CRLs, public keys, CMS/PKCS#7, OCSP responses, and RFC 3161 timestamp tokens.',
+      'applicationCategory' => 'SecurityApplication',
+      'operatingSystem'     => 'Any',
+      'isAccessibleForFree' => true,
+      'author'              => ['@id' => 'https://thameur.org/#person', 'name' => 'Thameur Belghith'],
+    ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
+  ]);
+  ?>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">

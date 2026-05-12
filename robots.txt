@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+# Disallow server-side includes and back-end helpers
+Disallow: /includes/
+Disallow: /cron/
+Disallow: /modules/
+
+Sitemap: https://thameur.org/sitemap.xml
