@@ -77,6 +77,7 @@ $_navLabel = $navLabel ?? '';
   <div class="snav-links">
     <a href="/#about">About</a>
     <a href="/#tools">Tools</a>
+    <a href="/feed.php">News</a>
     <a href="/references.php">References</a>
     <a href="mailto:me@thameur.org">Contact</a>
   </div>

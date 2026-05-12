@@ -2,3 +2,4 @@
 debug_*.php
 .well-known/
 includes/br_cache.json
+includes/feed_cache.json

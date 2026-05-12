@@ -604,6 +604,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
   <div class="site-footer-links">
     <a href="https://github.com/belghouth" target="_blank" rel="noopener">GitHub</a>
     <a href="https://www.linkedin.com/in/belghouth/" target="_blank" rel="noopener">LinkedIn</a>
+    <a href="/feed.php">PKI News</a>
     <a href="/references.php">PKI References</a>
     <a href="/privacy.php">Privacy Policy</a>
     <a href="mailto:me@thameur.org">me@thameur.org</a>
