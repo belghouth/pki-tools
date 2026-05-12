@@ -123,7 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; font-size: 15px; }
+    html { scroll-behavior: smooth; font-size: 15px; overflow-x: hidden; }
 
     body {
       background: var(--bg);
@@ -132,6 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       font-weight: 300;
       line-height: 1.7;
       min-height: 100vh;
+      overflow-x: hidden;
     }
 
     a { color: var(--accent); text-decoration: none; transition: color var(--tr); }
@@ -296,8 +297,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     /* ── About ──────────────────────────────────────────────────────────────── */
     .about-grid {
       display: grid;
-      grid-template-columns: 1fr 320px;
+      grid-template-columns: 1fr minmax(0, 320px);
       gap: 4rem; align-items: start;
+      width: 100%;
     }
 
     .about-body p { color: var(--muted); margin-bottom: 1rem; font-size: 0.95rem; }
