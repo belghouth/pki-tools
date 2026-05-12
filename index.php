@@ -304,7 +304,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     .about-body p:last-of-type { margin-bottom: 0; }
     .about-lead-label {
       font-family: var(--mono);
-      font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase;
+      font-size: 0.68rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
       color: var(--accent); margin-bottom: 0.5rem !important;
     }
 
