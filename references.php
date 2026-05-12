@@ -245,8 +245,8 @@ $navLabel = 'PKI References';
       <div class="ref-card">
         <span class="ref-tag tag-policy">Microsoft</span>
         <p class="ref-card-name">Microsoft Trusted Root Program</p>
-        <p class="ref-card-desc">Requirements and technical constraints for inclusion in the Microsoft Root Certificate Program used by Windows and Edge.</p>
-        <a class="ref-card-link" href="https://learn.microsoft.com/en-us/security/trusted-root/program-requirements" target="_blank" rel="noopener">Requirements</a>
+        <p class="ref-card-desc">Requirements and technical constraints for inclusion in the Microsoft Root Certificate Program used by Windows and Edge. The former Learn page has been superseded — canonical requirements are now on GitHub.</p>
+        <a class="ref-card-link" href="https://github.com/TrustedRootProgram/Program-Requirements" target="_blank" rel="noopener">Requirements (GitHub)</a>
       </div>
 
       <div class="ref-card">
