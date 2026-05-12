@@ -1064,6 +1064,7 @@ if ($fetched_domain === '') {
     to   { opacity: 1; transform: translateY(0); }
   }
 </style>
+  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
 </head>
 <body>
 
@@ -1297,6 +1298,8 @@ if ($parse_pem !== '' && parse_pem($parse_pem) !== null):
 <?php endif; ?>
 
 </main>
+
+<?php require __DIR__ . '/includes/adsense_unit.php'; ?>
 
 <footer>
   <p>PKI Certificate Linting Portal</p>

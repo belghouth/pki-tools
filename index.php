@@ -65,8 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,600;1,300&display=swap" rel="stylesheet">
 
-  <!-- Google AdSense -->
-  <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7400730223763810" crossorigin="anonymous"></script>
+  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
 
   <?php if (recaptcha_configured()): ?>
   <?= recaptcha_head() ?>
@@ -566,18 +565,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     </div>
   </section>
 
-  <!-- ── AdSense ────────────────────────────────────────────────────────────── -->
-  <div class="ad-strip">
-    <p class="ad-label">Sponsored</p>
-    <!-- Replace data-ad-slot value with your actual AdSense slot ID -->
-    <ins class="adsbygoogle"
-         style="display:block"
-         data-ad-client="ca-pub-7400730223763810"
-         data-ad-slot="0000000000"
-         data-ad-format="auto"
-         data-full-width-responsive="true"></ins>
-    <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
-  </div>
+  <?php require __DIR__ . '/includes/adsense_unit.php'; ?>
 
   <!-- ── Contact ────────────────────────────────────────────────────────────── -->
   <section class="section" id="contact">

@@ -115,6 +115,7 @@ $navLabel = 'PKI References';
       .toc { width: 100%; }
     }
   </style>
+  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
 </head>
 <body>
 
@@ -136,6 +137,8 @@ $navLabel = 'PKI References';
       <li><a href="#community">Community &amp; Mailing Lists</a></li>
     </ol>
   </nav>
+
+  <?php require __DIR__ . '/includes/adsense_unit.php'; ?>
 
   <!-- ── 1. CA/Browser Forum ── -->
   <section class="ref-section" id="cabf">

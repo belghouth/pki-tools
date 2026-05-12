@@ -45,6 +45,7 @@ $navLabel = 'Privacy Policy';
     .site-footer a:hover { color: var(--accent); }
     .site-footer-links { display: flex; gap: 1.5rem; }
   </style>
+  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
 </head>
 <body>
 

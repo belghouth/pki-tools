@@ -133,6 +133,7 @@ if (file_exists($cacheFile)) {
       .feed-card { padding: 1rem; }
     }
   </style>
+  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
 </head>
 <body>
 
@@ -177,6 +178,8 @@ if (file_exists($cacheFile)) {
       </button>
       <?php endforeach; ?>
     </div>
+
+    <?php require __DIR__ . '/includes/adsense_unit.php'; ?>
 
     <!-- Feed items -->
     <div class="feed-list" id="feedList">

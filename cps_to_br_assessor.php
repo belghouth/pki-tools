@@ -941,6 +941,7 @@ $brSectionCount = count($cache['sections'] ?? []);
   @keyframes fadein  { from { opacity: 0; transform: translateY(6px);  } to { opacity: 1; transform: translateY(0); } }
   @keyframes slidein { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 </style>
+  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
 </head>
 <body>
 
@@ -1094,6 +1095,8 @@ $brSectionCount = count($cache['sections'] ?? []);
   </div>
 
 </main>
+
+<?php require __DIR__ . '/includes/adsense_unit.php'; ?>
 
 <footer>
   <p>CP/CPS to BR Assessor &mdash; Coverage gap detection for auditors</p>

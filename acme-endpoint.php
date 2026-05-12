@@ -416,6 +416,7 @@ if ($secondsRemaining !== null) {
        <link rel="icon" type="image/x-icon" href="/favicon.ico">
        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
 </head>
 <body>
 
@@ -675,6 +676,8 @@ if ($secondsRemaining !== null) {
             <?php endif; ?>
         </div>
     </div>
+
+    <?php require __DIR__ . '/includes/adsense_unit.php'; ?>
 
     <footer class="footer">
         <span>
