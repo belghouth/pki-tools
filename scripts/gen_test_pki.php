@@ -390,6 +390,142 @@ if (is_executable($zlint)) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 10. Write index.html for pki.thameur.org
+// ─────────────────────────────────────────────────────────────────────────────
+
+step('Writing index.html');
+
+function cert_meta(string $openssl, string $cert): array
+{
+    $fp   = run([$openssl, 'x509', '-in', $cert, '-noout', '-fingerprint', '-sha256']);
+    $fp   = trim(str_replace('sha256 Fingerprint=', '', $fp['out']));
+    $dates = run([$openssl, 'x509', '-in', $cert, '-noout', '-dates']);
+    $not_before = $not_after = '';
+    foreach (explode("\n", $dates['out']) as $line) {
+        if (str_starts_with($line, 'notBefore=')) $not_before = trim(substr($line, 10));
+        if (str_starts_with($line, 'notAfter='))  $not_after  = trim(substr($line, 9));
+    }
+    return ['fp' => $fp, 'not_before' => $not_before, 'not_after' => $not_after];
+}
+
+$root_meta = cert_meta($openssl, $ROOT_CRT);
+$issu_meta = cert_meta($openssl, $ISSU_CRT);
+$generated = gmdate('j F Y \a\t H:i \U\T\C');
+
+$html = <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Meerkat Test PKI — pki.thameur.org</title>
+  <style>
+    :root {
+      --bg: #0e1014; --surface: #13171e; --border: #2a3040;
+      --accent: #00d4aa; --text: #d4dae6; --muted: #6b7a90;
+      --mono: 'IBM Plex Mono', 'Fira Mono', monospace;
+      --sans: 'IBM Plex Sans', system-ui, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 15px; }
+    body { background: var(--bg); color: var(--text); font-family: var(--sans);
+           font-weight: 300; line-height: 1.75; padding: 3rem 1.5rem 5rem; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: #fff; }
+    .wrap { max-width: 760px; margin: 0 auto; }
+
+    h1 { font-size: 1.6rem; font-weight: 600; color: #fff; margin-bottom: 0.25rem; }
+    .sub { font-family: var(--mono); font-size: 0.72rem; color: var(--muted);
+           letter-spacing: 0.05em; margin-bottom: 2.5rem; }
+
+    .warning {
+      border: 1px solid #7c2d12; background: rgba(124,45,18,0.12);
+      border-radius: 6px; padding: 0.9rem 1.1rem; margin-bottom: 2.5rem;
+      font-size: 0.83rem; color: #fca5a5;
+    }
+    .warning strong { color: #f87171; }
+
+    h2 { font-size: 0.72rem; font-family: var(--mono); text-transform: uppercase;
+         letter-spacing: 0.1em; color: var(--muted); margin-bottom: 1rem; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 1.2rem 1.4rem; margin-bottom: 1rem;
+    }
+    .card-title { font-weight: 600; color: #fff; margin-bottom: 0.6rem; }
+    .card-meta { font-family: var(--mono); font-size: 0.7rem; color: var(--muted);
+                 line-height: 1.9; word-break: break-all; }
+    .card-meta span { color: var(--text); }
+    .dl-btn {
+      display: inline-block; margin-top: 0.9rem;
+      font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.06em;
+      text-transform: uppercase; border: 1px solid var(--accent);
+      color: var(--accent); border-radius: 4px; padding: 0.3em 0.85em;
+      transition: background 0.15s;
+    }
+    .dl-btn:hover { background: rgba(0,212,170,0.1); color: #fff; border-color: #fff; }
+
+    .footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border);
+              font-family: var(--mono); font-size: 0.68rem; color: var(--muted); }
+    .footer a { color: var(--muted); }
+    .footer a:hover { color: var(--accent); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Meerkat Test PKI</h1>
+  <p class="sub">pki.thameur.org &nbsp;·&nbsp; Generated {$generated}</p>
+
+  <div class="warning">
+    <strong>Test use only.</strong> These certificates are not trusted by any
+    browser or operating system and must never be used to secure real services.
+    They exist solely to validate linter behaviour on <a href="https://thameur.org">thameur.org</a>.
+  </div>
+
+  <h2>Certificates &amp; CRL</h2>
+
+  <div class="card">
+    <div class="card-title">Meerkat Root CA</div>
+    <div class="card-meta">
+      RSA 4096 &nbsp;·&nbsp; SHA-256 &nbsp;·&nbsp; Self-signed<br>
+      Not before &nbsp;<span>{$root_meta['not_before']}</span><br>
+      Not after &nbsp;&nbsp;<span>{$root_meta['not_after']}</span><br>
+      SHA-256 &nbsp;&nbsp;&nbsp;&nbsp;<span>{$root_meta['fp']}</span>
+    </div>
+    <a class="dl-btn" href="/meerkat-root.crt">Download .crt</a>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Meerkat Test Issuing CA 1</div>
+    <div class="card-meta">
+      RSA 2048 &nbsp;·&nbsp; SHA-256 &nbsp;·&nbsp; Signed by Root CA<br>
+      Not before &nbsp;<span>{$issu_meta['not_before']}</span><br>
+      Not after &nbsp;&nbsp;<span>{$issu_meta['not_after']}</span><br>
+      SHA-256 &nbsp;&nbsp;&nbsp;&nbsp;<span>{$issu_meta['fp']}</span><br>
+      AIA &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>http://pki.thameur.org/meerkat-root.crt</span><br>
+      CDP &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>http://pki.thameur.org/meerkat-issuing.crl</span>
+    </div>
+    <a class="dl-btn" href="/meerkat-issuing.crt">Download .crt</a>
+    &nbsp;
+    <a class="dl-btn" href="/meerkat-issuing.crl">Download .crl</a>
+  </div>
+
+  <div class="footer">
+    <a href="https://thameur.org">thameur.org</a> &nbsp;·&nbsp;
+    <a href="https://thameur.org/linters.php">Linters</a> &nbsp;·&nbsp;
+    Rotated on demand — fingerprints above are always current
+  </div>
+
+</div>
+</body>
+</html>
+HTML;
+
+file_put_contents($PKI_WEB . '/index.html', $html);
+ok('index.html written');
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Done
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -398,6 +534,6 @@ ok('PKI rotation complete');
 info("Root CA  : $ROOT_CRT");
 info("Issuing  : $ISSU_CRT");
 info("CRL      : $ISSU_CRL");
-info("Deploy pki/ to https://pki.thameur.org/ for AIA + CRL to resolve.");
+info("Index    : {$PKI_WEB}/index.html");
 echo "\n";
 exit(0);
