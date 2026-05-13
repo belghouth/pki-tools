@@ -391,6 +391,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     .tool-card-bar--blue    { background: var(--accent2); }
     .tool-card-bar--purple  { background: #a78bfa; }
     .tool-card-bar--amber   { background: #f59e0b; }
+    .tool-card-bar--orange  { background: #f97316; }
 
     .tool-card-body { padding: 1.4rem; flex: 1; display: flex; flex-direction: column; }
 
@@ -685,6 +686,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
               <span class="tag">RFC 3161</span>
             </div>
             <a href="/artifact_parser.php" class="tool-card-link">Open Tool →</a>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-bar tool-card-bar--orange"></div>
+          <div class="tool-card-body">
+            <div class="tool-card-icon">🏭</div>
+            <div class="tool-card-name">Test Certificate Factory</div>
+            <div class="tool-card-desc">Submit a CSR and receive a BR-compliant DV TLS certificate signed by the Meerkat Test Issuing CA. Subject is rebuilt from the first SAN — all other fields stripped. RSA ≥ 2048 only. Useful for validating linter behaviour against a known-good chain.</div>
+            <div class="tool-card-tags">
+              <span class="tool-tag">Test CA</span>
+              <span class="tool-tag">BR Compliance</span>
+              <span class="tool-tag">DV</span>
+              <span class="tool-tag">RSA</span>
+            </div>
+            <a href="/cert_factory.php" class="tool-card-link">Open Tool →</a>
           </div>
         </div>
 
