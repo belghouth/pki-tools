@@ -9,8 +9,8 @@
  *   php scripts/gen_test_pki.php
  *
  * Output:
- *   /var/www/thameur.org/pki-tools/pki-ca/private/root.key    — Root CA key (mode 600)
- *   /var/www/thameur.org/pki-tools/pki-ca/private/issuing.key — Issuing CA key (mode 600)
+ *   /var/www/thameur.org/pki-ca/private/root.key    — Root CA key (mode 600)
+ *   /var/www/thameur.org/pki-ca/private/issuing.key — Issuing CA key (mode 600)
  *   /var/www/pki.thameur.org/meerkat-root.crt
  *   /var/www/pki.thameur.org/meerkat-issuing.crt
  *   /var/www/pki.thameur.org/meerkat-issuing.crl
