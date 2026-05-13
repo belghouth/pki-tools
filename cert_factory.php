@@ -5,6 +5,7 @@ const ISSUING_CRT    = '/var/www/pki.thameur.org/meerkat-issuing.crt';
 const ISSUING_KEY    = '/var/www/thameur.org/pki-ca/private/issuing.key';
 const ISSUING_DB_CNF = '/var/www/thameur.org/pki-ca/issuing-db/openssl.cnf';
 const ISSUING_LOCK   = '/var/www/thameur.org/pki-ca/issuing-db/factory.lock';
+const ISSUING_DB_SRL = '/var/www/thameur.org/pki-ca/issuing-db/cert.srl';
 const CERT_DAYS      = 90;
 const MAX_CSR_BYTES  = 65536;
 const MAX_SANS       = 100;
@@ -120,15 +121,21 @@ function process_csr(string $csrFile): array
     $certFile = sys_get_temp_dir() . '/cf_cert_' . bin2hex(random_bytes(8)) . '.pem';
 
     try {
+        // Random 128-bit serial — written before each signing so every cert
+        // gets fresh entropy (BR §7.1.2.4 requires ≥64 bits; 128 is standard)
+        file_put_contents(ISSUING_DB_SRL, strtoupper(bin2hex(random_bytes(16))) . "\n");
+
         $firstSan = $sans[0];
         $sanStr   = implode(', ', array_map(fn($s) => 'DNS:' . $s, $sans));
 
         file_put_contents($extFile, implode("\n", [
             '[ v3_ee ]',
-            'basicConstraints       = CA:FALSE',
-            'keyUsage               = critical, digitalSignature, keyEncipherment',
+            // critical — required by BR §7.1.2.7.6 and zlint e_sub_cert_basic_constraints_not_critical
+            'basicConstraints       = critical, CA:FALSE',
+            // keyEncipherment removed — discouraged per BR §7.1.2.7.11 for modern TLS
+            'keyUsage               = critical, digitalSignature',
             'extendedKeyUsage       = serverAuth, clientAuth',
-            'subjectKeyIdentifier   = hash',
+            // SKI omitted — discouraged in subscriber certs per BR §7.1.2.7
             'authorityKeyIdentifier = keyid:always',
             'certificatePolicies    = 2.23.140.1.2.1',
             'authorityInfoAccess    = caIssuers;URI:' . AIA_URL,
