@@ -331,19 +331,42 @@ crl_extensions   = crl_ext
 authorityKeyIdentifier = keyid:always
 CNF);
 
-// Write persistent openssl.cnf for Issuing CA (used by cron/refresh_issuing_crl.sh)
+// Write persistent openssl.cnf for Issuing CA
+// Used by: cron/refresh_issuing_crl.sh AND cert_factory.php (openssl ca signing)
+$ISSU_NEWCERTS = $ISSU_DB . '/newcerts';
+if (!is_dir($ISSU_NEWCERTS)) {
+    mkdir($ISSU_NEWCERTS, 0700, true);
+    info("created $ISSU_NEWCERTS");
+}
+// Reset cert serial on rotation (fresh CA)
+file_put_contents("$ISSU_DB/cert.srl", "01\n");
+
 writeCnf("$ISSU_DB/openssl.cnf", <<<CNF
 [ ca ]
 default_ca = CA_default
 
 [ CA_default ]
 database         = $ISSU_DB/index.txt
+serial           = $ISSU_DB/cert.srl
+new_certs_dir    = $ISSU_DB/newcerts
 crlnumber        = $ISSU_DB/crlnumber
 certificate      = $ISSU_CRT
 private_key      = $ISSU_KEY
 default_md       = sha256
+default_days     = 90
 default_crl_days = $CRL_DAYS
-crl_extensions   = crl_ext
+unique_subject   = no
+copy_extensions  = none
+policy           = policy_anything
+
+[ policy_anything ]
+countryName             = optional
+stateOrProvinceName     = optional
+localityName            = optional
+organizationName        = optional
+organizationalUnitName  = optional
+commonName              = optional
+emailAddress            = optional
 
 [ crl_ext ]
 authorityKeyIdentifier = keyid:always
