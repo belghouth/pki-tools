@@ -28,8 +28,8 @@ $FEEDS = [
         'id'    => 'mdsp',
         'label' => 'mozilla.dev.security.policy',
         'color' => '#e57c29',
-        // Google Groups Workspace feed deprecated; using public Discourse mirror
-        'url'   => 'https://groups.google.com/g/mozilla.dev.security.policy/rss/posts',
+        // Google Groups Workspace RSS is dead; mail-archive.com mirrors the list
+        'url'   => 'https://www.mail-archive.com/dev-security-policy@mozilla.org/maillist.xml',
         'limit' => 20,
     ],
     [
@@ -156,7 +156,11 @@ function parse_feed(string $raw, array $cfg): array
     $raw = ltrim($raw, "\xEF\xBB\xBF");
 
     libxml_use_internal_errors(true);
-    $flags = LIBXML_NOCDATA | LIBXML_NOERROR | LIBXML_NOWARNING | LIBXML_RECOVER;
+    // Use integer values directly — LIBXML_RECOVER may not be compiled in on all builds
+    $flags = (defined('LIBXML_RECOVER')   ? LIBXML_RECOVER   : 1)
+           | (defined('LIBXML_NOCDATA')   ? LIBXML_NOCDATA   : 16384)
+           | (defined('LIBXML_NOERROR')   ? LIBXML_NOERROR   : 32)
+           | (defined('LIBXML_NOWARNING') ? LIBXML_NOWARNING : 64);
     $xml   = simplexml_load_string($raw, 'SimpleXMLElement', $flags);
     libxml_clear_errors();
 
