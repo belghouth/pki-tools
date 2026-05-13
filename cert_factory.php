@@ -45,7 +45,7 @@ function handle_issue(): array
 
     // Check CA is initialised
     if (!file_exists(ISSUING_DB_CNF)) {
-        return ['error' => 'Issuing CA not initialised — run gen_test_pki.php on the server first'];
+        return ['error' => 'The issuing CA is not yet initialised — please check back shortly.'];
     }
 
     $tmpCsr = sys_get_temp_dir() . '/cf_csr_' . bin2hex(random_bytes(8)) . '.pem';
