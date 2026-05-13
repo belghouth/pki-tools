@@ -9,11 +9,14 @@
  *   php scripts/gen_test_pki.php
  *
  * Output:
- *   /var/www/thameur.org/pki-ca/private/root.key    — Root CA key (mode 600)
- *   /var/www/thameur.org/pki-ca/private/issuing.key — Issuing CA key (mode 600)
+ *   /var/www/thameur.org/pki-ca/private/root.key       — Root CA key (mode 600)
+ *   /var/www/thameur.org/pki-ca/private/issuing.key    — Issuing CA key (mode 600)
+ *   /var/www/thameur.org/pki-ca/root-db/openssl.cnf    — persistent Root CA config (for cron)
+ *   /var/www/thameur.org/pki-ca/issuing-db/openssl.cnf — persistent Issuing CA config (for cron)
  *   /var/www/pki.thameur.org/meerkat-root.crt
+ *   /var/www/pki.thameur.org/meerkat-root.crl          — Root ARL (lists revoked CAs, 365-day validity)
  *   /var/www/pki.thameur.org/meerkat-issuing.crt
- *   /var/www/pki.thameur.org/meerkat-issuing.crl
+ *   /var/www/pki.thameur.org/meerkat-issuing.crl       — Issuing CRL (lists revoked end-entities, 7-day validity)
  */
 
 if (php_sapi_name() !== 'cli') {
@@ -39,8 +42,13 @@ $PKI_WEB = '/var/www/pki.thameur.org';
 $ROOT_KEY  = $PRIV    . '/root.key';
 $ISSU_KEY  = $PRIV    . '/issuing.key';
 $ROOT_CRT  = $PKI_WEB . '/meerkat-root.crt';
+$ROOT_CRL  = $PKI_WEB . '/meerkat-root.crl';
 $ISSU_CRT  = $PKI_WEB . '/meerkat-issuing.crt';
 $ISSU_CRL  = $PKI_WEB . '/meerkat-issuing.crl';
+
+// Persistent CA databases (survive between CRL refreshes, used by cron scripts)
+$ROOT_DB   = $PKI_CA . '/root-db';
+$ISSU_DB   = $PKI_CA . '/issuing-db';
 
 // ── CA identity ───────────────────────────────────────────────────────────────
 
@@ -48,12 +56,14 @@ $ROOT_SUBJ  = '/C=TN/O=Thameur Belghith/CN=Meerkat Root CA';
 $ISSU_SUBJ  = '/C=TN/O=Thameur Belghith/CN=Meerkat Test Issuing CA 1';
 $ROOT_DAYS  = 3650;   // ~10 years
 $ISSU_DAYS  = 1825;   // ~5 years
-$CRL_DAYS   = 30;
+$ARL_DAYS   = 365;    // Root ARL — 1 year (revoked CAs change rarely)
+$CRL_DAYS   = 7;      // Issuing CRL — 7 days (CABF BR §4.9.7 max 10 days)
 
-// AIA / CDP served from pki.thameur.org
+// AIA / CDP URLs served from pki.thameur.org
 $ROOT_AIA_URL = 'http://pki.thameur.org/meerkat-root.crt';
-$ISSU_CRL_URL = 'http://pki.thameur.org/meerkat-issuing.crl';
+$ROOT_ARL_URL = 'http://pki.thameur.org/meerkat-root.crl';   // ARL signed by Root (CDP in Issuing CA cert)
 $ISSU_AIA_URL = 'http://pki.thameur.org/meerkat-issuing.crt';
+$ISSU_CRL_URL = 'http://pki.thameur.org/meerkat-issuing.crl'; // CRL signed by Issuing (CDP in end-entity certs)
 
 // ── Pre-flight ────────────────────────────────────────────────────────────────
 
@@ -74,7 +84,7 @@ ok('openssl found');
 
 step('Creating directories');
 
-foreach ([$PKI_CA, $PRIV, $PKI_WEB] as $dir) {
+foreach ([$PKI_CA, $PRIV, $PKI_WEB, $ROOT_DB, $ISSU_DB] as $dir) {
     if (!is_dir($dir)) {
         mkdir($dir, 0755, true);
         info("created $dir");
@@ -240,10 +250,11 @@ ok('Issuing CA CSR generated');
 //    Extensions per BR §7.1.2.2:
 //      basicConstraints critical CA:TRUE pathLen:0
 //      keyUsage critical keyCertSign cRLSign
+//      extendedKeyUsage serverAuth (required per cabf.serverauth.ca)
 //      SKI hash, AKI from Root SKI
 //      certificatePolicies 2.23.140.1.2.1 (DV)
 //      AIA (caIssuers) → Root CRT URL
-//      CDP → Issuing CRL URL
+//      CDP → Root ARL URL (ARL is issued by the CA that signed this cert — the Root)
 // ─────────────────────────────────────────────────────────────────────────────
 
 step('Signing Issuing CA certificate');
@@ -253,11 +264,12 @@ writeCnf($issuExtPath, <<<CNF
 [ v3_issuing_ca ]
 basicConstraints       = critical, CA:TRUE, pathlen:0
 keyUsage               = critical, keyCertSign, cRLSign
+extendedKeyUsage       = serverAuth
 subjectKeyIdentifier   = hash
 authorityKeyIdentifier = keyid:always
 certificatePolicies    = 2.23.140.1.2.1
 authorityInfoAccess    = caIssuers;URI:$ROOT_AIA_URL
-crlDistributionPoints  = URI:$ISSU_CRL_URL
+crlDistributionPoints  = URI:$ROOT_ARL_URL
 CNF);
 
 // Use a minimal serial database under tmp so openssl x509 does not need a full CA dir
@@ -281,47 +293,97 @@ if (!$r['ok']) {
 ok('Issuing CA cert: ' . $ISSU_CRT);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. Initial empty CRL from Issuing CA
+// 6. Persistent CA databases + Root ARL + Issuing CRL
+//
+//    Each CA needs its own openssl.cnf with an index.txt and crlnumber.
+//    These persist on disk so the cron refresh scripts can re-sign CRLs
+//    without re-running the full PKI rotation.
+//    On each rotation the databases are reset (fresh CA = no prior revocations).
 // ─────────────────────────────────────────────────────────────────────────────
 
-step('Generating initial (empty) CRL');
+step('Initialising persistent CA databases');
 
-// openssl ca needs a minimal directory structure
-$caDb    = "$tmp/ca_db";
-mkdir($caDb, 0700, true);
-file_put_contents("$caDb/index.txt", '');
-file_put_contents("$caDb/crlnumber", "01\n");
+// Reset both databases on rotation (new CA, fresh slate)
+foreach ([
+    $ROOT_DB => [$ROOT_CRT, $ROOT_KEY, $ARL_DAYS],
+    $ISSU_DB => [$ISSU_CRT, $ISSU_KEY, $CRL_DAYS],
+] as $db => [$cert, $key, $days]) {
+    file_put_contents("$db/index.txt",  '');
+    file_put_contents("$db/crlnumber",  "01\n");
+    chmod($db, 0700);
+}
 
-$crlCnfPath = "$tmp/ca.cnf";
-writeCnf($crlCnfPath, <<<CNF
+// Write persistent openssl.cnf for Root CA (used by cron/refresh_root_crl.sh)
+writeCnf("$ROOT_DB/openssl.cnf", <<<CNF
 [ ca ]
 default_ca = CA_default
 
 [ CA_default ]
-database        = $caDb/index.txt
-crlnumber       = $caDb/crlnumber
-certificate     = $ISSU_CRT
-private_key     = $ISSU_KEY
-default_md      = sha256
-default_crl_days = $CRL_DAYS
-crl_extensions  = crl_ext
+database         = $ROOT_DB/index.txt
+crlnumber        = $ROOT_DB/crlnumber
+certificate      = $ROOT_CRT
+private_key      = $ROOT_KEY
+default_md       = sha256
+default_crl_days = $ARL_DAYS
+crl_extensions   = crl_ext
 
 [ crl_ext ]
 authorityKeyIdentifier = keyid:always
 CNF);
 
+// Write persistent openssl.cnf for Issuing CA (used by cron/refresh_issuing_crl.sh)
+writeCnf("$ISSU_DB/openssl.cnf", <<<CNF
+[ ca ]
+default_ca = CA_default
+
+[ CA_default ]
+database         = $ISSU_DB/index.txt
+crlnumber        = $ISSU_DB/crlnumber
+certificate      = $ISSU_CRT
+private_key      = $ISSU_KEY
+default_md       = sha256
+default_crl_days = $CRL_DAYS
+crl_extensions   = crl_ext
+
+[ crl_ext ]
+authorityKeyIdentifier = keyid:always
+CNF);
+
+ok('CA databases initialised');
+
+// ── Root ARL (Authority Revocation List — lists revoked CA certs, 365-day validity)
+
+step('Generating Root CA ARL');
+
 $r = run([
     $openssl, 'ca',
     '-gencrl',
-    '-config', $crlCnfPath,
+    '-config', "$ROOT_DB/openssl.cnf",
+    '-out', $ROOT_CRL,
+    '-batch',
+]);
+if (!$r['ok']) {
+    fail("Root ARL generation: " . trim($r['err']));
+    exit(1);
+}
+ok('Root ARL: ' . $ROOT_CRL);
+
+// ── Issuing CRL (lists revoked end-entity certs, 7-day validity)
+
+step('Generating Issuing CA CRL');
+
+$r = run([
+    $openssl, 'ca',
+    '-gencrl',
+    '-config', "$ISSU_DB/openssl.cnf",
     '-out', $ISSU_CRL,
     '-batch',
 ]);
 if (!$r['ok']) {
-    fail("CRL generation: " . trim($r['err']));
+    fail("Issuing CRL generation: " . trim($r['err']));
     exit(1);
 }
-ok('Issuing CA CRL: ' . $ISSU_CRL);
+ok('Issuing CRL: ' . $ISSU_CRL);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 7. Chain verification
@@ -504,11 +566,22 @@ $html = <<<HTML
       Not after &nbsp;&nbsp;<span>{$issu_meta['not_after']}</span><br>
       SHA-256 &nbsp;&nbsp;&nbsp;&nbsp;<span>{$issu_meta['fp']}</span><br>
       AIA &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>http://pki.thameur.org/meerkat-root.crt</span><br>
-      CDP &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>http://pki.thameur.org/meerkat-issuing.crl</span>
+      CDP &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>http://pki.thameur.org/meerkat-root.crl</span>
     </div>
     <a class="dl-btn" href="/meerkat-issuing.crt">Download .crt</a>
     &nbsp;
-    <a class="dl-btn" href="/meerkat-issuing.crl">Download .crl</a>
+    <a class="dl-btn" href="/meerkat-issuing.crl">Download issuing CRL</a>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Root ARL &amp; Issuing CRL</div>
+    <div class="card-meta">
+      Root ARL &nbsp;&nbsp;&nbsp;<span>http://pki.thameur.org/meerkat-root.crl</span> &nbsp;·&nbsp; 365-day validity<br>
+      Issuing CRL &nbsp;<span>http://pki.thameur.org/meerkat-issuing.crl</span> &nbsp;·&nbsp; 7-day validity
+    </div>
+    <a class="dl-btn" href="/meerkat-root.crl">Download Root ARL</a>
+    &nbsp;
+    <a class="dl-btn" href="/meerkat-issuing.crl">Download Issuing CRL</a>
   </div>
 
   <div class="footer">
@@ -532,8 +605,9 @@ ok('index.html written');
 echo "\n";
 ok('PKI rotation complete');
 info("Root CA  : $ROOT_CRT");
+info("Root ARL : $ROOT_CRL  (365d — refresh monthly via cron/refresh_root_crl.sh)");
 info("Issuing  : $ISSU_CRT");
-info("CRL      : $ISSU_CRL");
+info("Issuing CRL: $ISSU_CRL  (7d — refresh every 6 days via cron/refresh_issuing_crl.sh)");
 info("Index    : {$PKI_WEB}/index.html");
 echo "\n";
 exit(0);
