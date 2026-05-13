@@ -28,57 +28,59 @@ $FEEDS = [
         'id'    => 'mdsp',
         'label' => 'mozilla.dev.security.policy',
         'color' => '#e57c29',
-        'url'   => 'https://groups.google.com/a/mozilla.org/g/dev-security-policy/feed/rss_v2_0.xml',
-        'limit' => 10,
+        // Google Groups Workspace feed deprecated; using public Discourse mirror
+        'url'   => 'https://groups.google.com/g/mozilla.dev.security.policy/rss/posts',
+        'limit' => 20,
     ],
     [
         'id'    => 'cabf-tls',
         'label' => 'CABF TLS BR',
         'color' => '#00d4aa',
         'url'   => 'https://github.com/cabforum/servercert/commits/main.atom',
-        'limit' => 6,
+        'limit' => 15,
     ],
     [
         'id'    => 'cabf-smime',
         'label' => 'CABF S/MIME BR',
         'color' => '#00b89c',
         'url'   => 'https://github.com/cabforum/smime/commits/main.atom',
-        'limit' => 5,
+        'limit' => 15,
     ],
     [
         'id'    => 'cabf-cs',
         'label' => 'CABF Code Signing',
         'color' => '#008f7a',
         'url'   => 'https://github.com/cabforum/code-signing/commits/main.atom',
-        'limit' => 4,
+        'limit' => 10,
     ],
     [
         'id'    => 'lamps',
         'label' => 'IETF LAMPS WG',
         'color' => '#3b82f6',
-        'url'   => 'https://datatracker.ietf.org/group/lamps/feed/atom/',
-        'limit' => 6,
+        // IETF datatracker dropped /feed/atom/; using IETF mail archive instead
+        'url'   => 'https://mailarchive.ietf.org/arch/list/lamps/feed.xml',
+        'limit' => 15,
     ],
     [
         'id'    => 'mozilla-blog',
         'label' => 'Mozilla Security Blog',
         'color' => '#e66000',
         'url'   => 'https://blog.mozilla.org/security/feed/',
-        'limit' => 5,
+        'limit' => 15,
     ],
     [
         'id'    => 'letsencrypt',
         'label' => "Let's Encrypt Blog",
         'color' => '#4b8aff',
         'url'   => 'https://letsencrypt.org/feed.xml',
-        'limit' => 5,
+        'limit' => 15,
     ],
     [
         'id'    => 'bugzilla-ca',
         'label' => 'Mozilla CA Incidents',
         'color' => '#dc2626',
         'url'   => 'https://bugzilla.mozilla.org/buglist.cgi?product=CA%20Program&order=changeddate%20desc&ctype=atom&title=CA+Program',
-        'limit' => 8,
+        'limit' => 20,
     ],
 ];
 
@@ -150,8 +152,12 @@ function build_item(array $cfg, string $title, string $url, int $ts, string $sum
 
 function parse_feed(string $raw, array $cfg): array
 {
+    // Strip UTF-8 BOM and leading whitespace that can break XML parsers
+    $raw = ltrim($raw, "\xEF\xBB\xBF");
+
     libxml_use_internal_errors(true);
-    $xml = simplexml_load_string($raw);
+    $flags = LIBXML_NOCDATA | LIBXML_NOERROR | LIBXML_NOWARNING | LIBXML_RECOVER;
+    $xml   = simplexml_load_string($raw, 'SimpleXMLElement', $flags);
     libxml_clear_errors();
 
     if (!$xml) {

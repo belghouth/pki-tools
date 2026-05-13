@@ -109,6 +109,25 @@ if (file_exists($cacheFile)) {
       display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
     }
 
+    /* ── Pagination ── */
+    .pagination {
+      display: flex; align-items: center; justify-content: center;
+      gap: 0.5rem; margin-top: 2rem; flex-wrap: wrap;
+    }
+    .page-btn {
+      font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.04em;
+      border: 1px solid var(--border); background: none; color: var(--muted);
+      border-radius: 4px; padding: 0.35em 0.75em; cursor: pointer; transition: all 0.15s;
+      min-width: 2.2rem; text-align: center;
+    }
+    .page-btn:hover:not(:disabled) { border-color: var(--muted); color: var(--text); }
+    .page-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(0,212,170,0.06); }
+    .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .page-info {
+      font-family: var(--mono); font-size: 0.68rem; color: var(--muted);
+      padding: 0 0.4rem;
+    }
+
     /* ── Empty / not-yet-fetched state ── */
     .feed-empty {
       background: var(--surface); border: 1px dashed var(--border);
@@ -213,6 +232,8 @@ if (file_exists($cacheFile)) {
       <?php endforeach; ?>
     </div>
 
+    <div class="pagination" id="pagination" hidden></div>
+
     <p id="noResults" hidden style="color:var(--muted);font-size:0.85rem;margin-top:2rem;">No items for this source.</p>
 
   <?php endif; ?>
@@ -238,26 +259,119 @@ if (file_exists($cacheFile)) {
 
 <script>
 (function () {
-  var btns    = document.querySelectorAll('.filter-btn');
-  var cards   = document.querySelectorAll('.feed-card');
-  var noRes   = document.getElementById('noResults');
+  var PAGE_SIZE   = 25;
+  var currentPage = 1;
+  var currentSrc  = 'all';
 
-  btns.forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var src = btn.dataset.src;
+  var filterBtns  = document.querySelectorAll('.filter-btn');
+  var allCards    = Array.from(document.querySelectorAll('.feed-card'));
+  var noRes       = document.getElementById('noResults');
+  var pagination  = document.getElementById('pagination');
 
-      btns.forEach(function (b) { b.classList.toggle('active', b === btn); });
+  function filteredCards() {
+    return currentSrc === 'all'
+      ? allCards
+      : allCards.filter(function (c) { return c.dataset.src === currentSrc; });
+  }
 
-      var visible = 0;
-      cards.forEach(function (card) {
-        var show = src === 'all' || card.dataset.src === src;
-        card.hidden = !show;
-        if (show) visible++;
+  function applyView() {
+    var visible = filteredCards();
+    var total   = visible.length;
+    var pages   = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+    if (currentPage > pages) currentPage = pages;
+
+    var start = (currentPage - 1) * PAGE_SIZE;
+    var end   = start + PAGE_SIZE;
+
+    // hide all, show the current page slice
+    allCards.forEach(function (c) { c.hidden = true; });
+    visible.slice(start, end).forEach(function (c) { c.hidden = false; });
+
+    if (noRes) noRes.hidden = total > 0;
+
+    renderPagination(currentPage, pages, total);
+  }
+
+  function renderPagination(page, pages, total) {
+    if (!pagination) return;
+
+    if (pages <= 1) {
+      pagination.hidden = true;
+      return;
+    }
+    pagination.hidden = false;
+
+    var html = '';
+
+    // Prev
+    html += '<button class="page-btn" id="pgPrev"' + (page <= 1 ? ' disabled' : '') + '>&#8592;</button>';
+
+    // Page numbers — show at most 7 slots with ellipsis
+    var nums = pageNumbers(page, pages);
+    nums.forEach(function (n) {
+      if (n === '…') {
+        html += '<span class="page-info">…</span>';
+      } else {
+        html += '<button class="page-btn' + (n === page ? ' active' : '') + '" data-pg="' + n + '">' + n + '</button>';
+      }
+    });
+
+    // Next
+    html += '<button class="page-btn" id="pgNext"' + (page >= pages ? ' disabled' : '') + '>&#8594;</button>';
+
+    // Summary
+    var s = (page - 1) * PAGE_SIZE + 1;
+    var e = Math.min(page * PAGE_SIZE, total);
+    html += '<span class="page-info">' + s + '–' + e + ' of ' + total + '</span>';
+
+    pagination.innerHTML = html;
+
+    var prev = document.getElementById('pgPrev');
+    var next = document.getElementById('pgNext');
+    if (prev) prev.addEventListener('click', function () { currentPage--; applyView(); scrollToList(); });
+    if (next) next.addEventListener('click', function () { currentPage++; applyView(); scrollToList(); });
+
+    pagination.querySelectorAll('[data-pg]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        currentPage = parseInt(btn.dataset.pg, 10);
+        applyView();
+        scrollToList();
       });
+    });
+  }
 
-      if (noRes) noRes.hidden = visible > 0;
+  function pageNumbers(current, total) {
+    if (total <= 7) {
+      var arr = [];
+      for (var i = 1; i <= total; i++) arr.push(i);
+      return arr;
+    }
+    var nums = [1];
+    if (current > 3)          nums.push('…');
+    for (var p = Math.max(2, current - 1); p <= Math.min(total - 1, current + 1); p++) nums.push(p);
+    if (current < total - 2)  nums.push('…');
+    nums.push(total);
+    return nums;
+  }
+
+  function scrollToList() {
+    var list = document.getElementById('feedList');
+    if (list) list.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // Filter buttons
+  filterBtns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      currentSrc  = btn.dataset.src;
+      currentPage = 1;
+      filterBtns.forEach(function (b) { b.classList.toggle('active', b === btn); });
+      applyView();
     });
   });
+
+  // Initial render
+  applyView();
 }());
 </script>
 </body>
