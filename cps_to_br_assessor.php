@@ -81,13 +81,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 exit;
             }
 
-            // Reject PDF URLs immediately (extension check)
-            $urlPath = strtolower($parsed['path'] ?? '');
-            if (str_ends_with($urlPath, '.pdf')) {
-                echo json_encode(['error' => 'PDF files are not supported. Please provide a Markdown, plain text, or HTML URL.']);
-                exit;
-            }
-
             // SSRF prevention — block private/loopback IP ranges
             $ips = @gethostbynamel($host);
             if ($ips === false) $ips = [$host];
@@ -109,12 +102,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 exit;
             }
 
-            // Reject PDFs detected by magic bytes even if extension looked fine
-            if (str_starts_with($body, '%PDF')) {
-                echo json_encode(['error' => 'PDF files are not supported. Please provide a Markdown, plain text, or HTML URL.']);
-                exit;
-            }
-
             // Parse Content-Type from response headers
             $contentType = '';
             foreach ($http_response_header ?? [] as $h) {
@@ -124,14 +111,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 }
             }
 
-            $allowedUrlTypes = ['text/plain', 'text/markdown', 'text/x-markdown', 'text/html'];
-            if ($contentType !== '' && !in_array($contentType, $allowedUrlTypes, true)) {
-                echo json_encode(['error' => 'Unsupported content type "' . htmlspecialchars($contentType) . '". Only Markdown, plain text, and HTML are accepted.']);
+            $isPdf = $contentType === 'application/pdf'
+                || str_ends_with(strtolower($parsed['path'] ?? ''), '.pdf')
+                || str_starts_with($body, '%PDF');
+
+            $allowedUrlTypes = ['text/plain', 'text/markdown', 'text/x-markdown', 'text/html', 'application/pdf'];
+            if ($contentType !== '' && !in_array($contentType, $allowedUrlTypes, true) && !$isPdf) {
+                echo json_encode(['error' => 'Unsupported content type "' . htmlspecialchars($contentType) . '". Accepted: Markdown, plain text, HTML, or PDF.']);
                 exit;
             }
 
-            // For HTML: strip tags and decode entities to get plain text
-            if ($contentType === 'text/html' || str_contains($body, '<html') || str_contains($body, '<!DOCTYPE')) {
+            if ($isPdf) {
+                $tmpPdf = sys_get_temp_dir() . DIRECTORY_SEPARATOR . bin2hex(random_bytes(8)) . '.pdf';
+                file_put_contents($tmpPdf, $body);
+                register_shutdown_function('unlink', $tmpPdf);
+                $cpsText = extractPdfText($tmpPdf);
+                if ($cpsText === null) {
+                    echo json_encode(['error' => 'PDF text extraction failed. Ensure pdftotext (poppler-utils) is installed on the server.']);
+                    exit;
+                }
+            } elseif ($contentType === 'text/html' || str_contains($body, '<html') || str_contains($body, '<!DOCTYPE')) {
                 $cpsText = html_entity_decode(strip_tags($body), ENT_QUOTES | ENT_HTML5, 'UTF-8');
             } else {
                 $cpsText = $body;
@@ -159,22 +158,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
 
             // Extension check
             $origExt = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-            if (!in_array($origExt, ['md', 'txt', 'markdown'], true)) {
-                echo json_encode(['error' => 'Only .md, .txt, and .markdown files are accepted.']);
+            if (!in_array($origExt, ['md', 'txt', 'markdown', 'pdf'], true)) {
+                echo json_encode(['error' => 'Only .md, .txt, .markdown, and .pdf files are accepted.']);
                 exit;
             }
 
             // MIME check — finfo on actual bytes
             $finfo    = new finfo(FILEINFO_MIME_TYPE);
             $mimeType = $finfo->file($file['tmp_name']);
-            $allowedMimes = ['text/plain', 'text/markdown', 'text/x-markdown', 'application/octet-stream'];
+            $allowedMimes = ['text/plain', 'text/markdown', 'text/x-markdown', 'application/octet-stream', 'application/pdf'];
             if (!in_array($mimeType, $allowedMimes, true)) {
-                echo json_encode(['error' => 'File content does not appear to be plain text or Markdown.']);
+                echo json_encode(['error' => 'File content does not appear to be plain text, Markdown, or PDF.']);
                 exit;
             }
 
             // Write to system temp dir (never under the web root)
-            $safeFilename = bin2hex(random_bytes(8)) . '.upload';
+            $safeFilename = bin2hex(random_bytes(8)) . ($origExt === 'pdf' ? '.pdf' : '.upload');
             $safePath     = sys_get_temp_dir() . DIRECTORY_SEPARATOR . $safeFilename;
 
             if (!move_uploaded_file($file['tmp_name'], $safePath)) {
@@ -183,7 +182,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
             }
             register_shutdown_function('unlink', $safePath);
 
-            $cpsText = (string) file_get_contents($safePath);
+            if ($origExt === 'pdf' || $mimeType === 'application/pdf') {
+                $cpsText = extractPdfText($safePath);
+                if ($cpsText === null) {
+                    echo json_encode(['error' => 'PDF text extraction failed. Ensure pdftotext (poppler-utils) is installed on the server.']);
+                    exit;
+                }
+            } else {
+                $cpsText = (string) file_get_contents($safePath);
+            }
             $cpsFile = $file['name'];
         }
 
@@ -226,6 +233,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function extractPdfText(string $pdfPath): ?string
+{
+    $cmd = ['pdftotext', '-layout', '-enc', 'UTF-8', $pdfPath, '-'];
+    $desc = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+    $proc = @proc_open($cmd, $desc, $pipes);
+    if ($proc === false) return null;
+    $text   = stream_get_contents($pipes[1]);
+    $stderr = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $code = proc_close($proc);
+    if ($code !== 0 || $text === false) return null;
+    return $text;
+}
 
 function isPrivateIp(string $ip): bool
 {
@@ -992,12 +1014,12 @@ seo_head([
           <button type="button" class="input-tab" data-tab="url">URL</button>
         </div>
 
-        <!-- Upload pane (MD / TXT only) -->
+        <!-- Upload pane -->
         <div class="input-pane" id="pane-file">
           <div class="field">
-            <label>Markdown or Plain Text File</label>
-            <input type="file" name="cps_file" accept=".md,.txt,.markdown" id="input-file">
-            <span class="field-hint">Accepted formats: .md, .txt, .markdown &mdash; Max 20&nbsp;MB. PDF is not supported.</span>
+            <label>CPS / CP Document</label>
+            <input type="file" name="cps_file" accept=".md,.txt,.markdown,.pdf" id="input-file">
+            <span class="field-hint">Accepted: .md, .txt, .markdown, .pdf &mdash; Max 20&nbsp;MB.</span>
           </div>
         </div>
 
@@ -1005,8 +1027,8 @@ seo_head([
         <div class="input-pane input-pane--hidden" id="pane-url">
           <div class="field">
             <label>Document URL</label>
-            <input type="url" name="cps_url" id="input-url" placeholder="https://ca.example.com/cps.md" autocomplete="off" spellcheck="false">
-            <span class="field-hint">Accepted: Markdown, plain text, or HTML. PDF URLs are not supported. Must be publicly reachable &mdash; private/loopback addresses are blocked.</span>
+            <input type="url" name="cps_url" id="input-url" placeholder="https://ca.example.com/cps.pdf" autocomplete="off" spellcheck="false">
+            <span class="field-hint">Accepted: Markdown, plain text, HTML, or PDF. Must be publicly reachable &mdash; private/loopback addresses are blocked.</span>
           </div>
         </div>
 

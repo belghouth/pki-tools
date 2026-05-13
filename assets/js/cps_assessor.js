@@ -66,7 +66,7 @@
     formData.set('input_method', method);
 
     // ── Client-side validation ─────────────────────────────────────────────
-    const allowedExts = ['md', 'txt', 'markdown'];
+    const allowedExts = ['md', 'txt', 'markdown', 'pdf'];
 
     if (method === 'file') {
       const fileInput = document.getElementById('input-file');
@@ -78,7 +78,7 @@
       }
       const ext = file.name.split('.').pop().toLowerCase();
       if (!allowedExts.includes(ext)) {
-        showError(errorBox, 'Only .md, .txt, and .markdown files are accepted. PDF is not supported.');
+        showError(errorBox, 'Only .md, .txt, .markdown, and .pdf files are accepted.');
         setLoading(btn, spinner, false);
         return;
       }
@@ -89,12 +89,6 @@
       const url = (urlInput ? urlInput.value : '').trim();
       if (!url) {
         showError(errorBox, 'Please enter a URL.');
-        setLoading(btn, spinner, false);
-        return;
-      }
-      const urlLower = url.toLowerCase().split('?')[0];
-      if (urlLower.endsWith('.pdf')) {
-        showError(errorBox, 'PDF URLs are not supported. Please provide a Markdown, plain text, or HTML URL.');
         setLoading(btn, spinner, false);
         return;
       }
