@@ -57,8 +57,8 @@ $FEEDS = [
         'id'    => 'lamps',
         'label' => 'IETF LAMPS WG',
         'color' => '#3b82f6',
-        // IETF datatracker dropped /feed/atom/; using IETF mail archive instead
-        'url'   => 'https://mailarchive.ietf.org/arch/list/lamps/feed.xml',
+        // IETF mail archive public mirror of lamps@ietf.org
+        'url'   => 'https://www.mail-archive.com/lamps@ietf.org/maillist.xml',
         'limit' => 15,
     ],
     [
@@ -79,7 +79,8 @@ $FEEDS = [
         'id'    => 'bugzilla-ca',
         'label' => 'Mozilla CA Incidents',
         'color' => '#dc2626',
-        'url'   => 'https://bugzilla.mozilla.org/buglist.cgi?product=CA%20Program&order=changeddate%20desc&ctype=atom&title=CA+Program',
+        // title param and %20-encoded order caused Bugzilla to return HTML; use + and drop title
+        'url'   => 'https://bugzilla.mozilla.org/buglist.cgi?product=CA+Program&order=changeddate+DESC&ctype=atom',
         'limit' => 20,
     ],
 ];
