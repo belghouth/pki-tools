@@ -31,3 +31,8 @@ fi
 # Log next update date
 /usr/bin/openssl crl -in "$OUT" -noout -nextupdate
 echo "Issuing CRL updated → $OUT"
+
+# Restore group permissions in case openssl recreated any db files as root-only
+DB="/var/www/thameur.org/pki-ca/issuing-db"
+chgrp www-data "$DB/crlnumber" "$DB/index.txt" "$DB/cert.srl" 2>/dev/null || true
+chmod 660      "$DB/crlnumber" "$DB/index.txt" "$DB/cert.srl" 2>/dev/null || true
