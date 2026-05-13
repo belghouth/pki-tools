@@ -211,7 +211,9 @@ if (!$r['ok']) {
     fail("genrsa issuing key: " . trim($r['err']));
     exit(1);
 }
-chmod($ISSU_KEY, 0600);
+// Root key stays root-only; issuing key readable by www-data for cert_factory.php
+chgrp($PRIV,     'www-data'); chmod($PRIV,     0710);
+chgrp($ISSU_KEY, 'www-data'); chmod($ISSU_KEY, 0640);
 ok('Issuing CA key: ' . $ISSU_KEY);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -304,14 +306,17 @@ ok('Issuing CA cert: ' . $ISSU_CRT);
 step('Initialising persistent CA databases');
 
 // Reset both databases on rotation (new CA, fresh slate)
-foreach ([
-    $ROOT_DB => [$ROOT_CRT, $ROOT_KEY, $ARL_DAYS],
-    $ISSU_DB => [$ISSU_CRT, $ISSU_KEY, $CRL_DAYS],
-] as $db => [$cert, $key, $days]) {
-    file_put_contents("$db/index.txt",  '');
-    file_put_contents("$db/crlnumber",  "01\n");
-    chmod($db, 0700);
-}
+// root-db: root-only (only cron runs refresh_root_crl.sh as root)
+file_put_contents("$ROOT_DB/index.txt", '');
+file_put_contents("$ROOT_DB/crlnumber", "01\n");
+chmod($ROOT_DB, 0700);
+
+// issuing-db: www-data needs rwx so cert_factory.php can sign via openssl ca
+file_put_contents("$ISSU_DB/index.txt", '');
+file_put_contents("$ISSU_DB/crlnumber", "01\n");
+chgrp($ISSU_DB, 'www-data'); chmod($ISSU_DB, 0770);
+chgrp("$ISSU_DB/index.txt",  'www-data'); chmod("$ISSU_DB/index.txt",  0660);
+chgrp("$ISSU_DB/crlnumber",  'www-data'); chmod("$ISSU_DB/crlnumber",  0660);
 
 // Write persistent openssl.cnf for Root CA (used by cron/refresh_root_crl.sh)
 writeCnf("$ROOT_DB/openssl.cnf", <<<CNF
@@ -338,8 +343,11 @@ if (!is_dir($ISSU_NEWCERTS)) {
     mkdir($ISSU_NEWCERTS, 0700, true);
     info("created $ISSU_NEWCERTS");
 }
+chgrp($ISSU_NEWCERTS, 'www-data'); chmod($ISSU_NEWCERTS, 0770);
+
 // Reset cert serial on rotation (fresh CA)
 file_put_contents("$ISSU_DB/cert.srl", "01\n");
+chgrp("$ISSU_DB/cert.srl", 'www-data'); chmod("$ISSU_DB/cert.srl", 0660);
 
 writeCnf("$ISSU_DB/openssl.cnf", <<<CNF
 [ ca ]
@@ -372,6 +380,7 @@ emailAddress            = optional
 authorityKeyIdentifier = keyid:always
 CNF);
 
+chgrp("$ISSU_DB/openssl.cnf", 'www-data'); chmod("$ISSU_DB/openssl.cnf", 0640);
 ok('CA databases initialised');
 
 // ── Root ARL (Authority Revocation List — lists revoked CA certs, 365-day validity)
