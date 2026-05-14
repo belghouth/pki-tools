@@ -366,6 +366,7 @@ default_crl_days = $CRL_DAYS
 unique_subject   = no
 copy_extensions  = none
 policy           = policy_anything
+crl_extensions   = crl_ext
 
 [ policy_anything ]
 countryName             = optional
