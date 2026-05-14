@@ -30,6 +30,7 @@ const MAX_BYTES    = 51200; // 50 KB
 $result       = null;
 $error        = null;
 $privkey_warn = false;
+$posted_pem   = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $raw  = null;
@@ -60,8 +61,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     } elseif (!empty($_POST['ap_pem'])) {
-        $raw = trim($_POST['ap_pem']);
-        $ext = 'pem';
+        $raw        = trim($_POST['ap_pem']);
+        $posted_pem = $raw;
+        $ext        = 'pem';
     }
 
     // ── Private key marker scan (PEM text) ────────────────────────────────────
@@ -418,7 +420,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="ap-panel" id="panel-paste" role="tabpanel" aria-labelledby="tab-paste">
       <textarea class="ap-pem-area" name="ap_pem" id="apPem"
                 placeholder="-----BEGIN CERTIFICATE-----&#10;Paste any PEM, or base64-encoded DER...&#10;-----END CERTIFICATE-----"
-                spellcheck="false" autocomplete="off"></textarea>
+                spellcheck="false" autocomplete="off"><?= htmlspecialchars($posted_pem, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8') ?></textarea>
     </div>
 
     <!-- Upload panel -->
