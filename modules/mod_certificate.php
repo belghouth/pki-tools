@@ -28,10 +28,14 @@ class CertificateModule extends ArtifactModule {
         $exts = $d['extensions'] ?? [];
 
         // Precertificate detection: RFC 6962 §3.1 poison OID or its OpenSSL short name.
-        // Do NOT match 'precert' as a substring — ct_precert_scts (OID .2.4.2) is the
-        // embedded SCT list present in every CT-compliant leaf cert, not the poison.
+        // PHP's openssl_x509_parse may key critical extensions as "<name>_critical", so
+        // we check both forms. The regex avoids \b word-boundary anchors because '_' is a
+        // word character and would break the match against ct_precert_poison_critical.
         $is_precert = isset($exts[self::POISON_OID])
-            || (bool) preg_grep('/\bpoison\b/i', array_keys($exts));
+            || isset($exts[self::POISON_OID . '_critical'])
+            || isset($exts['ct_precert_poison'])
+            || isset($exts['ct_precert_poison_critical'])
+            || (bool) preg_grep('/poison/i', array_keys($exts));
 
         $bc  = strtolower($exts['basicConstraints'] ?? '');
         $sub = $d['subject'] ?? [];
