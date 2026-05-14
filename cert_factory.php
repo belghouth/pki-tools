@@ -118,18 +118,23 @@ function handle_revoke(): array
             return ['error' => 'Revocation failed'];
         }
 
-        // Immediately regenerate the CRL so the revoked cert is visible
-        $crlTmp = sys_get_temp_dir() . '/cf_crl_' . bin2hex(random_bytes(8)) . '.crl';
+        // Immediately regenerate the CRL so the revoked cert is visible.
+        // openssl ca -gencrl outputs PEM only; convert to DER separately.
+        $crlPem = sys_get_temp_dir() . '/cf_crl_' . bin2hex(random_bytes(8)) . '.pem';
+        $crlDer = sys_get_temp_dir() . '/cf_crl_' . bin2hex(random_bytes(8)) . '.der';
         $r2 = run_cmd([OPENSSL, 'ca',
-            '-config',  ISSUING_DB_CNF,
+            '-config', ISSUING_DB_CNF,
             '-gencrl',
-            '-out',     $crlTmp,
-            '-outform', 'DER',
+            '-out',    $crlPem,
             '-batch',
         ]);
-        if ($r2['ok'] && file_exists($crlTmp)) {
-            @copy($crlTmp, ISSUING_CRL_OUT);
-            @unlink($crlTmp);
+        if ($r2['ok'] && file_exists($crlPem)) {
+            $r3 = run_cmd([OPENSSL, 'crl', '-in', $crlPem, '-outform', 'DER', '-out', $crlDer]);
+            if ($r3['ok'] && file_exists($crlDer)) {
+                @copy($crlDer, ISSUING_CRL_OUT);
+            }
+            @unlink($crlPem);
+            @unlink($crlDer);
         }
 
         return ['ok' => true, 'message' => $alreadyRevoked

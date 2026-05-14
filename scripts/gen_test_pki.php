@@ -387,16 +387,22 @@ ok('CA databases initialised');
 
 step('Generating Root CA ARL');
 
+// openssl ca -gencrl outputs PEM only; pipe through openssl crl to get DER
+$rootCrlPem = "$tmp/root.crl.pem";
 $r = run([
     $openssl, 'ca',
     '-gencrl',
-    '-config',  "$ROOT_DB/openssl.cnf",
-    '-out',     $ROOT_CRL,
-    '-outform', 'DER',
+    '-config', "$ROOT_DB/openssl.cnf",
+    '-out',    $rootCrlPem,
     '-batch',
 ]);
 if (!$r['ok']) {
     fail("Root ARL generation: " . trim($r['err']));
+    exit(1);
+}
+$r = run([$openssl, 'crl', '-in', $rootCrlPem, '-outform', 'DER', '-out', $ROOT_CRL]);
+if (!$r['ok']) {
+    fail("Root ARL DER conversion: " . trim($r['err']));
     exit(1);
 }
 ok('Root ARL: ' . $ROOT_CRL);
@@ -405,16 +411,21 @@ ok('Root ARL: ' . $ROOT_CRL);
 
 step('Generating Issuing CA CRL');
 
+$issuCrlPem = "$tmp/issuing.crl.pem";
 $r = run([
     $openssl, 'ca',
     '-gencrl',
-    '-config',  "$ISSU_DB/openssl.cnf",
-    '-out',     $ISSU_CRL,
-    '-outform', 'DER',
+    '-config', "$ISSU_DB/openssl.cnf",
+    '-out',    $issuCrlPem,
     '-batch',
 ]);
 if (!$r['ok']) {
     fail("Issuing CRL generation: " . trim($r['err']));
+    exit(1);
+}
+$r = run([$openssl, 'crl', '-in', $issuCrlPem, '-outform', 'DER', '-out', $ISSU_CRL]);
+if (!$r['ok']) {
+    fail("Issuing CRL DER conversion: " . trim($r['err']));
     exit(1);
 }
 ok('Issuing CRL: ' . $ISSU_CRL);

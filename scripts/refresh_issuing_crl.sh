@@ -22,12 +22,15 @@ if [ ! -f "$CONFIG" ]; then
     exit 1
 fi
 
+TMP="$(mktemp)"
 /usr/bin/openssl ca \
     -config  "$CONFIG" \
     -gencrl \
-    -out     "$OUT" \
-    -outform DER \
+    -out     "$TMP" \
     -batch
+
+/usr/bin/openssl crl -in "$TMP" -outform DER -out "$OUT"
+rm -f "$TMP"
 
 # Log next update date
 /usr/bin/openssl crl -in "$OUT" -inform DER -noout -nextupdate
