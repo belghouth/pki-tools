@@ -601,7 +601,7 @@ function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = fal
         }
         if ($certCn === '') $certCn = substr($sans[0], 2);
 
-        // BR §7.1.4.2: commonName is NOT RECOMMENDED — omit when requested
+        // BR §7.1.4.3: commonName is NOT RECOMMENDED — omit when requested
         $subj   = $omit_cn ? '/' : '/CN=' . $certCn;
         $sanStr = implode(', ', array_map(fn($s) => 'DNS:' . $s, $sans));
 
@@ -724,7 +724,7 @@ function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = fal
                 'operator' => $s['log_operator']    ?? '',
             ], $scts),
             'certificate' => trim($certPem),
-            'subject'     => $omit_cn ? '(empty — CN omitted per BR §7.1.4.2)' : 'CN=' . $certCn,
+            'subject'     => $omit_cn ? '(empty — CN omitted per BR §7.1.4.3)' : 'CN=' . $certCn,
             'sans'        => $sans,
             'key_bits'    => $keyBits,
             'issuer'      => $info['issuer']     ?? 'CN=Meerkat Test Issuing CA 1',
@@ -1450,7 +1450,7 @@ $navLabel = 'Test CA';
         <label class="dcv-check-label">
           <input type="checkbox" id="omitCn" name="omit_cn" value="1">
           Omit commonName from subject
-          <span class="omit-cn-ref">BR §7.1.4.2 — commonName NOT RECOMMENDED</span>
+          <span class="omit-cn-ref">BR §7.1.4.3 — commonName NOT RECOMMENDED</span>
         </label>
         <p class="dcv-opt-note" style="margin-top:0.4rem">
           When checked the subject will be an empty sequence and the SAN extension is the
