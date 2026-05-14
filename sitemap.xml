@@ -41,6 +41,12 @@
 
   <!-- Content pages -->
   <url>
+    <loc>https://thameur.org/ct_log_doc.php</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <url>
     <loc>https://thameur.org/community_tools.php</loc>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
