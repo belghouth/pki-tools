@@ -32,44 +32,53 @@ function fail(string $msg): void  { echo "\033[1;31m✘ $msg\033[0m\n"; }
 function info(string $msg): void  { echo "\033[0;37m  $msg\033[0m\n"; }
 function warn(string $msg): void  { echo "\033[1;33m⚠ $msg\033[0m\n"; }
 
-// ── Paths ─────────────────────────────────────────────────────────────────────
+require_once __DIR__ . '/../config.php';
 
-$ROOT    = dirname(__DIR__);
-$PKI_CA  = $ROOT . '/pki-ca';
-$PRIV    = $PKI_CA . '/private';
-$PKI_WEB = '/var/www/pki.thameur.org';
+// ── Paths (derived from config) ───────────────────────────────────────────────
+$PKI_CA  = PKI_CA_DIR;
+$PRIV    = PKI_PRIVATE_DIR;
+$PKI_WEB = PKI_WEB_DIR;
 
-$ROOT_KEY  = $PRIV    . '/root.key';
-$ISSU_KEY  = $PRIV    . '/issuing.key';
-$ROOT_CRT  = $PKI_WEB . '/meerkat-root.crt';
-$ROOT_CRL  = $PKI_WEB . '/meerkat-root.crl';
-$ISSU_CRT  = $PKI_WEB . '/meerkat-issuing.crt';
-$ISSU_CRL  = $PKI_WEB . '/meerkat-issuing.crl';
+$ROOT_KEY  = ROOT_KEY;
+$ISSU_KEY  = ISSUING_KEY;
+$ROOT_CRT  = ROOT_CRT;
+$ROOT_CRL  = ROOT_CRL;
+$ISSU_CRT  = ISSUING_CRT;
+$ISSU_CRL  = ISSUING_CRL_OUT;
 
 // Persistent CA databases (survive between CRL refreshes, used by cron scripts)
-$ROOT_DB   = $PKI_CA . '/root-db';
-$ISSU_DB   = $PKI_CA . '/issuing-db';
+$ROOT_DB   = ROOT_DB_DIR;
+$ISSU_DB   = ISSUING_DB_DIR;
 
-// ── CA identity ───────────────────────────────────────────────────────────────
+// ── CA identity (derived from config) ─────────────────────────────────────────
+$ROOT_SUBJ  = ROOT_CA_SUBJ;
+$ISSU_SUBJ  = ISSUING_CA_SUBJ;
+$ROOT_DAYS  = ROOT_CA_DAYS;
+$ISSU_DAYS  = ISSUING_CA_DAYS;
+$ARL_DAYS   = ARL_DAYS;   // Root ARL — 1 year (revoked CAs change rarely)
+$CRL_DAYS   = CRL_DAYS;   // Issuing CRL — 7 days (CABF BR §4.9.7 max 10 days)
 
-$ROOT_SUBJ  = '/C=TN/O=Thameur Belghith/CN=Meerkat Root CA';
-$ISSU_SUBJ  = '/C=TN/O=Thameur Belghith/CN=Meerkat Test Issuing CA 1';
-$ROOT_DAYS  = 3650;   // ~10 years
-$ISSU_DAYS  = 1825;   // ~5 years
-$ARL_DAYS   = 365;    // Root ARL — 1 year (revoked CAs change rarely)
-$CRL_DAYS   = 7;      // Issuing CRL — 7 days (CABF BR §4.9.7 max 10 days)
+// DN components as variables (needed for heredoc interpolation)
+$root_c  = ROOT_CA_DN['C'];
+$root_o  = ROOT_CA_DN['O'];
+$root_cn = ROOT_CA_DN['CN'];
+$issu_c  = ISSUING_CA_DN['C'];
+$issu_o  = ISSUING_CA_DN['O'];
+$issu_cn = ISSUING_CA_DN['CN'];
 
-// AIA / CDP URLs served from pki.thameur.org
-$ROOT_AIA_URL = 'http://pki.thameur.org/meerkat-root.crt';
-$ROOT_ARL_URL = 'http://pki.thameur.org/meerkat-root.crl';   // ARL signed by Root (CDP in Issuing CA cert)
-$ISSU_AIA_URL = 'http://pki.thameur.org/meerkat-issuing.crt';
-$ISSU_CRL_URL = 'http://pki.thameur.org/meerkat-issuing.crl'; // CRL signed by Issuing (CDP in end-entity certs)
+// AIA / CDP URLs (derived from config)
+$ROOT_AIA_URL = ROOT_AIA_URL;
+$ROOT_ARL_URL = ROOT_ARL_URL;   // ARL signed by Root (CDP in Issuing CA cert)
+$ISSU_AIA_URL = AIA_URL;
+$ISSU_CRL_URL = CDP_URL;        // CRL signed by Issuing (CDP in end-entity certs)
+
+$cert_days = CERT_DAYS;         // default_days in issuing CA openssl.cnf
 
 // ── Pre-flight ────────────────────────────────────────────────────────────────
 
 step('Pre-flight checks');
 
-$openssl = '/usr/bin/openssl';
+$openssl = OPENSSL_BIN;
 if (!is_executable($openssl)) {
     fail("openssl not found at $openssl");
     exit(1);
@@ -175,9 +184,9 @@ x509_extensions    = v3_root_ca
 prompt             = no
 
 [ dn ]
-C  = TN
-O  = Thameur Belghith
-CN = Meerkat Root CA
+C  = $root_c
+O  = $root_o
+CN = $root_cn
 
 [ v3_root_ca ]
 basicConstraints = critical, CA:TRUE
@@ -230,9 +239,9 @@ distinguished_name = dn
 prompt             = no
 
 [ dn ]
-C  = TN
-O  = Thameur Belghith
-CN = Meerkat Test Issuing CA 1
+C  = $issu_c
+O  = $issu_o
+CN = $issu_cn
 CNF);
 
 $r = run([
@@ -361,7 +370,7 @@ crlnumber        = $ISSU_DB/crlnumber
 certificate      = $ISSU_CRT
 private_key      = $ISSU_KEY
 default_md       = sha256
-default_days     = 90
+default_days     = $cert_days
 default_crl_days = $CRL_DAYS
 unique_subject   = no
 copy_extensions  = none

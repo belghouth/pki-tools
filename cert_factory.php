@@ -1,19 +1,6 @@
 <?php
 require_once __DIR__ . '/recaptcha.php';
-
-// ── Server-side config ────────────────────────────────────────────────────────
-const OPENSSL         = '/usr/bin/openssl';
-const ISSUING_CRT     = '/var/www/pki.thameur.org/meerkat-issuing.crt';
-const ISSUING_KEY     = '/var/www/thameur.org/pki-ca/private/issuing.key';
-const ISSUING_DB_CNF  = '/var/www/thameur.org/pki-ca/issuing-db/openssl.cnf';
-const ISSUING_LOCK    = '/var/www/thameur.org/pki-ca/issuing-db/factory.lock';
-const ISSUING_DB_SRL  = '/var/www/thameur.org/pki-ca/issuing-db/cert.srl';
-const ISSUING_CRL_OUT = '/var/www/pki.thameur.org/meerkat-issuing.crl';
-const CERT_DAYS       = 90;
-const MAX_CSR_BYTES   = 65536;
-const MAX_SANS        = 100;
-const AIA_URL         = 'http://pki.thameur.org/meerkat-issuing.crt';
-const CDP_URL         = 'http://pki.thameur.org/meerkat-issuing.crl';
+require_once __DIR__ . '/config.php';
 
 // ── API ───────────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -111,7 +98,7 @@ function handle_revoke(): array
     }
 
     try {
-        $r = run_cmd([OPENSSL, 'ca',
+        $r = run_cmd([OPENSSL_BIN, 'ca',
             '-config',     ISSUING_DB_CNF,
             '-revoke',     $tmpCert,
             '-crl_reason', $reason,
@@ -127,7 +114,7 @@ function handle_revoke(): array
         // openssl ca -gencrl outputs PEM only; convert to DER separately.
         $crlPem = sys_get_temp_dir() . '/cf_crl_' . bin2hex(random_bytes(8)) . '.pem';
         $crlDer = sys_get_temp_dir() . '/cf_crl_' . bin2hex(random_bytes(8)) . '.der';
-        $r2 = run_cmd([OPENSSL, 'ca',
+        $r2 = run_cmd([OPENSSL_BIN, 'ca',
             '-config',  ISSUING_DB_CNF,
             '-gencrl',
             '-crlexts', 'crl_ext',
@@ -135,7 +122,7 @@ function handle_revoke(): array
             '-batch',
         ]);
         if ($r2['ok'] && file_exists($crlPem)) {
-            $r3 = run_cmd([OPENSSL, 'crl', '-in', $crlPem, '-outform', 'DER', '-out', $crlDer]);
+            $r3 = run_cmd([OPENSSL_BIN, 'crl', '-in', $crlPem, '-outform', 'DER', '-out', $crlDer]);
             if ($r3['ok'] && file_exists($crlDer)) {
                 @copy($crlDer, ISSUING_CRL_OUT);
             }
@@ -194,7 +181,7 @@ function handle_generate_csr(): array
     $tmpCnf = sys_get_temp_dir() . '/cf_gn_' . bin2hex(random_bytes(8)) . '.cnf';
 
     try {
-        $r = run_cmd([OPENSSL, 'genrsa', '-out', $tmpKey, '2048']);
+        $r = run_cmd([OPENSSL_BIN, 'genrsa', '-out', $tmpKey, '2048']);
         if (!$r['ok']) {
             return ['error' => 'Temporary key generation failed'];
         }
@@ -230,7 +217,7 @@ function handle_generate_csr(): array
             'subjectAltName = ' . $sanStr,
         ]));
 
-        $r = run_cmd([OPENSSL, 'req', '-new',
+        $r = run_cmd([OPENSSL_BIN, 'req', '-new',
             '-key',    $tmpKey,
             '-out',    $tmpCsr,
             '-config', $tmpCnf,
@@ -282,14 +269,14 @@ function is_reserved_name(string $name): bool
 function process_csr(string $csrFile, bool $precert = false): array
 {
     // 1. Parse (also validates PEM structure)
-    $r = run_cmd([OPENSSL, 'req', '-in', $csrFile, '-noout', '-text']);
+    $r = run_cmd([OPENSSL_BIN, 'req', '-in', $csrFile, '-noout', '-text']);
     if (!$r['ok']) {
         return ['error' => 'Failed to parse CSR — check the PEM encoding'];
     }
     $text = $r['out'];
 
     // 2. Signature self-check
-    $r = run_cmd([OPENSSL, 'req', '-verify', '-in', $csrFile, '-noout']);
+    $r = run_cmd([OPENSSL_BIN, 'req', '-verify', '-in', $csrFile, '-noout']);
     if (!$r['ok'] && !str_contains($r['err'], 'verify OK')) {
         return ['error' => 'CSR self-signature verification failed'];
     }
@@ -383,7 +370,7 @@ function process_csr(string $csrFile, bool $precert = false): array
             file_put_contents(ISSUING_DB_SRL, strtoupper(bin2hex(random_bytes(16))) . "\n");
 
             $r = run_cmd([
-                OPENSSL, 'ca',
+                OPENSSL_BIN, 'ca',
                 '-config',     ISSUING_DB_CNF,
                 '-in',         $csrFile,
                 '-out',        $certFile,
@@ -411,7 +398,7 @@ function process_csr(string $csrFile, bool $precert = false): array
             file_put_contents(ISSUING_DB_SRL, strtoupper(bin2hex(random_bytes(16))) . "\n");
 
             $rPre = run_cmd([
-                OPENSSL, 'ca',
+                OPENSSL_BIN, 'ca',
                 '-config',     ISSUING_DB_CNF,
                 '-in',         $csrFile,
                 '-out',        $preCertFile,
@@ -445,7 +432,7 @@ function process_csr(string $csrFile, bool $precert = false): array
             file_put_contents(ISSUING_DB_SRL, strtoupper(bin2hex(random_bytes(16))) . "\n");
 
             $r = run_cmd([
-                OPENSSL, 'ca',
+                OPENSSL_BIN, 'ca',
                 '-config',     ISSUING_DB_CNF,
                 '-in',         $csrFile,
                 '-out',        $certFile,
@@ -554,14 +541,14 @@ function ct_submit(string $precert_pem, string $issuer_pem): array
 
     $ch = curl_init();
     curl_setopt_array($ch, [
-        CURLOPT_URL            => 'https://thameur.org/ct/v1/add-pre-chain',
+        CURLOPT_URL            => CT_LOG_URL,
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => $payload,
         CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT        => 10,
         // Bypass DNS — connect to loopback directly to avoid an external round-trip
-        CURLOPT_RESOLVE        => ['thameur.org:443:127.0.0.1'],
+        CURLOPT_RESOLVE        => [CT_LOG_RESOLVE],
     ]);
     $body = (string) curl_exec($ch);
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -614,7 +601,7 @@ if (!defined('DNS_CAA')) define('DNS_CAA', 256);
 
 function check_caa(array $sans): ?string
 {
-    $issuer  = 'thameur.org';
+    $issuer  = CAA_ISSUER;
     $checked = [];
 
     foreach ($sans as $san) {
@@ -694,7 +681,7 @@ function is_valid_dns(string $name): bool
 
 function parse_cert(string $certFile): array
 {
-    $r = run_cmd([OPENSSL, 'x509', '-in', $certFile, '-noout', '-text']);
+    $r = run_cmd([OPENSSL_BIN, 'x509', '-in', $certFile, '-noout', '-text']);
     if (!$r['ok']) return [];
     $t   = $r['out'];
     $out = [];

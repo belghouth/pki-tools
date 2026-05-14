@@ -1,28 +1,18 @@
 <?php
-// ── Read log identities (if keys have been generated) ─────────────────────────
-const CT_DOC_KEYS_DIR = '/var/www/thameur.org/pki-ca/ct-log-keys/';
-const CT_DOC_LOG_META = [
-    'kablouti'    => ['Meerkat Kablouti CT 2025h1',   'Kablouti Certificate Services'],
-    'karkoub'  => ['Meerkat Karkoub CT 2025h2',  'Karkoub Trust Infrastructure'],
-    'sal7ouf' => ['Meerkat Sal7ouf CT 2026h1', 'Sal7ouf Digital Logs'],
-    'farhoud'  => ['Meerkat Farhoud CT 2025',    'Farhoud CT Authority'],
-    'habhoub' => ['Meerkat Habhoub CT 2026',   'Habhoub Certificate Logs'],
-    'sardouk'  => ['Meerkat Sardouk CT 2025h2',  'Sardouk Log Services'],
-    'dhibi'    => ['Meerkat Dhibi CT 2026h1',    'Dhibi Digital Trust'],
-    'bousannoun'    => ['Meerkat Bousannoun CT 2025',      'Bousannoun Certificate Transparency'],
-];
+require_once __DIR__ . '/config.php';
 
+// ── Read log identities (if keys have been generated) ─────────────────────────
 $log_identities = [];
-foreach (CT_DOC_LOG_META as $slug => [$desc, $operator]) {
-    $id_file = CT_DOC_KEYS_DIR . $slug . '.id';
+foreach (CT_LOG_META as $slug => [$desc, $operator]) {
+    $id_file = PKI_CT_KEYS_DIR . $slug . '.id';
     $log_id  = file_exists($id_file) ? trim((string) file_get_contents($id_file)) : null;
     $log_identities[] = [
-        'slug'     => $slug,
-        'desc'     => $desc,
-        'operator' => $operator,
-        'log_id'   => $log_id,
+        'slug'       => $slug,
+        'desc'       => $desc,
+        'operator'   => $operator,
+        'log_id'     => $log_id,
         'log_id_b64' => $log_id ? base64_encode(hex2bin($log_id)) : null,
-        'url'      => 'https://thameur.org/ct/v1/',
+        'url'        => CT_LOG_BASE_URL,
     ];
 }
 
@@ -244,7 +234,7 @@ $navLabel = 'Meerkat CT Log';
       </tbody>
     </table>
     <p style="font-size:0.78rem;color:var(--muted)">
-      API Base URL: <code>https://thameur.org/ct/v1/</code> &nbsp;·&nbsp;
+      API Base URL: <code><?= CT_LOG_BASE_URL ?></code> &nbsp;·&nbsp;
       Log ID = SHA-256(SubjectPublicKeyInfo DER of the log's ECDSA P-256 public key)
     </p>
   </div>

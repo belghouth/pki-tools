@@ -8,13 +8,11 @@
 //
 // Usage:  php /var/www/thameur.org/scripts/gen_ct_log_keys.php
 
-$OPENSSL  = '/usr/bin/openssl';
-$KEYS_DIR = '/var/www/thameur.org/pki-ca/ct-log-keys';
+require_once __DIR__ . '/../config.php';
 
-$logs = [
-    'kablouti', 'karkoub', 'sal7ouf', 'farhoud',
-    'habhoub', 'sardouk', 'dhibi', 'bousannoun'
-];
+$OPENSSL  = OPENSSL_BIN;
+$KEYS_DIR = rtrim(PKI_CT_KEYS_DIR, '/');
+$logs     = array_keys(CT_LOG_META);
 
 
 // ─────────────────────────────────────────────────────────────────────────────
