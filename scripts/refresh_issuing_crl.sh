@@ -26,6 +26,7 @@ TMP="$(mktemp)"
 /usr/bin/openssl ca \
     -config  "$CONFIG" \
     -gencrl \
+    -crlexts crl_ext \
     -out     "$TMP" \
     -batch
 

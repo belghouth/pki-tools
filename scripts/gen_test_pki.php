@@ -268,7 +268,7 @@ basicConstraints       = critical, CA:TRUE, pathlen:0
 keyUsage               = critical, keyCertSign, cRLSign
 extendedKeyUsage       = serverAuth
 subjectKeyIdentifier   = hash
-authorityKeyIdentifier = keyid:always
+authorityKeyIdentifier = keyid
 certificatePolicies    = 2.23.140.1.2.1
 authorityInfoAccess    = caIssuers;URI:$ROOT_AIA_URL
 crlDistributionPoints  = URI:$ROOT_ARL_URL
@@ -333,7 +333,7 @@ default_crl_days = $ARL_DAYS
 crl_extensions   = crl_ext
 
 [ crl_ext ]
-authorityKeyIdentifier = keyid:always
+authorityKeyIdentifier = keyid
 CNF);
 
 // Write persistent openssl.cnf for Issuing CA
@@ -378,7 +378,7 @@ commonName              = optional
 emailAddress            = optional
 
 [ crl_ext ]
-authorityKeyIdentifier = keyid:always
+authorityKeyIdentifier = keyid
 CNF);
 
 chgrp("$ISSU_DB/openssl.cnf", 'www-data'); chmod("$ISSU_DB/openssl.cnf", 0640);
@@ -393,8 +393,9 @@ $rootCrlPem = "$tmp/root.crl.pem";
 $r = run([
     $openssl, 'ca',
     '-gencrl',
-    '-config', "$ROOT_DB/openssl.cnf",
-    '-out',    $rootCrlPem,
+    '-config',  "$ROOT_DB/openssl.cnf",
+    '-crlexts', 'crl_ext',
+    '-out',     $rootCrlPem,
     '-batch',
 ]);
 if (!$r['ok']) {
@@ -416,8 +417,9 @@ $issuCrlPem = "$tmp/issuing.crl.pem";
 $r = run([
     $openssl, 'ca',
     '-gencrl',
-    '-config', "$ISSU_DB/openssl.cnf",
-    '-out',    $issuCrlPem,
+    '-config',  "$ISSU_DB/openssl.cnf",
+    '-crlexts', 'crl_ext',
+    '-out',     $issuCrlPem,
     '-batch',
 ]);
 if (!$r['ok']) {

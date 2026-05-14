@@ -123,9 +123,10 @@ function handle_revoke(): array
         $crlPem = sys_get_temp_dir() . '/cf_crl_' . bin2hex(random_bytes(8)) . '.pem';
         $crlDer = sys_get_temp_dir() . '/cf_crl_' . bin2hex(random_bytes(8)) . '.der';
         $r2 = run_cmd([OPENSSL, 'ca',
-            '-config', ISSUING_DB_CNF,
+            '-config',  ISSUING_DB_CNF,
             '-gencrl',
-            '-out',    $crlPem,
+            '-crlexts', 'crl_ext',
+            '-out',     $crlPem,
             '-batch',
         ]);
         if ($r2['ok'] && file_exists($crlPem)) {
