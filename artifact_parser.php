@@ -590,7 +590,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   if (btnIssueCert) {
     btnIssueCert.addEventListener('click', function () {
       sessionStorage.setItem('pki_prefill_csr', btnIssueCert.dataset.pem);
-      window.location.href = '/cert_factory.php';
+      window.open('/cert_factory.php', '_blank');
     });
   }
 }());

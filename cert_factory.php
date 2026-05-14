@@ -984,6 +984,7 @@ $navLabel = 'Test CA';
   'use strict';
 
   var RECAPTCHA_SITE_KEY = <?= json_encode(RECAPTCHA_SITE_KEY) ?>;
+  var ISSUING_CA_PEM     = <?= json_encode(file_exists(ISSUING_CRT) ? trim((string) file_get_contents(ISSUING_CRT)) : '') ?>;
 
   function getRecaptchaToken(action) {
     return new Promise(function (resolve) {
@@ -1182,14 +1183,15 @@ $navLabel = 'Test CA';
   // ── Lint / Parse ─────────────────────────────────────────────────────────────
   document.getElementById('btnLint').addEventListener('click', function () {
     if (!pemOutput.value) return;
-    sessionStorage.setItem('pki_prefill_cert', pemOutput.value);
-    window.location.href = '/linters.php';
+    sessionStorage.setItem('pki_prefill_cert',   pemOutput.value);
+    sessionStorage.setItem('pki_prefill_issuer', ISSUING_CA_PEM);
+    window.open('/linters.php', '_blank');
   });
 
   document.getElementById('btnParse').addEventListener('click', function () {
     if (!pemOutput.value) return;
     sessionStorage.setItem('pki_prefill_cert', pemOutput.value);
-    window.location.href = '/artifact_parser.php';
+    window.open('/artifact_parser.php', '_blank');
   });
 
   // ── Copy / Download ──────────────────────────────────────────────────────────

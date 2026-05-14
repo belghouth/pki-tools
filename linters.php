@@ -1339,11 +1339,15 @@ if ($parse_pem !== '' && parse_pem($parse_pem) !== null):
 <script>
 (function () {
   // Cert prefill from cert factory (Lint button)
-  var cert = sessionStorage.getItem('pki_prefill_cert');
+  var cert   = sessionStorage.getItem('pki_prefill_cert');
+  var issuer = sessionStorage.getItem('pki_prefill_issuer');
   if (!cert) return;
   sessionStorage.removeItem('pki_prefill_cert');
-  var ta = document.querySelector('[name=ee_pem]');
-  if (ta && !ta.value.trim()) ta.value = cert;
+  sessionStorage.removeItem('pki_prefill_issuer');
+  var taEE   = document.querySelector('[name=ee_pem]');
+  var taRoot = document.querySelector('[name=root_pem]');
+  if (taEE   && !taEE.value.trim())   taEE.value   = cert;
+  if (taRoot && !taRoot.value.trim() && issuer) taRoot.value = issuer;
 }());
 </script>
 </body>
