@@ -590,6 +590,17 @@ function process_csr(string $csrFile, bool $precert = false): array
     $preCertFile = null;
     $scts        = [];
 
+    // Build a patched copy of the CA config with copy_extensions forced to none.
+    // -copy_extensions CLI flag only exists in OpenSSL ≥ 3.1; the config-file
+    // approach works on all versions and cannot be overridden by CSR content.
+    // All paths inside ISSUING_DB_CNF are absolute so the temp copy is safe.
+    $caCnf        = (string) file_get_contents(ISSUING_DB_CNF);
+    $caCnfPatched = preg_match('/^\s*copy_extensions\s*=/im', $caCnf)
+        ? preg_replace('/^\s*copy_extensions\s*=.*$/im', 'copy_extensions = none', $caCnf)
+        : preg_replace('/(\[\s*CA_default\s*\])/i', "$1\ncopy_extensions = none", $caCnf);
+    $tmpCaCnf     = sys_get_temp_dir() . '/cf_ca_' . bin2hex(random_bytes(8)) . '.cnf';
+    file_put_contents($tmpCaCnf, $caCnfPatched);
+
     try {
         // CN must never be a wildcard — use first non-wildcard SAN
         $certCn = '';
@@ -625,14 +636,13 @@ function process_csr(string $csrFile, bool $precert = false): array
 
             $r = run_cmd([
                 OPENSSL_BIN, 'ca',
-                '-config',          ISSUING_DB_CNF,
-                '-in',              $csrFile,
-                '-out',             $certFile,
-                '-subj',            '/CN=' . $certCn,
-                '-extfile',         $extFile,
-                '-extensions',      'v3_ee',
-                '-copy_extensions', 'none',
-                '-days',            (string) CERT_DAYS,
+                '-config',     $tmpCaCnf,
+                '-in',         $csrFile,
+                '-out',        $certFile,
+                '-subj',       '/CN=' . $certCn,
+                '-extfile',    $extFile,
+                '-extensions', 'v3_ee',
+                '-days',       (string) CERT_DAYS,
                 '-notext',
                 '-batch',
             ]);
@@ -654,14 +664,13 @@ function process_csr(string $csrFile, bool $precert = false): array
 
             $rPre = run_cmd([
                 OPENSSL_BIN, 'ca',
-                '-config',          ISSUING_DB_CNF,
-                '-in',              $csrFile,
-                '-out',             $preCertFile,
-                '-subj',            '/CN=' . $certCn,
-                '-extfile',         $preExtFile,
-                '-extensions',      'v3_ee',
-                '-copy_extensions', 'none',
-                '-days',            (string) CERT_DAYS,
+                '-config',     $tmpCaCnf,
+                '-in',         $csrFile,
+                '-out',        $preCertFile,
+                '-subj',       '/CN=' . $certCn,
+                '-extfile',    $preExtFile,
+                '-extensions', 'v3_ee',
+                '-days',       (string) CERT_DAYS,
                 '-notext',
                 '-batch',
             ]);
@@ -689,14 +698,13 @@ function process_csr(string $csrFile, bool $precert = false): array
 
             $r = run_cmd([
                 OPENSSL_BIN, 'ca',
-                '-config',          ISSUING_DB_CNF,
-                '-in',              $csrFile,
-                '-out',             $certFile,
-                '-subj',            '/CN=' . $certCn,
-                '-extfile',         $extFile,
-                '-extensions',      'v3_ee',
-                '-copy_extensions', 'none',
-                '-days',            (string) CERT_DAYS,
+                '-config',     $tmpCaCnf,
+                '-in',         $csrFile,
+                '-out',        $certFile,
+                '-subj',       '/CN=' . $certCn,
+                '-extfile',    $extFile,
+                '-extensions', 'v3_ee',
+                '-days',       (string) CERT_DAYS,
                 '-notext',
                 '-batch',
             ]);
@@ -734,6 +742,7 @@ function process_csr(string $csrFile, bool $precert = false): array
         fclose($lock);
         @unlink($extFile);
         @unlink($certFile);
+        @unlink($tmpCaCnf);
         if ($preExtFile)  @unlink($preExtFile);
         if ($preCertFile) @unlink($preCertFile);
     }
