@@ -198,6 +198,25 @@ function handle_generate_csr(): array
             return ['error' => 'Temporary key generation failed'];
         }
 
+        // For each wildcard auto-add its base domain if not already present
+        $extras = [];
+        foreach ($domains as $d) {
+            if (str_starts_with($d, '*.')) {
+                $base = substr($d, 2);
+                if (!in_array($base, $domains, true) && !in_array($base, $extras, true)) {
+                    $extras[] = $base;
+                }
+            }
+        }
+        $domains = array_merge($domains, $extras);
+
+        // CN must never be a wildcard — use first non-wildcard domain
+        $cn = '';
+        foreach ($domains as $d) {
+            if (!str_starts_with($d, '*.')) { $cn = $d; break; }
+        }
+        if ($cn === '') $cn = substr($domains[0], 2);
+
         $sanStr = implode(',', array_map(fn($d) => 'DNS:' . $d, $domains));
         file_put_contents($tmpCnf, implode("\n", [
             '[req]',
@@ -205,7 +224,7 @@ function handle_generate_csr(): array
             'req_extensions     = san',
             'prompt             = no',
             '[dn]',
-            'CN=' . $domains[0],
+            'CN=' . $cn,
             '[san]',
             'subjectAltName = ' . $sanStr,
         ]));
@@ -224,7 +243,7 @@ function handle_generate_csr(): array
             return ['error' => 'CSR generation produced no output'];
         }
 
-        return ['ok' => true, 'csr' => trim($csrPem), 'domains' => $domains];
+        return ['ok' => true, 'csr' => trim($csrPem), 'domains' => array_values($domains)];
 
     } finally {
         @unlink($tmpKey);
@@ -236,6 +255,7 @@ function handle_generate_csr(): array
 function is_reserved_name(string $name): bool
 {
     $name = strtolower($name);
+    if (str_starts_with($name, '*.')) $name = substr($name, 2);
 
     // IPv4 / IPv6 addresses
     if (filter_var($name, FILTER_VALIDATE_IP) !== false) return true;
@@ -309,7 +329,13 @@ function process_csr(string $csrFile): array
         }
     }
 
-    // 8. Sign — serialised through a lock file (openssl ca is not re-entrant)
+    // 8. CAA check
+    $caaErr = check_caa($sans);
+    if ($caaErr !== null) {
+        return ['error' => $caaErr];
+    }
+
+    // 9. Sign — serialised through a lock file (openssl ca is not re-entrant)
     $lock = fopen(ISSUING_LOCK, 'w');
     if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
         if ($lock) fclose($lock);
@@ -324,8 +350,14 @@ function process_csr(string $csrFile): array
         // gets fresh entropy (BR §7.1.2.4 requires ≥64 bits; 128 is standard)
         file_put_contents(ISSUING_DB_SRL, strtoupper(bin2hex(random_bytes(16))) . "\n");
 
-        $firstSan = $sans[0];
-        $sanStr   = implode(', ', array_map(fn($s) => 'DNS:' . $s, $sans));
+        // CN must never be a wildcard — use first non-wildcard SAN
+        $certCn = '';
+        foreach ($sans as $s) {
+            if (!str_starts_with($s, '*.')) { $certCn = $s; break; }
+        }
+        if ($certCn === '') $certCn = substr($sans[0], 2);
+
+        $sanStr = implode(', ', array_map(fn($s) => 'DNS:' . $s, $sans));
 
         file_put_contents($extFile, implode("\n", [
             '[ v3_ee ]',
@@ -347,7 +379,7 @@ function process_csr(string $csrFile): array
             '-config',     ISSUING_DB_CNF,
             '-in',         $csrFile,
             '-out',        $certFile,
-            '-subj',       '/CN=' . $firstSan,
+            '-subj',       '/CN=' . $certCn,
             '-extfile',    $extFile,
             '-extensions', 'v3_ee',
             '-days',       (string) CERT_DAYS,
@@ -369,7 +401,7 @@ function process_csr(string $csrFile): array
         return [
             'ok'         => true,
             'certificate'=> trim($certPem),
-            'subject'    => 'CN=' . $firstSan,
+            'subject'    => 'CN=' . $certCn,
             'sans'       => $sans,
             'key_bits'   => $keyBits,
             'issuer'     => $info['issuer']     ?? 'CN=Meerkat Test Issuing CA 1',
@@ -410,12 +442,81 @@ function extract_cn(string $text): string
     return '';
 }
 
+if (!defined('DNS_CAA')) define('DNS_CAA', 256);
+
+function check_caa(array $sans): ?string
+{
+    $issuer  = 'thameur.org';
+    $checked = [];
+
+    foreach ($sans as $san) {
+        $isWild = str_starts_with($san, '*.');
+        $domain = $isWild ? substr($san, 2) : $san;
+        $key    = $domain . ($isWild ? ':w' : ':r');
+        if (in_array($key, $checked, true)) continue;
+        $checked[] = $key;
+
+        $err = caa_check_domain($domain, $isWild, $issuer);
+        if ($err !== null) return $err;
+    }
+    return null;
+}
+
+function caa_check_domain(string $domain, bool $isWild, string $issuer): ?string
+{
+    $parts = explode('.', $domain);
+    $n     = count($parts);
+
+    for ($i = 0; $i <= $n - 2; $i++) {
+        $candidate = implode('.', array_slice($parts, $i));
+        $recs = @dns_get_record($candidate, DNS_CAA);
+
+        if ($recs === false || !is_array($recs)) return null; // DNS failure — don't block
+        if (empty($recs)) continue;                           // no CAA here, walk up
+
+        $issue     = [];
+        $issuewild = [];
+        foreach ($recs as $r) {
+            $tag = strtolower($r['tag'] ?? '');
+            $val = trim($r['value'] ?? '');
+            if ($tag === 'issue')     $issue[]     = $val;
+            if ($tag === 'issuewild') $issuewild[] = $val;
+        }
+
+        // Wildcards: issuewild takes precedence when present
+        if ($isWild && !empty($issuewild)) {
+            if (!in_array($issuer, $issuewild, true)) {
+                return "CAA policy on {$candidate} blocks wildcard issuance.\n"
+                     . "Add this DNS record to authorise this CA:\n"
+                     . "  {$candidate} IN CAA 0 issuewild \"{$issuer}\"";
+            }
+            return null;
+        }
+        // issue applies to both regular and wildcard fallback
+        if (!empty($issue)) {
+            if (!in_array($issuer, $issue, true)) {
+                $tag = $isWild ? 'issuewild' : 'issue';
+                return "CAA policy on {$candidate} blocks certificate issuance.\n"
+                     . "Add this DNS record to authorise this CA:\n"
+                     . "  {$candidate} IN CAA 0 {$tag} \"{$issuer}\"";
+            }
+            return null;
+        }
+        return null; // CAA records present but no issue/issuewild — no restriction
+    }
+    return null; // no CAA records found anywhere — issuance permitted
+}
+
 function is_valid_dns(string $name): bool
 {
+    // Allow exactly "*.fqdn" — the wildcard must be the entire first label
+    if (str_starts_with($name, '*.')) {
+        return is_valid_dns(substr($name, 2));
+    }
+    if ($name === '*' || str_contains($name, '*')) return false;
     if (strlen($name) === 0 || strlen($name) > 253) return false;
-    if (str_starts_with($name, '*')) return false;   // no wildcards without DCV
     $labels = explode('.', $name);
-    if (count($labels) < 2) return false;            // require at least one dot (FQDN)
+    if (count($labels) < 2) return false;
     foreach ($labels as $label) {
         if ($label === '' || strlen($label) > 63) return false;
         if (!preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$/', $label)) return false;
@@ -480,6 +581,7 @@ $navLabel = 'Test CA';
       --radius: 8px;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    [hidden] { display: none !important; }
     html { font-size: 15px; scroll-behavior: smooth; }
     body { background: var(--bg); color: var(--text); font-family: var(--sans);
            font-weight: 300; line-height: 1.75; }
@@ -592,6 +694,7 @@ $navLabel = 'Test CA';
       font-size: 0.83rem; color: var(--danger);
     }
     .error-box .err-icon { flex-shrink: 0; margin-top: 0.1rem; }
+    #errorMsg { white-space: pre-wrap; font-family: var(--mono); font-size: 0.78rem; }
 
     /* ── Result card ── */
     .result-header {
