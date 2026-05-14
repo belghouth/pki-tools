@@ -23,13 +23,14 @@ if [ ! -f "$CONFIG" ]; then
 fi
 
 /usr/bin/openssl ca \
-    -config "$CONFIG" \
+    -config  "$CONFIG" \
     -gencrl \
-    -out "$OUT" \
+    -out     "$OUT" \
+    -outform DER \
     -batch
 
 # Log next update date
-/usr/bin/openssl crl -in "$OUT" -noout -nextupdate
+/usr/bin/openssl crl -in "$OUT" -inform DER -noout -nextupdate
 echo "Issuing CRL updated → $OUT"
 
 # Restore group permissions in case openssl recreated any db files as root-only

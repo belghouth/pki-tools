@@ -1,21 +1,26 @@
 <?php
+require_once __DIR__ . '/recaptcha.php';
+
 // ── Server-side config ────────────────────────────────────────────────────────
-const OPENSSL        = '/usr/bin/openssl';
-const ISSUING_CRT    = '/var/www/pki.thameur.org/meerkat-issuing.crt';
-const ISSUING_KEY    = '/var/www/thameur.org/pki-ca/private/issuing.key';
-const ISSUING_DB_CNF = '/var/www/thameur.org/pki-ca/issuing-db/openssl.cnf';
-const ISSUING_LOCK   = '/var/www/thameur.org/pki-ca/issuing-db/factory.lock';
-const ISSUING_DB_SRL = '/var/www/thameur.org/pki-ca/issuing-db/cert.srl';
-const CERT_DAYS      = 90;
-const MAX_CSR_BYTES  = 65536;
-const MAX_SANS       = 100;
-const AIA_URL        = 'http://pki.thameur.org/meerkat-issuing.crt';
-const CDP_URL        = 'http://pki.thameur.org/meerkat-issuing.crl';
+const OPENSSL         = '/usr/bin/openssl';
+const ISSUING_CRT     = '/var/www/pki.thameur.org/meerkat-issuing.crt';
+const ISSUING_KEY     = '/var/www/thameur.org/pki-ca/private/issuing.key';
+const ISSUING_DB_CNF  = '/var/www/thameur.org/pki-ca/issuing-db/openssl.cnf';
+const ISSUING_LOCK    = '/var/www/thameur.org/pki-ca/issuing-db/factory.lock';
+const ISSUING_DB_SRL  = '/var/www/thameur.org/pki-ca/issuing-db/cert.srl';
+const ISSUING_CRL_OUT = '/var/www/pki.thameur.org/meerkat-issuing.crl';
+const CERT_DAYS       = 90;
+const MAX_CSR_BYTES   = 65536;
+const MAX_SANS        = 100;
+const AIA_URL         = 'http://pki.thameur.org/meerkat-issuing.crt';
+const CDP_URL         = 'http://pki.thameur.org/meerkat-issuing.crl';
 
 // ── API ───────────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(handle_issue(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $action = $_POST['action'] ?? 'issue';
+    $result = ($action === 'revoke') ? handle_revoke() : handle_issue();
+    echo json_encode($result, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -30,6 +35,13 @@ function handle_issue(): array
             return ['error' => 'File exceeds 64 KB limit'];
         }
         $csrPem = trim((string) file_get_contents($_FILES['csr_file']['tmp_name']));
+    }
+
+    if (recaptcha_configured()) {
+        $token = trim($_POST['g_recaptcha_token'] ?? '');
+        if (!recaptcha_verify($token, 'issue_cert')) {
+            return ['error' => 'reCAPTCHA verification failed. Please try again.'];
+        }
     }
 
     if (!$csrPem) {
@@ -56,6 +68,78 @@ function handle_issue(): array
         return process_csr($tmpCsr);
     } finally {
         @unlink($tmpCsr);
+    }
+}
+
+function handle_revoke(): array
+{
+    if (recaptcha_configured()) {
+        $token = trim($_POST['g_recaptcha_token'] ?? '');
+        if (!recaptcha_verify($token, 'revoke_cert')) {
+            return ['error' => 'reCAPTCHA verification failed. Please try again.'];
+        }
+    }
+
+    $certPem = trim($_POST['cert'] ?? '');
+    if (!$certPem || !str_contains($certPem, '-----BEGIN CERTIFICATE-----')) {
+        return ['error' => 'No valid certificate PEM provided'];
+    }
+
+    $allowed = ['unspecified', 'keyCompromise', 'affiliationChanged', 'superseded', 'cessationOfOperation', 'privilegeWithdrawn'];
+    $reason  = $_POST['reason'] ?? 'unspecified';
+    if (!in_array($reason, $allowed, true)) {
+        return ['error' => 'Invalid revocation reason'];
+    }
+
+    if (!file_exists(ISSUING_DB_CNF)) {
+        return ['error' => 'The issuing CA is not yet initialised — please check back shortly.'];
+    }
+
+    $tmpCert = sys_get_temp_dir() . '/cf_rev_' . bin2hex(random_bytes(8)) . '.pem';
+    file_put_contents($tmpCert, $certPem . "\n");
+
+    $lock = fopen(ISSUING_LOCK, 'w');
+    if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
+        if ($lock) fclose($lock);
+        @unlink($tmpCert);
+        return ['error' => 'CA is busy — please retry in a moment'];
+    }
+
+    try {
+        $r = run_cmd([OPENSSL, 'ca',
+            '-config',     ISSUING_DB_CNF,
+            '-revoke',     $tmpCert,
+            '-crl_reason', $reason,
+            '-batch',
+        ]);
+
+        $alreadyRevoked = str_contains($r['err'] ?? '', 'already revoked');
+        if (!$r['ok'] && !$alreadyRevoked) {
+            return ['error' => 'Revocation failed'];
+        }
+
+        // Immediately regenerate the CRL so the revoked cert is visible
+        $crlTmp = sys_get_temp_dir() . '/cf_crl_' . bin2hex(random_bytes(8)) . '.crl';
+        $r2 = run_cmd([OPENSSL, 'ca',
+            '-config',  ISSUING_DB_CNF,
+            '-gencrl',
+            '-out',     $crlTmp,
+            '-outform', 'DER',
+            '-batch',
+        ]);
+        if ($r2['ok'] && file_exists($crlTmp)) {
+            @copy($crlTmp, ISSUING_CRL_OUT);
+            @unlink($crlTmp);
+        }
+
+        return ['ok' => true, 'message' => $alreadyRevoked
+            ? 'Certificate was already revoked. CRL refreshed.'
+            : 'Certificate revoked successfully. CRL has been refreshed.'];
+
+    } finally {
+        flock($lock, LOCK_UN);
+        fclose($lock);
+        @unlink($tmpCert);
     }
 }
 
@@ -268,6 +352,7 @@ $navLabel = 'Test CA';
     'url'         => 'https://thameur.org/cert_factory.php',
   ]);
   ?>
+  <?= recaptcha_head() ?>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -433,6 +518,35 @@ $navLabel = 'Test CA';
       padding-top: 1rem; border-top: 1px solid var(--border);
     }
 
+    /* ── Revocation row ── */
+    .revoke-row {
+      display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;
+      margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    }
+    .revoke-label { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+    .revoke-reason {
+      font-family: var(--mono); font-size: 0.75rem;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 5px; color: var(--text); padding: 0.45em 0.7em;
+      flex: 1; max-width: 240px; cursor: pointer;
+    }
+    .revoke-reason:focus { outline: none; border-color: var(--danger); }
+    .btn-danger {
+      font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.05em;
+      text-transform: uppercase; background: #991b1b; color: #fef2f2;
+      border: none; border-radius: 5px; padding: 0.55em 1.4em;
+      cursor: pointer; font-weight: 600; transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+    .btn-danger:hover:not(:disabled) { background: #b91c1c; }
+    .btn-danger:disabled { opacity: 0.4; cursor: not-allowed; }
+    .revoke-result {
+      font-size: 0.83rem; padding: 0.65rem 1rem;
+      border-radius: 6px; margin-top: 0.8rem;
+    }
+    .revoke-result.ok  { background: rgba(0,212,170,0.07); border: 1px solid rgba(0,212,170,0.3); color: var(--accent); }
+    .revoke-result.err { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3); color: var(--danger); }
+
     /* ── Footer ── */
     .site-footer {
       border-top: 1px solid var(--border); padding: 1.4rem 2rem;
@@ -528,6 +642,20 @@ $navLabel = 'Test CA';
       → this certificate<br>
       Install the Root CA to trust this cert locally for linter testing.
     </p>
+
+    <div class="revoke-row" id="revokeRow">
+      <span class="revoke-label">Revocation reason:</span>
+      <select class="revoke-reason" id="revokeReason">
+        <option value="unspecified">Unspecified</option>
+        <option value="keyCompromise">Key Compromise</option>
+        <option value="affiliationChanged">Affiliation Changed</option>
+        <option value="superseded">Superseded</option>
+        <option value="cessationOfOperation">Cessation of Operation</option>
+        <option value="privilegeWithdrawn">Privilege Withdrawn</option>
+      </select>
+      <button class="btn-danger" id="btnRevoke">Revoke this Certificate</button>
+    </div>
+    <div class="revoke-result" id="revokeResult" hidden></div>
   </div>
 
 </main>
@@ -547,6 +675,20 @@ $navLabel = 'Test CA';
 <script>
 (function () {
   'use strict';
+
+  var RECAPTCHA_SITE_KEY = <?= json_encode(RECAPTCHA_SITE_KEY) ?>;
+
+  function getRecaptchaToken(action) {
+    return new Promise(function (resolve) {
+      if (typeof grecaptcha === 'undefined' || RECAPTCHA_SITE_KEY === 'YOUR_RECAPTCHA_SITE_KEY_HERE') {
+        resolve('');
+        return;
+      }
+      grecaptcha.ready(function () {
+        grecaptcha.execute(RECAPTCHA_SITE_KEY, { action: action }).then(resolve);
+      });
+    });
+  }
 
   // ── Tab switching ────────────────────────────────────────────────────────────
   var tabs  = document.querySelectorAll('.input-tab');
@@ -634,6 +776,9 @@ $navLabel = 'Test CA';
     if (method === 'paste') fd.delete('csr_file');
     else                    fd.delete('csr');
 
+    var token = await getRecaptchaToken('issue_cert');
+    fd.append('g_recaptcha_token', token);
+
     try {
       var resp = await fetch(window.location.href, { method: 'POST', body: fd });
       if (!resp.ok) throw new Error('Server returned ' + resp.status);
@@ -669,6 +814,14 @@ $navLabel = 'Test CA';
 
     resultCard.hidden = false;
     resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Reset revocation state for the new cert
+    document.getElementById('btnRevoke').disabled = false;
+    document.getElementById('btnRevoke').textContent = 'Revoke this Certificate';
+    var rr = document.getElementById('revokeResult');
+    rr.hidden = true;
+    rr.className = 'revoke-result';
+    rr.textContent = '';
   }
 
   function row(key, val) {
@@ -719,6 +872,55 @@ $navLabel = 'Test CA';
     return String(s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;')
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ── Revocation ───────────────────────────────────────────────────────────────
+  document.getElementById('btnRevoke').addEventListener('click', function () {
+    doRevoke();
+  });
+
+  async function doRevoke() {
+    var btn    = document.getElementById('btnRevoke');
+    var result = document.getElementById('revokeResult');
+    var reason = document.getElementById('revokeReason').value;
+    var cert   = pemOutput.value;
+
+    if (!cert) return;
+
+    btn.disabled    = true;
+    btn.textContent = 'Revoking…';
+    result.hidden   = true;
+    result.className = 'revoke-result';
+
+    var token = await getRecaptchaToken('revoke_cert');
+
+    var fd = new FormData();
+    fd.append('action',             'revoke');
+    fd.append('cert',               cert);
+    fd.append('reason',             reason);
+    fd.append('g_recaptcha_token',  token);
+
+    try {
+      var resp = await fetch(window.location.href, { method: 'POST', body: fd });
+      if (!resp.ok) throw new Error('Server returned ' + resp.status);
+      var data = await resp.json();
+      result.hidden = false;
+      if (data.ok) {
+        result.classList.add('ok');
+        result.textContent = '✔ ' + data.message;
+      } else {
+        result.classList.add('err');
+        result.textContent = '✕ ' + (data.error || 'Unknown error');
+        btn.disabled    = false;
+        btn.textContent = 'Revoke this Certificate';
+      }
+    } catch (err) {
+      result.hidden = false;
+      result.classList.add('err');
+      result.textContent = '✕ Request failed: ' + err.message;
+      btn.disabled    = false;
+      btn.textContent = 'Revoke this Certificate';
+    }
   }
 
 }());

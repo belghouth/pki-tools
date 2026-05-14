@@ -696,10 +696,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
             <div class="tool-card-name">Test Certificate Factory</div>
             <div class="tool-card-desc">Submit a CSR and receive a BR-compliant DV TLS certificate signed by the Meerkat Test Issuing CA. Subject is rebuilt from the first SAN — all other fields stripped. RSA ≥ 2048 only. Useful for validating linter behaviour against a known-good chain.</div>
             <div class="tool-card-tags">
-              <span class="tool-tag">Test CA</span>
-              <span class="tool-tag">BR Compliance</span>
-              <span class="tool-tag">DV</span>
-              <span class="tool-tag">RSA</span>
+              <span class="tag">Test CA</span>
+              <span class="tag">BR Compliance</span>
+              <span class="tag">DV</span>
+              <span class="tag">RSA</span>
             </div>
             <a href="/cert_factory.php" class="tool-card-link">Open Tool →</a>
           </div>

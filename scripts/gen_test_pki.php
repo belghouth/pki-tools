@@ -390,8 +390,9 @@ step('Generating Root CA ARL');
 $r = run([
     $openssl, 'ca',
     '-gencrl',
-    '-config', "$ROOT_DB/openssl.cnf",
-    '-out', $ROOT_CRL,
+    '-config',  "$ROOT_DB/openssl.cnf",
+    '-out',     $ROOT_CRL,
+    '-outform', 'DER',
     '-batch',
 ]);
 if (!$r['ok']) {
@@ -407,8 +408,9 @@ step('Generating Issuing CA CRL');
 $r = run([
     $openssl, 'ca',
     '-gencrl',
-    '-config', "$ISSU_DB/openssl.cnf",
-    '-out', $ISSU_CRL,
+    '-config',  "$ISSU_DB/openssl.cnf",
+    '-out',     $ISSU_CRL,
+    '-outform', 'DER',
     '-batch',
 ]);
 if (!$r['ok']) {
@@ -416,6 +418,9 @@ if (!$r['ok']) {
     exit(1);
 }
 ok('Issuing CRL: ' . $ISSU_CRL);
+
+// Allow www-data (PHP-FPM) to overwrite the issuing CRL after revocations
+chgrp($ISSU_CRL, 'www-data'); chmod($ISSU_CRL, 0664);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 7. Chain verification

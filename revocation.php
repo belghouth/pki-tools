@@ -292,9 +292,11 @@ function revoc_check_crl(string $ee_pem, bool $delta = false): array {
         file_put_contents($tmp_crl, $crl_data);
 
         // Parse CRL metadata with openssl crl.
+        // RFC 5280 CDPs should serve DER, but many CAs serve PEM; auto-detect.
+        $inform = (str_starts_with(ltrim($crl_data), '-----') ? 'PEM' : 'DER');
         $cmd = 'openssl crl'
              . ' -in '     . escapeshellarg($tmp_crl)
-             . ' -inform DER'
+             . ' -inform ' . $inform
              . ' -text'
              . ' -noout'
              . ' 2>&1';
