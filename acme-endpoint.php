@@ -188,7 +188,7 @@ if ($secondsRemaining !== null) {
     <?php
     require_once __DIR__ . '/includes/seo.php';
     seo_head([
-      'title'       => 'ACME Automation Endpoint — RFC 8555 Live Demo | thameur.org',
+      'title'       => 'ACME Automation Testing Endpoint — RFC 8555 Live Demo | thameur.org',
       'description' => 'Live reference implementation of an automated certificate renewal endpoint as required by the Chrome Root Program and validated by Mozilla. Demonstrates RFC 8555 ACME renewal verification in a production environment.',
       'url'         => 'https://thameur.org/acme-endpoint.php',
       'jsonld'      => json_encode([

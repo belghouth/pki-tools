@@ -662,7 +662,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
           <div class="tool-card-bar tool-card-bar--teal"></div>
           <div class="tool-card-body">
             <div class="tool-card-icon">⚡</div>
-            <div class="tool-card-name">ACME Automation Endpoint</div>
+            <div class="tool-card-name">ACME Automation Testing Endpoint</div>
             <div class="tool-card-desc">A live reference implementation of an automated certificate renewal endpoint as required by the Chrome Root Program and validated by Mozilla. Demonstrates RFC 8555 renewal verification in a production environment.</div>
             <div class="tool-card-tags">
               <span class="tag">ACME</span>
