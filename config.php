@@ -77,6 +77,17 @@ define('MAX_CSR_BYTES',  65536);   // 64 KB
 define('MAX_SANS',         100);
 define('CAA_ISSUER',  SITE_DOMAIN);
 
+// ── DNS-over-HTTPS resolvers ───────────────────────────────────────────────────
+// Used server-side for DCV verification and as browser links in the challenge UI.
+// 'url'   — DoH JSON API base URL (append ?name=…&type=… to query).
+//           Append ?ct=application/dns-json for endpoints that require it (e.g. Cloudflare).
+// 'label' — Human-readable name shown in the challenge card.
+// Tried in order; first successful response wins.
+define('DNS_CHECKERS', [
+    ['label' => 'Google DNS',    'url' => 'https://dns.google/resolve'],
+    ['label' => 'Cloudflare DNS','url' => 'https://cloudflare-dns.com/dns-query?ct=application/dns-json'],
+]);
+
 // ── Contact ───────────────────────────────────────────────────────────────────
 define('CONTACT_EMAIL', 'me@thameur.org');
 define('NOREPLY_EMAIL', 'no-reply@thameur.org');

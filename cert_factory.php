@@ -414,17 +414,40 @@ function dcv_verify_http(string $domain, string $token): array
     return ['ok' => true];
 }
 
+function doh_query(string $name, string $type): ?array
+{
+    foreach (DNS_CHECKERS as $checker) {
+        $base = $checker['url'];
+        $sep  = str_contains($base, '?') ? '&' : '?';
+        $url  = $base . $sep . 'name=' . urlencode($name) . '&type=' . urlencode($type);
+        $ch   = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 5,
+            CURLOPT_HTTPHEADER     => ['Accept: application/dns-json'],
+            CURLOPT_USERAGENT      => 'PKITools-DCV/1.0',
+        ]);
+        $body = curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($code === 200 && is_string($body)) {
+            $json = json_decode($body, true);
+            if (is_array($json)) return $json;
+        }
+    }
+    return null;
+}
+
 function dcv_verify_dns(string $domain, string $token): array
 {
-    $recs = @dns_get_record('_pki-validation.' . $domain, DNS_TXT);
-    if ($recs === false || !is_array($recs)) {
-        return ['ok' => false, 'error' => 'DNS lookup failed'];
+    $result = doh_query('_pki-validation.' . $domain, 'TXT');
+    if ($result === null) {
+        return ['ok' => false, 'error' => 'DNS lookup failed — all resolvers unreachable'];
     }
-    foreach ($recs as $rec) {
-        $val = trim($rec['txt'] ?? ($rec['entries'][0] ?? ''));
-        if ($val === $token) {
-            return ['ok' => true];
-        }
+    foreach ($result['Answer'] ?? [] as $rec) {
+        if ((int)($rec['type'] ?? 0) !== 16) continue; // 16 = TXT
+        $val = trim($rec['data'] ?? '', '"');
+        if ($val === $token) return ['ok' => true];
     }
     return ['ok' => false, 'error' => 'TXT record _pki-validation.' . $domain . ' not found or value mismatch'];
 }
@@ -432,19 +455,22 @@ function dcv_verify_dns(string $domain, string $token): array
 function dcv_verify_dns_cname(string $domain, string $token): array
 {
     // Expected: _pki-validation.DOMAIN CNAME TOKEN.dcv.PKI_DOMAIN
-    $cname_label = '_pki-validation.' . $domain;
+    $cname_label     = '_pki-validation.' . $domain;
     $expected_target = strtolower($token . '.dcv.' . PKI_DOMAIN . '.');
-    $recs = @dns_get_record($cname_label, DNS_CNAME);
-    if ($recs === false || !is_array($recs) || empty($recs)) {
+    $result = doh_query($cname_label, 'CNAME');
+    if ($result === null) {
+        return ['ok' => false, 'error' => 'DNS lookup failed — all resolvers unreachable'];
+    }
+    $answers = $result['Answer'] ?? [];
+    if (empty($answers)) {
         return ['ok' => false, 'error' => 'No CNAME record found for ' . $cname_label];
     }
-    foreach ($recs as $rec) {
-        $target = strtolower(rtrim($rec['target'] ?? '', '.') . '.');
-        if ($target === $expected_target) {
-            return ['ok' => true];
-        }
+    foreach ($answers as $rec) {
+        if ((int)($rec['type'] ?? 0) !== 5) continue; // 5 = CNAME
+        $target = strtolower(rtrim($rec['data'] ?? '', '.') . '.');
+        if ($target === $expected_target) return ['ok' => true];
     }
-    $found = implode(', ', array_map(fn($r) => $r['target'] ?? '?', $recs));
+    $found = implode(', ', array_filter(array_map(fn($r) => $r['data'] ?? null, $answers)));
     return ['ok' => false, 'error' => "CNAME target mismatch — expected {$expected_target}, found: {$found}"];
 }
 
@@ -1430,6 +1456,31 @@ $navLabel = 'Test CA';
     .dcv-result-ok  { color: var(--accent); }
     .dcv-result-err { color: var(--danger); font-family: var(--mono); font-size: 0.77rem; }
 
+    .dcv-action-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.15rem; }
+    .dcv-download-btn {
+      font-family: var(--mono); font-size: 0.65rem; text-transform: uppercase;
+      letter-spacing: 0.06em; background: rgba(0,212,170,0.08);
+      border: 1px solid rgba(0,212,170,0.3); border-radius: 4px;
+      color: var(--accent); padding: 0.25em 0.75em; text-decoration: none;
+      white-space: nowrap; transition: background 0.15s;
+    }
+    .dcv-download-btn:hover { background: rgba(0,212,170,0.18); }
+    .dcv-instr { font-size: 0.72rem; color: var(--muted); line-height: 1.5; }
+    .dcv-instr-path { font-family: var(--mono); color: var(--fg); }
+    .dcv-prop-note {
+      margin-top: 0.8rem; padding: 0.55rem 0.8rem;
+      background: rgba(251,191,36,0.05); border: 1px solid rgba(251,191,36,0.2);
+      border-radius: 4px; font-size: 0.77rem; color: #c8a94a; line-height: 1.6;
+    }
+    .dcv-checker-row { margin-top: 0.3rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+    .dcv-checker-label { font-size: 0.7rem; color: var(--muted); }
+    .dcv-checker-link {
+      font-family: var(--mono); font-size: 0.68rem; color: var(--muted);
+      text-decoration: none; border-bottom: 1px dashed var(--border);
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .dcv-checker-link:hover { color: var(--accent); border-color: var(--accent); }
+
     .omit-cn-ref {
       font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.04em;
       padding: 0.1em 0.5em; border-radius: 3px; margin-left: 0.4rem;
@@ -1663,6 +1714,7 @@ $navLabel = 'Test CA';
 
   var RECAPTCHA_SITE_KEY = <?= json_encode(RECAPTCHA_SITE_KEY) ?>;
   var ISSUING_CA_PEM     = <?= json_encode(file_exists(ISSUING_CRT) ? trim((string) file_get_contents(ISSUING_CRT)) : '') ?>;
+  var dcvCheckers        = <?= json_encode(DNS_CHECKERS, JSON_UNESCAPED_SLASHES) ?>;
 
   function getRecaptchaToken(action) {
     return new Promise(function (resolve) {
@@ -2093,9 +2145,16 @@ $navLabel = 'Test CA';
       html += '<div class="dcv-challenge-domain">' + esc(domain) + '</div>';
 
       if (m === 'http') {
-        var urlRaw = 'http://' + domain + '/.well-known/pki-validation/' + token;
+        var urlRaw  = 'http://' + domain + '/.well-known/pki-validation/' + token;
+        var dataUri = 'data:text/plain;charset=utf-8,' + encodeURIComponent(token);
         html += tokenBlock('URL', esc(urlRaw), urlRaw);
         html += tokenBlock('File content (exact)', esc(token), token);
+        html += '<div class="dcv-token-block">'
+              + '<div class="dcv-token-label">Verification file</div>'
+              + '<div class="dcv-action-row">'
+              + '<a class="dcv-download-btn" href="' + dataUri + '" download="' + esc(token) + '">⬇ Download file</a>'
+              + '<span class="dcv-instr">Upload to <span class="dcv-instr-path">http://' + esc(domain) + '/.well-known/pki-validation/</span></span>'
+              + '</div></div>';
 
       } else if (m === 'dns') {
         var nameRaw = '_pki-validation.' + domain;
@@ -2103,6 +2162,9 @@ $navLabel = 'Test CA';
         html += '<div class="dcv-token-block"><div class="dcv-token-label">Type</div>'
               + '<div class="dcv-token-row"><span class="dcv-token-value">TXT</span></div></div>';
         html += tokenBlock('Value', esc(token), token);
+        html += '<div class="dcv-token-block"><div class="dcv-token-label">Recommended TTL</div>'
+              + '<div class="dcv-token-row"><span class="dcv-token-value">300 <span style="color:var(--muted);font-size:0.8em">seconds</span></span></div></div>';
+        html += dnsPropNote(nameRaw, 'TXT');
 
       } else if (m === 'dns-cname') {
         var cnameFrom = '_pki-validation.' + domain;
@@ -2111,9 +2173,11 @@ $navLabel = 'Test CA';
         html += '<div class="dcv-token-block"><div class="dcv-token-label">Type</div>'
               + '<div class="dcv-token-row"><span class="dcv-token-value">CNAME</span></div></div>';
         html += tokenBlock('CNAME target (include trailing dot)', esc(cnameTo), cnameTo);
+        html += '<div class="dcv-token-block"><div class="dcv-token-label">Recommended TTL</div>'
+              + '<div class="dcv-token-row"><span class="dcv-token-value">300 <span style="color:var(--muted);font-size:0.8em">seconds</span></span></div></div>';
+        html += dnsPropNote(cnameFrom, 'CNAME');
 
       } else if (m === 'tls-alpn') {
-        // Compute SHA-256 of token in browser to display the expected extension value
         html += tokenBlock('Token (used to derive the cert extension value)', esc(token), token);
         html += '<div class="dcv-token-block"><div class="dcv-token-label">Setup</div>'
               + '<div class="dcv-token-row"><span class="dcv-token-value" style="color:var(--muted);font-size:0.7rem">'
@@ -2129,6 +2193,18 @@ $navLabel = 'Test CA';
     dcvErrorBox.hidden = true;
     dcvCard.hidden = false;
     dcvCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function dnsPropNote(recordName, recordType) {
+    var checkerLinks = dcvCheckers.map(function (c) {
+      var sep  = c.url.indexOf('?') >= 0 ? '&' : '?';
+      var href = c.url + sep + 'name=' + encodeURIComponent(recordName) + '&type=' + recordType;
+      return '<a class="dcv-checker-link" href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(c.label) + '</a>';
+    }).join('');
+    return '<div class="dcv-prop-note">'
+         + '⏳ DNS propagation can take several minutes. Click <strong>Verify &amp; Issue</strong> to retry without leaving this page.'
+         + '<div class="dcv-checker-row"><span class="dcv-checker-label">Check propagation:</span> ' + checkerLinks + '</div>'
+         + '</div>';
   }
 
   function tokenBlock(label, display, copyVal) {
