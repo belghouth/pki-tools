@@ -65,7 +65,7 @@ define('ISSUING_CA_SUBJ',
     '/C=' . ISSUING_CA_DN['C'] . '/O=' . ISSUING_CA_DN['O'] . '/CN=' . ISSUING_CA_DN['CN']);
 
 // ── Certificate policy ────────────────────────────────────────────────────────
-define('CERT_DAYS',        90);    // subscriber cert validity
+define('CERT_DAYS',        900);    // subscriber cert validity
 define('ROOT_CA_DAYS',   3650);    // ~10 years
 define('ISSUING_CA_DAYS', 1825);   // ~5 years
 define('ARL_DAYS',         365);   // Root ARL validity
