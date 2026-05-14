@@ -1,0 +1,6 @@
+Options -Indexes
+
+# Route CT log API paths to ct_log.php
+# Maps /ct/v1/<endpoint> → ct_log.php?_ep=<endpoint>
+RewriteEngine On
+RewriteRule ^ct/v1/([a-z][a-z\-]*)$ /ct_log.php?_ep=$1 [QSA,L]

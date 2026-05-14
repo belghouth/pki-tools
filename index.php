@@ -392,6 +392,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     .tool-card-bar--purple  { background: #a78bfa; }
     .tool-card-bar--amber   { background: #f59e0b; }
     .tool-card-bar--orange  { background: #f97316; }
+    .tool-card-bar--green   { background: #22c55e; }
 
     .tool-card-body { padding: 1.4rem; flex: 1; display: flex; flex-direction: column; }
 
@@ -702,6 +703,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
               <span class="tag">RSA</span>
             </div>
             <a href="/cert_factory.php" class="tool-card-link">Open Tool →</a>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-bar tool-card-bar--green"></div>
+          <div class="tool-card-body">
+            <div class="tool-card-icon">🌳</div>
+            <div class="tool-card-name">Meerkat Testing CT Log</div>
+            <div class="tool-card-desc">An RFC 6962-compliant Certificate Transparency log for testing. Accepts precertificate chains and returns cryptographically valid SCTs signed by one of 8 randomised fake log identities. Ephemeral — no entries are stored. Includes full API reference and integration guide.</div>
+            <div class="tool-card-tags">
+              <span class="tag">RFC 6962</span>
+              <span class="tag">CT Log</span>
+              <span class="tag">SCT</span>
+              <span class="tag">Precertificate</span>
+            </div>
+            <a href="/ct_log_doc.php" class="tool-card-link">Open Tool →</a>
           </div>
         </div>
 
