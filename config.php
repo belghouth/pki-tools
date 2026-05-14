@@ -88,12 +88,12 @@ define('PKIMETAL_URL',  'http://127.0.0.1:8080');
 // Key = filename stem in PKI_CT_KEYS_DIR (e.g. "kablouti" → kablouti.pem / kablouti.id)
 // Value = [description, operator, mmd_seconds]
 define('CT_LOG_META', [
-    'kablouti'   => ['Meerkat Lynx CT 2025h1',   'Kablouti Certificate Services',       86400],
-    'karkoub'    => ['Meerkat Osprey CT 2025h2',  'Karkoub Trust Infrastructure',        86400],
-    'sal7ouf'    => ['Meerkat Kestrel CT 2026h1', 'Sal7ouf Digital Logs',                86400],
-    'farhoud'    => ['Meerkat Merlin CT 2025',    'Farhoud CT Authority',                86400],
-    'habhoub'    => ['Meerkat Harrier CT 2026',   'Habhoub Certificate Logs',            86400],
-    'sardouk'    => ['Meerkat Falcon CT 2025h2',  'Sardouk Log Services',                86400],
-    'dhibi'      => ['Meerkat Ibis CT 2026h1',    'Dhibi Digital Trust',                 86400],
-    'bousannoun' => ['Meerkat Wren CT 2025',      'Bousannoun Certificate Transparency',  86400],
+    'kablouti'   => ['Meerkat Kablouti CT 2025h1',   'Kablouti Certificate Services',       86400],
+    'karkoub'    => ['Meerkat Karkoub CT 2025h2',  'Karkoub Trust Infrastructure',        86400],
+    'sal7ouf'    => ['Meerkat Sal7ouf CT 2026h1', 'Sal7ouf Digital Logs',                86400],
+    'farhoud'    => ['Meerkat Farhoud CT 2025',    'Farhoud CT Authority',                86400],
+    'habhoub'    => ['Meerkat Habhoub CT 2026',   'Habhoub Certificate Logs',            86400],
+    'sardouk'    => ['Meerkat Sardouk CT 2025h2',  'Sardouk Log Services',                86400],
+    'dhibi'      => ['Meerkat Dhibi CT 2026h1',    'Dhibi Digital Trust',                 86400],
+    'bousannoun' => ['Meerkat Bousannoun CT 2025',      'Bousannoun Certificate Transparency',  86400],
 ]);
