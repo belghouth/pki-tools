@@ -20,15 +20,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json; charset=utf-8');
     $action = $_POST['action'] ?? 'issue';
     $result = match ($action) {
-        'revoke'       => handle_revoke(),
-        'generate_csr' => handle_generate_csr(),
-        default        => handle_issue(),
+        'revoke'        => handle_revoke(),
+        'generate_csr'  => handle_generate_csr(),
+        'issue_precert' => handle_issue(true),
+        default         => handle_issue(false),
     };
     echo json_encode($result, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
 }
 
-function handle_issue(): array
+function handle_issue(bool $precert = false): array
 {
     // Collect CSR PEM
     $csrPem = '';
@@ -69,7 +70,7 @@ function handle_issue(): array
     file_put_contents($tmpCsr, $csrPem . "\n");
 
     try {
-        return process_csr($tmpCsr);
+        return process_csr($tmpCsr, $precert);
     } finally {
         @unlink($tmpCsr);
     }
@@ -278,7 +279,7 @@ function is_reserved_name(string $name): bool
     return false;
 }
 
-function process_csr(string $csrFile): array
+function process_csr(string $csrFile, bool $precert = false): array
 {
     // 1. Parse (also validates PEM structure)
     $r = run_cmd([OPENSSL, 'req', '-in', $csrFile, '-noout', '-text']);
@@ -359,7 +360,7 @@ function process_csr(string $csrFile): array
 
         $sanStr = implode(', ', array_map(fn($s) => 'DNS:' . $s, $sans));
 
-        file_put_contents($extFile, implode("\n", [
+        $extLines = [
             '[ v3_ee ]',
             // critical — required by BR §7.1.2.7.6 and zlint e_sub_cert_basic_constraints_not_critical
             'basicConstraints       = critical, CA:FALSE',
@@ -372,7 +373,12 @@ function process_csr(string $csrFile): array
             'authorityInfoAccess    = caIssuers;URI:' . AIA_URL,
             'crlDistributionPoints  = URI:' . CDP_URL,
             'subjectAltName         = ' . $sanStr,
-        ]));
+        ];
+        if ($precert) {
+            // RFC 6962 §3.1 CT poison extension — critical, ASN.1 NULL (DER 05 00)
+            $extLines[] = '1.3.6.1.4.1.11129.2.4.3 = critical, DER:05:00';
+        }
+        file_put_contents($extFile, implode("\n", $extLines));
 
         $r = run_cmd([
             OPENSSL, 'ca',
@@ -400,6 +406,7 @@ function process_csr(string $csrFile): array
 
         return [
             'ok'         => true,
+            'precert'    => $precert,
             'certificate'=> trim($certPem),
             'subject'    => 'CN=' . $certCn,
             'sans'       => $sans,
@@ -677,7 +684,8 @@ $navLabel = 'Test CA';
       padding: 0.45em 1em; cursor: pointer; color: var(--muted);
       transition: border-color 0.15s, color 0.15s;
     }
-    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
 
     .spinner {
       width: 18px; height: 18px; border: 2px solid var(--border);
@@ -754,6 +762,11 @@ $navLabel = 'Test CA';
       border: 1px solid #854d0e; background: rgba(133,77,14,0.12);
       border-radius: 6px; padding: 0.65rem 0.9rem; margin-bottom: 0.9rem;
       font-size: 0.8rem; color: #fde68a; line-height: 1.6;
+    }
+    .precert-note {
+      border: 1px solid #92400e; background: rgba(146,64,14,0.12);
+      border-radius: 6px; padding: 0.65rem 0.9rem; margin-bottom: 1rem;
+      font-size: 0.82rem; color: #fcd34d; line-height: 1.6;
     }
     .csr-domain-row {
       display: flex; gap: 0.6rem; align-items: stretch; flex-wrap: wrap;
@@ -894,6 +907,7 @@ $navLabel = 'Test CA';
 
       <div class="submit-row">
         <button class="btn-primary" type="submit" id="btnIssue">Issue Certificate</button>
+        <button class="btn-ghost" type="button" id="btnPrecert">Issue Precertificate</button>
         <div class="spinner" id="spinner" hidden></div>
       </div>
 
@@ -908,11 +922,17 @@ $navLabel = 'Test CA';
   <!-- Result card (hidden until a cert is issued) -->
   <div class="card" id="resultCard" hidden>
     <div class="result-header">
-      <h2>✔ Certificate Issued</h2>
+      <h2 id="resultTitle">✔ Certificate Issued</h2>
       <div class="result-actions">
         <button class="btn-ghost" id="btnCopy">Copy PEM</button>
         <button class="btn-ghost" id="btnDl">Download .crt</button>
       </div>
+    </div>
+
+    <div class="precert-note" id="precertNote" hidden>
+      ⚠ <strong>This is a precertificate</strong> (RFC 6962). It contains the CT poison extension
+      (OID 1.3.6.1.4.1.11129.2.4.3, critical) and <strong>cannot be used for TLS</strong>. It is
+      intended for submission to Certificate Transparency logs and linter testing only.
     </div>
 
     <div class="cert-info" id="certInfo"></div>
@@ -1025,6 +1045,7 @@ $navLabel = 'Test CA';
   // ── Form submission ──────────────────────────────────────────────────────────
   var form       = document.getElementById('issueForm');
   var btnIssue   = document.getElementById('btnIssue');
+  var btnPrecert = document.getElementById('btnPrecert');
   var spinner    = document.getElementById('spinner');
   var errorBox   = document.getElementById('errorBox');
   var errorMsg   = document.getElementById('errorMsg');
@@ -1034,10 +1055,14 @@ $navLabel = 'Test CA';
 
   form.addEventListener('submit', function (e) {
     e.preventDefault();
-    doIssue();
+    doIssue('issue');
   });
 
-  async function doIssue() {
+  btnPrecert.addEventListener('click', function () {
+    doIssue('issue_precert');
+  });
+
+  async function doIssue(action) {
     setLoading(true);
     hideError();
     resultCard.hidden = true;
@@ -1061,6 +1086,7 @@ $navLabel = 'Test CA';
     if (method === 'paste') fd.delete('csr_file');
     else                    fd.delete('csr');
 
+    fd.set('action', action);
     var token = await getRecaptchaToken('issue_cert');
     fd.append('g_recaptcha_token', token);
 
@@ -1079,8 +1105,26 @@ $navLabel = 'Test CA';
 
   // ── Render result ────────────────────────────────────────────────────────────
   function renderResult(data) {
+    var isPrecert = !!data.precert;
+
     // PEM
     pemOutput.value = data.certificate;
+
+    // Header title + precert note
+    var resultTitle = document.getElementById('resultTitle');
+    var precertNote = document.getElementById('precertNote');
+    var revokeRow   = document.getElementById('revokeRow');
+    if (isPrecert) {
+      resultTitle.textContent = '⚠ Precertificate Issued';
+      resultTitle.style.color = '#fcd34d';
+      precertNote.hidden = false;
+      revokeRow.hidden = true;
+    } else {
+      resultTitle.textContent = '✔ Certificate Issued';
+      resultTitle.style.color = '';
+      precertNote.hidden = true;
+      revokeRow.hidden = false;
+    }
 
     // Info table
     var sanHtml = (data.sans || []).map(function (s) {
@@ -1100,13 +1144,15 @@ $navLabel = 'Test CA';
     resultCard.hidden = false;
     resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-    // Reset revocation state for the new cert
-    document.getElementById('btnRevoke').disabled = false;
-    document.getElementById('btnRevoke').textContent = 'Revoke this Certificate';
-    var rr = document.getElementById('revokeResult');
-    rr.hidden = true;
-    rr.className = 'revoke-result';
-    rr.textContent = '';
+    if (!isPrecert) {
+      // Reset revocation state for the new cert
+      document.getElementById('btnRevoke').disabled = false;
+      document.getElementById('btnRevoke').textContent = 'Revoke this Certificate';
+      var rr = document.getElementById('revokeResult');
+      rr.hidden = true;
+      rr.className = 'revoke-result';
+      rr.textContent = '';
+    }
   }
 
   function row(key, val) {
@@ -1139,8 +1185,10 @@ $navLabel = 'Test CA';
 
   // ── Utilities ────────────────────────────────────────────────────────────────
   function setLoading(on) {
-    btnIssue.disabled = on;
-    btnIssue.textContent = on ? 'Issuing…' : 'Issue Certificate';
+    btnIssue.disabled   = on;
+    btnPrecert.disabled = on;
+    btnIssue.textContent   = on ? 'Issuing…' : 'Issue Certificate';
+    btnPrecert.textContent = on ? 'Issuing…' : 'Issue Precertificate';
     spinner.hidden = !on;
   }
 
