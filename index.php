@@ -632,7 +632,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
           <div class="tool-card-bar tool-card-bar--blue"></div>
           <div class="tool-card-body">
             <div class="tool-card-icon">🧾</div>
-            <div class="tool-card-name">Certificate Linters</div>
+            <div class="tool-card-name">Meerkat Multi-Linter</div>
             <div class="tool-card-desc">Run a certificate through zlint, pkilint, and x509lint simultaneously. Flags policy violations and RFC 5280 issues with direct references to the failing requirements.</div>
             <div class="tool-card-tags">
               <span class="tag">zlint</span>

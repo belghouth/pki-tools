@@ -456,13 +456,13 @@ if ($fetched_domain === '') {
 <?php
 require_once __DIR__ . '/includes/seo.php';
 seo_head([
-  'title'       => 'Certificate Linters — zlint, pkilint & x509lint Online | thameur.org',
+  'title'       => 'Meerkat Multi-Linter — zlint, pkilint, x509lint, and crt.sh  | thameur.org',
   'description' => 'Run any X.509 certificate through zlint, pkilint, and x509lint simultaneously. Flags CA/Browser Forum Baseline Requirement violations and RFC 5280 issues with direct requirement references.',
   'url'         => 'https://thameur.org/linters.php',
   'jsonld'      => json_encode([
     '@context'            => 'https://schema.org',
     '@type'               => 'WebApplication',
-    'name'                => 'PKI Certificate Linters',
+    'name'                => 'Meerkat Multi-Linter',
     'url'                 => 'https://thameur.org/linters.php',
     'description'         => 'Run any X.509 certificate through zlint, pkilint, and x509lint simultaneously.',
     'applicationCategory' => 'SecurityApplication',
