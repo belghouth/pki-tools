@@ -361,21 +361,54 @@ function acme_action_init(): array
     $ra = acme_post_req($dir['newAccount'], $payload);
     acme_log_entry('Create account', 'POST', $dir['newAccount'], '(JWS — key material omitted)', $ra);
 
-    $acct_ok  = ($ra['code'] === 200 || $ra['code'] === 201);
-    $acct_url = $ra['headers']['location'] ?? '';
-    $detail   = '';
+    $acct_ok   = ($ra['code'] === 200 || $ra['code'] === 201);
+    $acct_url  = $ra['headers']['location'] ?? '';
+    $acct_warns = [];
+    $acct_detail = '';
+
     if ($ra['cerr']) {
-        $detail = 'Connection error: ' . $ra['cerr'];
-    } elseif ($acct_ok) {
-        $status = $ra['json']['status'] ?? '';
-        $detail = "HTTP {$ra['code']} — account {$status}";
-        if (!$acct_url) $detail .= ' ⚠ No Location header';
+        $acct_detail = 'Connection error: ' . $ra['cerr'];
+        $acct_ok = false;
+    } elseif (!$ra['ok']) {
+        // Non-2xx — show code + full problem detail
+        $prob  = $ra['json'];
+        $acct_detail = "HTTP {$ra['code']}";
+        if (!empty($prob['type']))   $acct_detail .= ' · ' . $prob['type'];
+        if (!empty($prob['detail'])) $acct_detail .= ': ' . $prob['detail'];
+        elseif ($ra['raw_body'] !== '') $acct_detail .= ' · ' . substr($ra['raw_body'], 0, 300);
     } else {
-        $detail = 'HTTP ' . $ra['code'] . ' — ' . ($ra['json']['detail'] ?? $ra['json']['type'] ?? substr($ra['raw_body'], 0, 200));
+        $acct_status = $ra['json']['status'] ?? null;
+        $acct_detail = "HTTP {$ra['code']} — account " . ($acct_status ?? '(no status in body)');
+        // RFC 8555 §7.3: 201 for new account, 200 for existing — Location MUST be present
+        if ($ra['code'] === 200) {
+            $acct_warns[] = 'Server returned 200 instead of 201 — may be an existing account';
+        }
+        if (!$acct_url) {
+            $acct_warns[] = 'No Location header — RFC 8555 §7.3 requires it; account URL unknown';
+        }
+        $nonce_hdr = $ra['headers']['replay-nonce'] ?? '';
+        if (!$nonce_hdr) {
+            $acct_warns[] = 'No Replay-Nonce in response — RFC 8555 §6.5 requires it on every POST response';
+        }
+        $ct = $ra['headers']['content-type'] ?? '';
+        if ($ct && !str_contains($ct, 'json')) {
+            $acct_warns[] = "Unexpected Content-Type: {$ct}";
+        }
+        if ($acct_status === null) {
+            $acct_warns[] = 'Response body missing "status" field';
+        }
     }
-    $steps[] = ['name' => 'Create account (POST newAccount)', 'ok' => $acct_ok, 'detail' => $detail];
+
+    $steps[] = [
+        'name'     => 'Create account (POST newAccount)',
+        'ok'       => $acct_ok,
+        'warn'     => $acct_ok && !empty($acct_warns),
+        'detail'   => $acct_detail,
+        'warnings' => $acct_warns,
+    ];
     if (!$acct_ok) {
-        return ['error' => 'Account creation failed: ' . ($ra['json']['detail'] ?? "HTTP {$ra['code']}"), 'steps' => $steps];
+        return ['error' => 'Account creation failed — HTTP ' . $ra['code']
+                         . ($ra['json']['detail'] ? ': ' . $ra['json']['detail'] : ''), 'steps' => $steps];
     }
     if ($acct_url) $s['account_url'] = $acct_url;
 
@@ -415,19 +448,45 @@ function acme_action_order(): array
     acme_log_entry('Place order', 'POST', $s['directory']['newOrder'], '(JWS)', $ro);
 
     if (!$ro['ok']) {
-        $err = $ro['json']['detail'] ?? $ro['json']['type'] ?? "HTTP {$ro['code']}";
-        $steps[] = ['name' => 'Place order (POST newOrder)', 'ok' => false, 'detail' => $err];
-        return ['error' => 'Order placement failed: ' . $err, 'steps' => $steps];
+        $prob = $ro['json'];
+        $err_detail = "HTTP {$ro['code']}";
+        if (!empty($prob['type']))   $err_detail .= ' · ' . $prob['type'];
+        if (!empty($prob['detail'])) $err_detail .= ': ' . $prob['detail'];
+        elseif ($ro['raw_body'] !== '') $err_detail .= ' · ' . substr($ro['raw_body'], 0, 300);
+        $steps[] = ['name' => 'Place order (POST newOrder)', 'ok' => false, 'detail' => $err_detail];
+        return ['error' => 'Order placement failed — ' . $err_detail, 'steps' => $steps];
     }
     $order     = $ro['json'] ?? [];
     $order_url = $ro['headers']['location'] ?? '';
+    $order_warns = [];
+    // RFC 8555 §7.4: server MUST respond 201 Created for a new order
+    if ($ro['code'] !== 201) {
+        $order_warns[] = "HTTP {$ro['code']} returned — RFC 8555 §7.4 requires 201 Created for new orders";
+    }
+    if (!$order_url) {
+        $order_warns[] = 'No Location header — RFC 8555 §7.4 requires it; cannot poll order status';
+    }
+    // Validate required order fields
+    foreach (['status', 'identifiers', 'authorizations', 'finalize'] as $f) {
+        if (!isset($order[$f])) $order_warns[] = "Response body missing required field: \"{$f}\"";
+    }
+    if (!$ro['headers']['replay-nonce'] ?? '') {
+        $order_warns[] = 'No Replay-Nonce in response';
+    }
     $steps[] = [
-        'name'   => 'Place order (POST newOrder)',
-        'ok'     => true,
-        'detail' => 'HTTP ' . $ro['code'] . ' — order ' . ($order['status'] ?? '?') . ($order_url ? '' : ' ⚠ No Location header'),
+        'name'     => 'Place order (POST newOrder)',
+        'ok'       => true,
+        'warn'     => !empty($order_warns),
+        'detail'   => "HTTP {$ro['code']} — order " . ($order['status'] ?? '(no status)'),
+        'warnings' => $order_warns,
     ];
     $s['order_url']    = $order_url;
     $s['finalize_url'] = $order['finalize'] ?? '';
+
+    // Without a finalize URL we cannot proceed
+    if (!$s['finalize_url']) {
+        return ['error' => 'Order response missing "finalize" URL — cannot proceed', 'steps' => $steps];
+    }
 
     // Fetch authorizations
     $authz_list = [];
@@ -436,7 +495,11 @@ function acme_action_order(): array
         acme_log_entry('Fetch authz', 'POST', $authz_url, '(POST-as-GET)', $ra);
 
         if (!$ra['ok']) {
-            $steps[] = ['name' => 'Fetch authorization', 'ok' => false, 'detail' => "HTTP {$ra['code']} for {$authz_url}"];
+            $prob = $ra['json'];
+            $det  = "HTTP {$ra['code']}";
+            if (!empty($prob['detail'])) $det .= ': ' . $prob['detail'];
+            elseif ($ra['raw_body'] !== '') $det .= ' · ' . substr($ra['raw_body'], 0, 200);
+            $steps[] = ['name' => 'Fetch authorization', 'ok' => false, 'detail' => $det];
             continue;
         }
         $authz   = $ra['json'];
@@ -957,6 +1020,13 @@ $navLabel = 'ACME Tester';
           <input type="text" id="eabMac" placeholder="base64url-encoded MAC key" spellcheck="false" autocomplete="off">
         </div>
       </div>
+      <button type="button" class="btn-ghost" id="btnGenEab" style="margin-top:0.3rem;font-size:0.7rem">
+        Generate random EAB credentials
+      </button>
+      <p style="font-size:0.74rem;color:var(--muted);margin-top:0.4rem">
+        Random credentials will be rejected by real CAs. Use this to test how the server handles
+        unrecognised-but-correctly-formatted EAB.
+      </p>
     </div>
 
     <!-- CSR toggle -->
@@ -1098,6 +1168,24 @@ $navLabel = 'ACME Tester';
       chev.classList.toggle('open', !body.hidden);
     });
   }
+
+  // ── EAB generator ────────────────────────────────────────────────────────────
+  document.getElementById('btnGenEab').addEventListener('click', function () {
+    var kidBytes = new Uint8Array(8);
+    var macBytes = new Uint8Array(32);
+    crypto.getRandomValues(kidBytes);
+    crypto.getRandomValues(macBytes);
+    var kid = 'test-' + Array.from(kidBytes).map(function(b){ return b.toString(16).padStart(2,'0'); }).join('');
+    var mac = btoa(String.fromCharCode.apply(null, macBytes))
+                .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+    document.getElementById('eabKid').value = kid;
+    document.getElementById('eabMac').value = mac;
+    var eabBody = document.getElementById('eabBody');
+    if (eabBody.hidden) {
+      eabBody.hidden = false;
+      document.getElementById('eabChevron').classList.add('open');
+    }
+  });
 
   // ── Main flow ─────────────────────────────────────────────────────────────────
   btnStart.addEventListener('click', function () { runTest(); });
@@ -1417,9 +1505,10 @@ $navLabel = 'ACME Tester';
 
   function appendSteps(steps) {
     steps.forEach(function (s) {
-      var cls  = s.ok ? 'step-ok' : 'step-fail';
-      var icon = s.ok ? '✔' : '✕';
-      var el   = document.createElement('div');
+      var isWarn = s.ok && s.warn;
+      var cls    = !s.ok ? 'step-fail' : (isWarn ? 'step-warn' : 'step-ok');
+      var icon   = !s.ok ? '✕'         : (isWarn ? '⚠'         : '✔');
+      var el     = document.createElement('div');
       el.className = 'step-item ' + cls;
       el.innerHTML = '<span class="step-icon">' + icon + '</span>'
         + '<div style="flex:1">'
