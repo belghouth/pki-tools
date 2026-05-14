@@ -590,17 +590,6 @@ function process_csr(string $csrFile, bool $precert = false): array
     $preCertFile = null;
     $scts        = [];
 
-    // Build a patched copy of the CA config with copy_extensions forced to none.
-    // -copy_extensions CLI flag only exists in OpenSSL ≥ 3.1; the config-file
-    // approach works on all versions and cannot be overridden by CSR content.
-    // All paths inside ISSUING_DB_CNF are absolute so the temp copy is safe.
-    $caCnf        = (string) file_get_contents(ISSUING_DB_CNF);
-    $caCnfPatched = preg_match('/^\s*copy_extensions\s*=/im', $caCnf)
-        ? preg_replace('/^\s*copy_extensions\s*=.*$/im', 'copy_extensions = none', $caCnf)
-        : preg_replace('/(\[\s*CA_default\s*\])/i', "$1\ncopy_extensions = none", $caCnf);
-    $tmpCaCnf     = sys_get_temp_dir() . '/cf_ca_' . bin2hex(random_bytes(8)) . '.cnf';
-    file_put_contents($tmpCaCnf, $caCnfPatched);
-
     try {
         // CN must never be a wildcard — use first non-wildcard SAN
         $certCn = '';
@@ -618,7 +607,9 @@ function process_csr(string $csrFile, bool $precert = false): array
             // keyEncipherment removed — discouraged per BR §7.1.2.7.11 for modern TLS
             'keyUsage               = critical, digitalSignature',
             'extendedKeyUsage       = serverAuth, clientAuth',
-            // SKI omitted — discouraged in subscriber certs per BR §7.1.2.7
+            // Explicitly suppress SKI — NOT RECOMMENDED for subscriber certs per BR §7.1.2.7.
+            // Setting it here prevents copy_extensions from pulling it out of the CSR.
+            'subjectKeyIdentifier   = none',
             'authorityKeyIdentifier = keyid:always',
             'certificatePolicies    = 2.23.140.1.2.1',
             'authorityInfoAccess    = caIssuers;URI:' . AIA_URL,
@@ -636,7 +627,7 @@ function process_csr(string $csrFile, bool $precert = false): array
 
             $r = run_cmd([
                 OPENSSL_BIN, 'ca',
-                '-config',     $tmpCaCnf,
+                '-config',     ISSUING_DB_CNF,
                 '-in',         $csrFile,
                 '-out',        $certFile,
                 '-subj',       '/CN=' . $certCn,
@@ -664,7 +655,7 @@ function process_csr(string $csrFile, bool $precert = false): array
 
             $rPre = run_cmd([
                 OPENSSL_BIN, 'ca',
-                '-config',     $tmpCaCnf,
+                '-config',     ISSUING_DB_CNF,
                 '-in',         $csrFile,
                 '-out',        $preCertFile,
                 '-subj',       '/CN=' . $certCn,
@@ -698,7 +689,7 @@ function process_csr(string $csrFile, bool $precert = false): array
 
             $r = run_cmd([
                 OPENSSL_BIN, 'ca',
-                '-config',     $tmpCaCnf,
+                '-config',     ISSUING_DB_CNF,
                 '-in',         $csrFile,
                 '-out',        $certFile,
                 '-subj',       '/CN=' . $certCn,
@@ -742,7 +733,6 @@ function process_csr(string $csrFile, bool $precert = false): array
         fclose($lock);
         @unlink($extFile);
         @unlink($certFile);
-        @unlink($tmpCaCnf);
         if ($preExtFile)  @unlink($preExtFile);
         if ($preCertFile) @unlink($preCertFile);
     }
