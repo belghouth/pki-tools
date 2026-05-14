@@ -136,15 +136,28 @@ function tbs_strip_poison(string $tbs_raw): string
 // Returns 32 raw bytes: SHA-256 of the issuer's SubjectPublicKeyInfo DER
 function issuer_spki_hash(string $issuer_der): string
 {
-    // Extract SubjectPublicKeyInfo as PEM
-    $r = ct_run([CT_OPENSSL, 'x509', '-inform', 'DER', '-in', '-', '-noout', '-pubkey'], $issuer_der);
-    if (!$r['ok']) throw new \RuntimeException('Failed to extract issuer public key: ' . $r['err']);
+    // OpenSSL 3.x routes `-in -` through the STORE API which breaks under PHP-FPM;
+    // write to a temp file to avoid that entirely.
+    $tmp = tempnam(sys_get_temp_dir(), 'ct_iss_') . '.der';
+    try {
+        file_put_contents($tmp, $issuer_der);
+        $r = ct_run([CT_OPENSSL, 'x509', '-inform', 'DER', '-in', $tmp, '-noout', '-pubkey']);
+        if (!$r['ok']) throw new \RuntimeException('Failed to extract issuer public key: ' . $r['err']);
 
-    // Convert SPKI PEM → DER so we can SHA-256 the exact bytes
-    $r2 = ct_run([CT_OPENSSL, 'pkey', '-pubin', '-outform', 'DER'], $r['out']);
-    if (!$r2['ok']) throw new \RuntimeException('Failed to DER-encode issuer SPKI: ' . $r2['err']);
-
-    return hash('sha256', $r2['out'], true);
+        // `openssl x509 -pubkey` emits the SubjectPublicKeyInfo as a PEM block
+        // (-----BEGIN PUBLIC KEY-----).  Strip the headers and base64-decode to get
+        // the raw SPKI DER — no second openssl call needed.
+        if (!preg_match('/-----BEGIN PUBLIC KEY-----\s*(.*?)\s*-----END PUBLIC KEY-----/s', $r['out'], $m)) {
+            throw new \RuntimeException('Could not locate SPKI PEM block in pubkey output');
+        }
+        $spki_der = base64_decode(preg_replace('/\s+/', '', $m[1]), true);
+        if ($spki_der === false) {
+            throw new \RuntimeException('SPKI base64 decode failed');
+        }
+        return hash('sha256', $spki_der, true);
+    } finally {
+        @unlink($tmp);
+    }
 }
 
 function ct_run(array $cmd, ?string $stdin = null): array
