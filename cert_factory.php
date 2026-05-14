@@ -4,13 +4,16 @@ require_once __DIR__ . '/config.php';
 
 // ── API ───────────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    session_start();
     header('Content-Type: application/json; charset=utf-8');
     $action = $_POST['action'] ?? 'issue';
     $result = match ($action) {
-        'revoke'        => handle_revoke(),
-        'generate_csr'  => handle_generate_csr(),
-        'issue_precert' => handle_issue(true),
-        default         => handle_issue(false),
+        'revoke'             => handle_revoke(),
+        'generate_csr'       => handle_generate_csr(),
+        'generate_challenge' => handle_generate_challenge(),
+        'verify_dcv'         => handle_verify_dcv(),
+        'issue_precert'      => handle_issue(true),
+        default              => handle_issue(false),
     };
     echo json_encode($result, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
@@ -238,6 +241,185 @@ function handle_generate_csr(): array
         @unlink($tmpCsr);
         @unlink($tmpCnf);
     }
+}
+
+function handle_generate_challenge(): array
+{
+    if (recaptcha_configured()) {
+        $token = trim($_POST['g_recaptcha_token'] ?? '');
+        if (!recaptcha_verify($token, 'issue_cert')) {
+            return ['error' => 'reCAPTCHA verification failed. Please try again.'];
+        }
+    }
+
+    $csrPem = '';
+    if (!empty($_POST['csr'])) {
+        $csrPem = trim($_POST['csr']);
+    } elseif (isset($_FILES['csr_file']) && $_FILES['csr_file']['error'] === UPLOAD_ERR_OK) {
+        if ($_FILES['csr_file']['size'] > MAX_CSR_BYTES) {
+            return ['error' => 'File exceeds 64 KB limit'];
+        }
+        $csrPem = trim((string) file_get_contents($_FILES['csr_file']['tmp_name']));
+    }
+
+    if (!$csrPem) {
+        return ['error' => 'No CSR provided'];
+    }
+    if (strlen($csrPem) > MAX_CSR_BYTES) {
+        return ['error' => 'CSR exceeds 64 KB limit'];
+    }
+    if (!preg_match('/-----BEGIN (NEW )?CERTIFICATE REQUEST-----/i', $csrPem)) {
+        return ['error' => 'Invalid format — expected a PEM CERTIFICATE REQUEST block'];
+    }
+
+    $method = $_POST['dcv_method'] ?? 'http';
+    if (!in_array($method, ['http', 'dns'], true)) {
+        return ['error' => 'Invalid DCV method'];
+    }
+    $precert = !empty($_POST['precert']);
+
+    $tmpCsr = sys_get_temp_dir() . '/cf_csr_' . bin2hex(random_bytes(8)) . '.pem';
+    file_put_contents($tmpCsr, $csrPem . "\n");
+    try {
+        $r = run_cmd([OPENSSL_BIN, 'req', '-in', $tmpCsr, '-noout', '-text']);
+        if (!$r['ok']) {
+            return ['error' => 'Failed to parse CSR — check the PEM encoding'];
+        }
+        $text = $r['out'];
+    } finally {
+        @unlink($tmpCsr);
+    }
+
+    $sans = extract_dns_sans($text);
+    if (empty($sans)) {
+        $cn = extract_cn($text);
+        if ($cn !== '' && is_valid_dns($cn)) $sans[] = $cn;
+    }
+    if (empty($sans)) {
+        return ['error' => 'No valid DNS SANs found in CSR'];
+    }
+
+    foreach ($sans as $san) {
+        if (!is_valid_dns($san)) {
+            return ['error' => "Invalid DNS name: \"$san\""];
+        }
+        if ($method === 'http' && str_starts_with($san, '*.')) {
+            return ['error' => 'HTTP DCV cannot be used when the CSR contains wildcard SANs — switch to DNS TXT.'];
+        }
+    }
+
+    $caaErr = check_caa($sans);
+    if ($caaErr !== null) {
+        return ['error' => $caaErr];
+    }
+
+    // One token per unique base domain (wildcards validate their base domain)
+    $tokens = [];
+    foreach ($sans as $san) {
+        $domain = str_starts_with($san, '*.') ? substr($san, 2) : $san;
+        if (!isset($tokens[$domain])) {
+            $tokens[$domain] = rtrim(strtr(base64_encode(random_bytes(20)), '+/', '-_'), '=');
+        }
+    }
+
+    $_SESSION['dcv'] = [
+        'method'  => $method,
+        'tokens'  => $tokens,
+        'csr_pem' => $csrPem,
+        'precert' => $precert,
+        'expires' => time() + 3600,
+    ];
+
+    return ['ok' => true, 'method' => $method, 'tokens' => $tokens, 'sans' => $sans];
+}
+
+function handle_verify_dcv(): array
+{
+    if (empty($_SESSION['dcv'])) {
+        return ['error' => 'No active DCV challenge — please generate a challenge first.'];
+    }
+    $sess = $_SESSION['dcv'];
+    if (time() > $sess['expires']) {
+        unset($_SESSION['dcv']);
+        return ['error' => 'DCV challenge expired (>1 hour) — please generate a new challenge.'];
+    }
+
+    $method  = $sess['method'];
+    $tokens  = $sess['tokens'];
+    $results = [];
+    $allOk   = true;
+
+    foreach ($tokens as $domain => $token) {
+        $r = $method === 'http'
+            ? dcv_verify_http($domain, $token)
+            : dcv_verify_dns($domain, $token);
+        $results[$domain] = $r;
+        if (!$r['ok']) $allOk = false;
+    }
+
+    if (!$allOk) {
+        return ['ok' => false, 'results' => $results];
+    }
+
+    $csrPem  = $sess['csr_pem'];
+    $precert = $sess['precert'];
+    unset($_SESSION['dcv']);
+
+    $tmpCsr = sys_get_temp_dir() . '/cf_csr_' . bin2hex(random_bytes(8)) . '.pem';
+    file_put_contents($tmpCsr, $csrPem . "\n");
+    try {
+        $result = process_csr($tmpCsr, $precert);
+        if (isset($result['ok']) && $result['ok']) {
+            $result['dcv_passed'] = true;
+        }
+        return $result;
+    } finally {
+        @unlink($tmpCsr);
+    }
+}
+
+function dcv_verify_http(string $domain, string $token): array
+{
+    $url = 'http://' . $domain . '/.well-known/pki-validation/' . $token;
+    $ch  = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL            => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS      => 3,
+        CURLOPT_USERAGENT      => 'PKITools-DCV/1.0',
+    ]);
+    $body = (string) curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $cerr = curl_error($ch);
+    curl_close($ch);
+
+    if ($cerr !== '') {
+        return ['ok' => false, 'error' => 'Connection failed: ' . $cerr];
+    }
+    if ($code !== 200) {
+        return ['ok' => false, 'error' => "HTTP $code — file not found or not accessible"];
+    }
+    if (trim($body) !== $token) {
+        return ['ok' => false, 'error' => 'File content does not match the expected token'];
+    }
+    return ['ok' => true];
+}
+
+function dcv_verify_dns(string $domain, string $token): array
+{
+    $recs = @dns_get_record('_pki-validation.' . $domain, DNS_TXT);
+    if ($recs === false || !is_array($recs)) {
+        return ['ok' => false, 'error' => 'DNS lookup failed'];
+    }
+    foreach ($recs as $rec) {
+        $val = trim($rec['txt'] ?? ($rec['entries'][0] ?? ''));
+        if ($val === $token) {
+            return ['ok' => true];
+        }
+    }
+    return ['ok' => false, 'error' => 'TXT record _pki-validation.' . $domain . ' not found or value mismatch'];
 }
 
 function is_reserved_name(string $name): bool
@@ -968,6 +1150,62 @@ $navLabel = 'Test CA';
     .revoke-result.ok  { background: rgba(0,212,170,0.07); border: 1px solid rgba(0,212,170,0.3); color: var(--accent); }
     .revoke-result.err { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3); color: var(--danger); }
 
+    /* ── DCV section ── */
+    .dcv-section {
+      margin-top: 1.2rem; padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    .dcv-check-label {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-size: 0.84rem; cursor: pointer; user-select: none;
+    }
+    .dcv-check-label input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; }
+    .dcv-method-panel { margin-top: 0.9rem; }
+    .dcv-method-opts { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+    .dcv-method-opt { display: flex; align-items: center; gap: 0.4rem; font-size: 0.83rem; cursor: pointer; }
+    .dcv-method-opt input[type=radio] { accent-color: var(--accent); }
+    .dcv-opt-note { font-size: 0.77rem; color: var(--muted); line-height: 1.5; max-width: 500px; }
+
+    /* ── DCV challenge card ── */
+    .dcv-challenge-header { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1.1rem; }
+    .dcv-challenge-header h2 { font-size: 1rem; font-weight: 600; color: #fff; }
+    .dcv-badge {
+      font-family: var(--mono); font-size: 0.65rem; text-transform: uppercase;
+      letter-spacing: 0.07em; padding: 0.2em 0.6em; border-radius: 3px;
+      background: rgba(0,212,170,0.12); color: var(--accent);
+      border: 1px solid rgba(0,212,170,0.3);
+    }
+    .dcv-badge.dns { background: rgba(139,92,246,0.1); color: #a78bfa; border-color: rgba(139,92,246,0.3); }
+    .dcv-challenge-item { padding: 0.9rem 0; border-bottom: 1px solid var(--border); }
+    .dcv-challenge-item:last-child { border-bottom: none; }
+    .dcv-challenge-domain {
+      font-family: var(--mono); font-size: 0.78rem; font-weight: 600;
+      color: #fff; margin-bottom: 0.6rem;
+    }
+    .dcv-token-block { margin-bottom: 0.5rem; }
+    .dcv-token-label {
+      font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); margin-bottom: 0.25rem;
+    }
+    .dcv-token-row { display: flex; align-items: center; gap: 0.5rem; }
+    .dcv-token-value {
+      font-family: var(--mono); font-size: 0.72rem; color: var(--accent);
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 4px; padding: 0.3em 0.6em;
+      word-break: break-all; flex: 1;
+    }
+    .dcv-copy-btn {
+      font-family: var(--mono); font-size: 0.65rem; text-transform: uppercase;
+      background: none; border: 1px solid var(--border); border-radius: 4px;
+      color: var(--muted); padding: 0.25em 0.55em; cursor: pointer; white-space: nowrap;
+      transition: border-color 0.15s, color 0.15s; flex-shrink: 0;
+    }
+    .dcv-copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .dcv-verify-row { margin-top: 1.2rem; display: flex; align-items: center; gap: 1rem; }
+    .dcv-result-item { display: flex; align-items: flex-start; gap: 0.4rem; font-size: 0.8rem; margin-top: 0.5rem; }
+    .dcv-result-ok  { color: var(--accent); }
+    .dcv-result-err { color: var(--danger); font-family: var(--mono); font-size: 0.77rem; }
+
     /* ── Footer ── */
     .site-footer {
       border-top: 1px solid var(--border); padding: 1.4rem 2rem;
@@ -1053,6 +1291,28 @@ $navLabel = 'Test CA';
         </div>
       </div>
 
+      <!-- DCV options -->
+      <div class="dcv-section">
+        <label class="dcv-check-label">
+          <input type="checkbox" id="dcvEnabled">
+          Enforce Domain Control Validation (DCV)
+        </label>
+        <div class="dcv-method-panel" id="dcvMethodPanel" hidden>
+          <div class="dcv-method-opts">
+            <label class="dcv-method-opt">
+              <input type="radio" name="dcv_method" value="http" id="dcvHttp" checked>
+              HTTP <code style="font-size:0.72rem;color:var(--muted)">/.well-known/pki-validation/</code>
+            </label>
+            <label class="dcv-method-opt">
+              <input type="radio" name="dcv_method" value="dns" id="dcvDns">
+              DNS TXT <code style="font-size:0.72rem;color:var(--muted)">_pki-validation</code>
+            </label>
+          </div>
+          <p class="dcv-opt-note" id="dcvOptNote">Place a file at each domain's
+            <code>/.well-known/pki-validation/TOKEN</code> URL containing exactly the token value.</p>
+        </div>
+      </div>
+
       <div class="submit-row">
         <button class="btn-primary" type="submit" id="btnIssue">Issue Certificate</button>
         <button class="btn-ghost" type="button" id="btnPrecert">Issue Precertificate</button>
@@ -1064,6 +1324,23 @@ $navLabel = 'Test CA';
     <div class="error-box" id="errorBox" hidden>
       <span class="err-icon">✕</span>
       <span id="errorMsg"></span>
+    </div>
+  </div>
+
+  <!-- DCV challenge card -->
+  <div class="card" id="dcvCard" hidden>
+    <div class="dcv-challenge-header">
+      <h2>DCV Challenge</h2>
+      <span class="dcv-badge" id="dcvBadge">HTTP</span>
+    </div>
+    <div id="dcvItems"></div>
+    <div class="dcv-verify-row">
+      <button class="btn-primary" type="button" id="btnVerifyDcv">Verify &amp; Issue</button>
+      <div class="spinner" id="dcvSpinner" hidden></div>
+    </div>
+    <div class="error-box" id="dcvErrorBox" hidden>
+      <span class="err-icon">✕</span>
+      <span id="dcvErrMsg"></span>
     </div>
   </div>
 
@@ -1207,11 +1484,13 @@ $navLabel = 'Test CA';
 
   form.addEventListener('submit', function (e) {
     e.preventDefault();
-    doIssue('issue');
+    if (dcvEnabled.checked) doGenerateChallenge('issue');
+    else doIssue('issue');
   });
 
   btnPrecert.addEventListener('click', function () {
-    doIssue('issue_precert');
+    if (dcvEnabled.checked) doGenerateChallenge('issue_precert');
+    else doIssue('issue_precert');
   });
 
   async function doIssue(action) {
@@ -1461,6 +1740,187 @@ $navLabel = 'Test CA';
     csrBuilderError.textContent = '✕ ' + msg;
     csrBuilderOk.hidden         = true;
   }
+
+  // ── DCV ──────────────────────────────────────────────────────────────────────
+  var dcvEnabled     = document.getElementById('dcvEnabled');
+  var dcvMethodPanel = document.getElementById('dcvMethodPanel');
+  var dcvOptNote     = document.getElementById('dcvOptNote');
+  var dcvCard        = document.getElementById('dcvCard');
+  var dcvBadge       = document.getElementById('dcvBadge');
+  var dcvItems       = document.getElementById('dcvItems');
+  var btnVerifyDcv   = document.getElementById('btnVerifyDcv');
+  var dcvSpinner     = document.getElementById('dcvSpinner');
+  var dcvErrorBox    = document.getElementById('dcvErrorBox');
+  var dcvErrMsg      = document.getElementById('dcvErrMsg');
+
+  var dcvChallengeActive = false;
+
+  dcvEnabled.addEventListener('change', function () {
+    dcvMethodPanel.hidden = !dcvEnabled.checked;
+    if (!dcvEnabled.checked) {
+      dcvCard.hidden = true;
+      dcvChallengeActive = false;
+    }
+  });
+
+  document.querySelectorAll('input[name="dcv_method"]').forEach(function (radio) {
+    radio.addEventListener('change', function () {
+      var isHttp = document.getElementById('dcvHttp').checked;
+      dcvOptNote.textContent = isHttp
+        ? 'Place a file at each domain\'s /.well-known/pki-validation/TOKEN URL containing exactly the token value.'
+        : 'Add a DNS TXT record named _pki-validation.DOMAIN with the token value.';
+      if (dcvChallengeActive) {
+        dcvCard.hidden = true;
+        dcvChallengeActive = false;
+        showError('DCV method changed — click Issue Certificate to generate a new challenge.');
+      }
+    });
+  });
+
+  btnVerifyDcv.addEventListener('click', function () { doVerifyDcv(); });
+
+  async function doGenerateChallenge(action) {
+    var activeTab = document.querySelector('.input-tab.active');
+    var tabMethod = activeTab ? activeTab.dataset.tab : 'paste';
+
+    if (tabMethod === 'paste') {
+      var txt = document.getElementById('csrText').value.trim();
+      if (!txt) { showError('Please paste a PEM CSR.'); return; }
+      if (!txt.includes('CERTIFICATE REQUEST')) {
+        showError('Not a valid PEM CERTIFICATE REQUEST block.');
+        return;
+      }
+    } else {
+      if (!fileInput.files[0]) { showError('Please select a file.'); return; }
+    }
+
+    setLoading(true);
+    hideError();
+    dcvCard.hidden = true;
+    resultCard.hidden = true;
+
+    var fd = new FormData(form);
+    if (tabMethod === 'paste') fd.delete('csr_file');
+    else                       fd.delete('csr');
+    fd.set('action', 'generate_challenge');
+    fd.set('precert', action === 'issue_precert' ? '1' : '');
+    var methodRadio = document.querySelector('input[name="dcv_method"]:checked');
+    fd.set('dcv_method', methodRadio ? methodRadio.value : 'http');
+    var rcToken = await getRecaptchaToken('issue_cert');
+    fd.append('g_recaptcha_token', rcToken);
+
+    try {
+      var resp = await fetch(window.location.href, { method: 'POST', body: fd });
+      if (!resp.ok) throw new Error('Server returned ' + resp.status);
+      var data = await resp.json();
+      if (data.error) { showError(data.error); return; }
+      dcvChallengeActive = true;
+      renderDcvInstructions(data);
+    } catch (err) {
+      showError('Request failed: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function renderDcvInstructions(data) {
+    var isHttp = data.method === 'http';
+    dcvBadge.textContent = isHttp ? 'HTTP' : 'DNS';
+    dcvBadge.className   = 'dcv-badge' + (isHttp ? '' : ' dns');
+
+    var html = '';
+    Object.keys(data.tokens).forEach(function (domain) {
+      var token = data.tokens[domain];
+      html += '<div class="dcv-challenge-item">';
+      html += '<div class="dcv-challenge-domain">' + esc(domain) + '</div>';
+      if (isHttp) {
+        var urlRaw = 'http://' + domain + '/.well-known/pki-validation/' + token;
+        html += tokenBlock('URL', esc(urlRaw), urlRaw);
+        html += tokenBlock('File content (exact)', esc(token), token);
+      } else {
+        var nameRaw = '_pki-validation.' + domain;
+        html += tokenBlock('DNS record name', esc(nameRaw), nameRaw);
+        html += '<div class="dcv-token-block"><div class="dcv-token-label">Type</div>'
+              + '<div class="dcv-token-row"><span class="dcv-token-value">TXT</span></div></div>';
+        html += tokenBlock('Value', esc(token), token);
+      }
+      html += '</div>';
+    });
+    dcvItems.innerHTML = html;
+    dcvErrorBox.hidden = true;
+    dcvCard.hidden = false;
+    dcvCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function tokenBlock(label, display, copyVal) {
+    var jsonVal = JSON.stringify(copyVal).replace(/"/g, '&quot;');
+    return '<div class="dcv-token-block">'
+      + '<div class="dcv-token-label">' + label + '</div>'
+      + '<div class="dcv-token-row">'
+      + '<span class="dcv-token-value">' + display + '</span>'
+      + '<button class="dcv-copy-btn" onclick="dcvCopy(this,' + jsonVal + ')">Copy</button>'
+      + '</div></div>';
+  }
+
+  async function doVerifyDcv() {
+    btnVerifyDcv.disabled    = true;
+    btnVerifyDcv.textContent = 'Verifying…';
+    dcvSpinner.hidden        = false;
+    dcvErrorBox.hidden       = true;
+    resultCard.hidden        = true;
+
+    var fd = new FormData();
+    fd.append('action', 'verify_dcv');
+
+    try {
+      var resp = await fetch(window.location.href, { method: 'POST', body: fd });
+      if (!resp.ok) throw new Error('Server returned ' + resp.status);
+      var data = await resp.json();
+      if (data.ok) {
+        dcvCard.hidden = true;
+        dcvChallengeActive = false;
+        renderResult(data);
+      } else if (data.error) {
+        dcvErrMsg.textContent = data.error;
+        dcvErrorBox.hidden = false;
+      } else {
+        renderDcvResults(data.results || {});
+      }
+    } catch (err) {
+      dcvErrMsg.textContent = 'Request failed: ' + err.message;
+      dcvErrorBox.hidden = false;
+    } finally {
+      btnVerifyDcv.disabled    = false;
+      btnVerifyDcv.textContent = 'Verify & Issue';
+      dcvSpinner.hidden        = true;
+    }
+  }
+
+  function renderDcvResults(results) {
+    var items   = dcvItems.querySelectorAll('.dcv-challenge-item');
+    var domains = Object.keys(results);
+    domains.forEach(function (domain, i) {
+      var r    = results[domain];
+      var item = items[i];
+      if (!item) return;
+      var existing = item.querySelector('.dcv-result-item');
+      if (existing) existing.remove();
+      var el = document.createElement('div');
+      el.className = 'dcv-result-item ' + (r.ok ? 'dcv-result-ok' : 'dcv-result-err');
+      el.innerHTML = r.ok
+        ? '<span>&#10004;</span><span>Verified</span>'
+        : '<span>&#10005;</span><span>' + esc(r.error || 'Verification failed') + '</span>';
+      item.appendChild(el);
+    });
+  }
+
+  window.dcvCopy = function (btn, text) {
+    navigator.clipboard.writeText(text).then(function () {
+      var orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(function () { btn.textContent = orig; }, 1800);
+    });
+  };
 
   // ── Revocation ───────────────────────────────────────────────────────────────
   document.getElementById('btnRevoke').addEventListener('click', function () {
