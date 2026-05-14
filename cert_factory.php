@@ -430,18 +430,16 @@ function process_csr(string $csrFile, bool $precert = false): array
             $precertPem = (string) file_get_contents($preCertFile);
             $issuerPem  = (string) file_get_contents(ISSUING_CRT);
 
-    header('Content-Type: text/plain');
+error_log("Precert file: " . $preCertFile);
+    error_log("Precert length: " . strlen($precertPem));
+    error_log("Issuer cert: " . ISSUING_CRT);
+    error_log("Issuer length: " . strlen($issuerPem));
 
-    echo "Precert file: {$preCertFile}\n";
-    echo "Precert length: " . strlen($precertPem) . "\n";
-    echo "Precert SHA256: " . hash('sha256', $precertPem) . "\n\n";
-    echo $precertPem . "\n\n";
+    error_log("Precert SHA256: " . hash('sha256', $precertPem));
+    error_log("Issuer SHA256: " . hash('sha256', $issuerPem));
 
-    echo "Issuer cert: " . ISSUING_CRT . "\n";
-    echo "Issuer length: " . strlen($issuerPem) . "\n";
-    echo "Issuer SHA256: " . hash('sha256', $issuerPem) . "\n\n";
-    echo $issuerPem . "\n";
-    exit;
+    error_log("Precert PEM:\n" . $precertPem);
+    error_log("Issuer PEM:\n" . $issuerPem);
 
             $needed     = ct_required_count(CERT_DAYS);
 
