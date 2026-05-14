@@ -51,9 +51,9 @@ function handle_issue(bool $precert = false): array
         return ['error' => 'Invalid format — expected a PEM CERTIFICATE REQUEST block'];
     }
 
-    // Check CA is initialised
-    if (!file_exists(ISSUING_DB_CNF)) {
-        return ['error' => 'The issuing CA is not yet initialised — please check back shortly.'];
+    // Check at least one CA is initialised (per-key-type check happens inside process_csr)
+    if (!file_exists(ISSUING_DB_CNF) && !file_exists(ECC_ISSUING_DB_CNF)) {
+        return ['error' => 'No issuing CA is initialised — please check back shortly.'];
     }
 
     $tmpCsr = sys_get_temp_dir() . '/cf_csr_' . bin2hex(random_bytes(8)) . '.pem';
@@ -87,14 +87,32 @@ function handle_revoke(): array
         return ['error' => 'Invalid revocation reason'];
     }
 
-    if (!file_exists(ISSUING_DB_CNF)) {
-        return ['error' => 'The issuing CA is not yet initialised — please check back shortly.'];
-    }
-
     $tmpCert = sys_get_temp_dir() . '/cf_rev_' . bin2hex(random_bytes(8)) . '.pem';
     file_put_contents($tmpCert, $certPem . "\n");
 
-    $lock = fopen(ISSUING_LOCK, 'w');
+    // Detect which CA issued the cert by inspecting its AIA extension
+    $rParse = run_cmd([OPENSSL_BIN, 'x509', '-in', $tmpCert, '-noout', '-text']);
+    $isEcc  = $rParse['ok'] && str_contains($rParse['out'], 'meerkat-ecc-issuing');
+
+    if ($isEcc) {
+        if (!file_exists(ECC_ISSUING_DB_CNF)) {
+            @unlink($tmpCert);
+            return ['error' => 'ECC issuing CA is not yet initialised — please check back shortly.'];
+        }
+        $revokeDbCnf = ECC_ISSUING_DB_CNF;
+        $revokeLock  = ECC_ISSUING_LOCK;
+        $revokeCrlOut = ECC_ISSUING_CRL_OUT;
+    } else {
+        if (!file_exists(ISSUING_DB_CNF)) {
+            @unlink($tmpCert);
+            return ['error' => 'The issuing CA is not yet initialised — please check back shortly.'];
+        }
+        $revokeDbCnf = ISSUING_DB_CNF;
+        $revokeLock  = ISSUING_LOCK;
+        $revokeCrlOut = ISSUING_CRL_OUT;
+    }
+
+    $lock = fopen($revokeLock, 'w');
     if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
         if ($lock) fclose($lock);
         @unlink($tmpCert);
@@ -103,7 +121,7 @@ function handle_revoke(): array
 
     try {
         $r = run_cmd([OPENSSL_BIN, 'ca',
-            '-config',     ISSUING_DB_CNF,
+            '-config',     $revokeDbCnf,
             '-revoke',     $tmpCert,
             '-crl_reason', $reason,
             '-batch',
@@ -119,7 +137,7 @@ function handle_revoke(): array
         $crlPem = sys_get_temp_dir() . '/cf_crl_' . bin2hex(random_bytes(8)) . '.pem';
         $crlDer = sys_get_temp_dir() . '/cf_crl_' . bin2hex(random_bytes(8)) . '.der';
         $r2 = run_cmd([OPENSSL_BIN, 'ca',
-            '-config',  ISSUING_DB_CNF,
+            '-config',  $revokeDbCnf,
             '-gencrl',
             '-crlexts', 'crl_ext',
             '-out',     $crlPem,
@@ -128,7 +146,7 @@ function handle_revoke(): array
         if ($r2['ok'] && file_exists($crlPem)) {
             $r3 = run_cmd([OPENSSL_BIN, 'crl', '-in', $crlPem, '-outform', 'DER', '-out', $crlDer]);
             if ($r3['ok'] && file_exists($crlDer)) {
-                @copy($crlDer, ISSUING_CRL_OUT);
+                @copy($crlDer, $revokeCrlOut);
             }
             @unlink($crlPem);
             @unlink($crlDer);
@@ -180,12 +198,18 @@ function handle_generate_csr(): array
         return ['error' => 'No valid domains provided'];
     }
 
+    $keyType = ($_POST['key_type'] ?? 'rsa') === 'ec' ? 'ec' : 'rsa';
+
     $tmpKey = sys_get_temp_dir() . '/cf_gk_' . bin2hex(random_bytes(8)) . '.key';
     $tmpCsr = sys_get_temp_dir() . '/cf_gc_' . bin2hex(random_bytes(8)) . '.csr';
     $tmpCnf = sys_get_temp_dir() . '/cf_gn_' . bin2hex(random_bytes(8)) . '.cnf';
 
     try {
-        $r = run_cmd([OPENSSL_BIN, 'genrsa', '-out', $tmpKey, '2048']);
+        if ($keyType === 'ec') {
+            $r = run_cmd([OPENSSL_BIN, 'genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-out', $tmpKey]);
+        } else {
+            $r = run_cmd([OPENSSL_BIN, 'genrsa', '-out', $tmpKey, '2048']);
+        }
         if (!$r['ok']) {
             return ['error' => 'Temporary key generation failed'];
         }
@@ -235,7 +259,7 @@ function handle_generate_csr(): array
             return ['error' => 'CSR generation produced no output'];
         }
 
-        return ['ok' => true, 'csr' => trim($csrPem), 'domains' => array_values($domains)];
+        return ['ok' => true, 'csr' => trim($csrPem), 'domains' => array_values($domains), 'key_type' => $keyType];
 
     } finally {
         @unlink($tmpKey);
@@ -567,18 +591,46 @@ function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = fal
         return ['error' => 'CSR self-signature verification failed'];
     }
 
-    // 3. Key type — RSA only
-    if (!preg_match('/Public Key Algorithm:\s*rsaEncryption/i', $text)) {
-        return ['error' => 'Only RSA keys are accepted (EC, DSA and other types are not supported)'];
+    // 3. Key type — RSA or ECDSA (P-256 / P-384 / P-521 per BR §7.1.3.1)
+    $isEc  = (bool) preg_match('/Public Key Algorithm:\s*id-ecPublicKey/i', $text);
+    $isRsa = (bool) preg_match('/Public Key Algorithm:\s*rsaEncryption/i', $text);
+    if (!$isRsa && !$isEc) {
+        return ['error' => 'Only RSA and ECDSA keys are accepted (DSA and other key types are not supported)'];
     }
 
-    // 4. Key size — ≥ 2048 bits
+    // 4. Key size / curve validation
     if (!preg_match('/Public[-\s]Key:\s*\((\d+)\s*bit\)/i', $text, $m)) {
-        return ['error' => 'Could not determine RSA key size'];
+        return ['error' => 'Could not determine key size'];
     }
     $keyBits = (int) $m[1];
-    if ($keyBits < 2048) {
-        return ['error' => "RSA key is {$keyBits} bits — minimum accepted is 2048 bits"];
+    if ($isRsa && $keyBits < MIN_KEY_BITS) {
+        return ['error' => "RSA key is {$keyBits} bits — minimum accepted is " . MIN_KEY_BITS . " bits (BR §7.1.3.1)"];
+    }
+    if ($isEc && !in_array($keyBits, [256, 384, 521], true)) {
+        return ['error' => "EC key {$keyBits} bits is not accepted — use P-256 (256-bit), P-384 (384-bit), or P-521 (521-bit) per BR §7.1.3.1"];
+    }
+
+    // 4b. CA routing — select RSA or ECC issuing CA based on subscriber key type
+    if ($isEc) {
+        if (!file_exists(ECC_ISSUING_DB_CNF)) {
+            return ['error' => 'ECC issuing CA is not yet initialised — please check back shortly.'];
+        }
+        $issuingDbCnf = ECC_ISSUING_DB_CNF;
+        $issuingCrt   = ECC_ISSUING_CRT;
+        $issuingLock  = ECC_ISSUING_LOCK;
+        $issuingDbSrl = ECC_ISSUING_DB_SRL;
+        $aiaUrl       = ECC_AIA_URL;
+        $cdpUrl       = ECC_CDP_URL;
+    } else {
+        if (!file_exists(ISSUING_DB_CNF)) {
+            return ['error' => 'The issuing CA is not yet initialised — please check back shortly.'];
+        }
+        $issuingDbCnf = ISSUING_DB_CNF;
+        $issuingCrt   = ISSUING_CRT;
+        $issuingLock  = ISSUING_LOCK;
+        $issuingDbSrl = ISSUING_DB_SRL;
+        $aiaUrl       = AIA_URL;
+        $cdpUrl       = CDP_URL;
     }
 
     // 5. Extract DNS SANs from requested extensions
@@ -621,7 +673,7 @@ function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = fal
     }
 
     // 9. Sign — serialised through a lock file (openssl ca is not re-entrant)
-    $lock = fopen(ISSUING_LOCK, 'w');
+    $lock = fopen($issuingLock, 'w');
     if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
         if ($lock) fclose($lock);
         return ['error' => 'Another issuance is in progress — please retry in a moment'];
@@ -657,8 +709,8 @@ function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = fal
             'subjectKeyIdentifier   = none',
             'authorityKeyIdentifier = keyid:always',
             'certificatePolicies    = 2.23.140.1.2.1',
-            'authorityInfoAccess    = caIssuers;URI:' . AIA_URL,
-            'crlDistributionPoints  = URI:' . CDP_URL,
+            'authorityInfoAccess    = caIssuers;URI:' . $aiaUrl,
+            'crlDistributionPoints  = URI:' . $cdpUrl,
             'subjectAltName         = ' . ($omit_cn ? 'critical, ' : '') . $sanStr,
         ];
 
@@ -668,11 +720,11 @@ function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = fal
             $extLines[] = '1.3.6.1.4.1.11129.2.4.3 = critical, DER:05:00';
             file_put_contents($extFile, implode("\n", $extLines));
             // BR §7.1.2.4 random 128-bit serial
-            file_put_contents(ISSUING_DB_SRL, strtoupper(bin2hex(random_bytes(16))) . "\n");
+            file_put_contents($issuingDbSrl, strtoupper(bin2hex(random_bytes(16))) . "\n");
 
             $r = run_cmd([
                 OPENSSL_BIN, 'ca',
-                '-config',     ISSUING_DB_CNF,
+                '-config',     $issuingDbCnf,
                 '-in',         $csrFile,
                 '-out',        $certFile,
                 '-subj',       $subj,
@@ -696,11 +748,11 @@ function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = fal
             file_put_contents($preExtFile, implode("\n", array_merge($extLines, [
                 '1.3.6.1.4.1.11129.2.4.3 = critical, DER:05:00',
             ])));
-            file_put_contents(ISSUING_DB_SRL, strtoupper(bin2hex(random_bytes(16))) . "\n");
+            file_put_contents($issuingDbSrl, strtoupper(bin2hex(random_bytes(16))) . "\n");
 
             $rPre = run_cmd([
                 OPENSSL_BIN, 'ca',
-                '-config',     ISSUING_DB_CNF,
+                '-config',     $issuingDbCnf,
                 '-in',         $csrFile,
                 '-out',        $preCertFile,
                 '-subj',       $subj,
@@ -722,7 +774,7 @@ function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = fal
 
             // Step 2: submit precert chain to CT log(s) and collect SCTs
             $precertPem = (string) file_get_contents($preCertFile);
-            $issuerPem  = (string) file_get_contents(ISSUING_CRT);
+            $issuerPem  = (string) file_get_contents($issuingCrt);
             $needed     = ct_required_count(CERT_DAYS);
 
             for ($i = 0; $i < $needed; $i++) {
@@ -736,11 +788,11 @@ function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = fal
             // Step 3: issue final cert with embedded SCT list (OID 1.3.6.1.4.1.11129.2.4.2)
             $extLines[] = '1.3.6.1.4.1.11129.2.4.2 = ' . ct_build_sct_ext($scts);
             file_put_contents($extFile, implode("\n", $extLines));
-            file_put_contents(ISSUING_DB_SRL, strtoupper(bin2hex(random_bytes(16))) . "\n");
+            file_put_contents($issuingDbSrl, strtoupper(bin2hex(random_bytes(16))) . "\n");
 
             $r = run_cmd([
                 OPENSSL_BIN, 'ca',
-                '-config',     ISSUING_DB_CNF,
+                '-config',     $issuingDbCnf,
                 '-in',         $csrFile,
                 '-out',        $certFile,
                 '-subj',       $subj,
@@ -1459,6 +1511,10 @@ $navLabel = 'Test CA';
     .dcv-result-ok  { color: var(--accent); }
     .dcv-result-err { color: var(--danger); font-family: var(--mono); font-size: 0.77rem; }
 
+    .csr-key-type-row { display: flex; gap: 1.2rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
+    .csr-kt-opt { display: flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; cursor: pointer; }
+    .csr-kt-opt input[type=radio] { accent-color: var(--accent); }
+
     .dcv-action-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.15rem; }
     .dcv-download-btn {
       font-family: var(--mono); font-size: 0.65rem; text-transform: uppercase;
@@ -1560,9 +1616,19 @@ $navLabel = 'Test CA';
         </button>
         <div class="csr-builder-body" id="csrBuilderBody" hidden>
           <div class="csr-warn-note">
-            ⚠ <strong>No private key will be delivered.</strong> A throw-away 2048-bit RSA key is
+            ⚠ <strong>No private key will be delivered.</strong> A throw-away key is
             generated server-side and discarded immediately after signing. Use this option only to
             test how a certificate looks — never to secure a real service.
+          </div>
+          <div class="csr-key-type-row">
+            <label class="csr-kt-opt">
+              <input type="radio" name="csr_key_type" value="rsa" id="csrKtRsa" checked>
+              RSA 2048
+            </label>
+            <label class="csr-kt-opt">
+              <input type="radio" name="csr_key_type" value="ec" id="csrKtEc">
+              ECDSA P-256
+            </label>
           </div>
           <div class="csr-domain-row">
             <input type="text" class="domain-input" id="domainInput"
@@ -1674,13 +1740,7 @@ $navLabel = 'Test CA';
       <textarea class="pem-output" id="pemOutput" readonly spellcheck="false"></textarea>
     </div>
 
-    <p class="chain-note">
-      Chain: <a href="<?= PKI_BASE_URL ?>/meerkat-root.crt">Meerkat Root CA</a>
-      → <a href="<?= PKI_BASE_URL ?>/meerkat-issuing.crt">Meerkat Test Issuing CA 1</a>
-      → this certificate<br>
-      Install the Root CA to trust this cert locally for linter testing.
-      PKI repository: <a href="<?= PKI_BASE_URL ?>" target="_blank" rel="noopener"><?= PKI_DOMAIN ?></a>
-    </p>
+    <p class="chain-note" id="chainNote"><!-- populated by JS after issuance --></p>
 
     <div class="revoke-row" id="revokeRow">
       <span class="revoke-label">Revocation reason:</span>
@@ -1719,6 +1779,7 @@ $navLabel = 'Test CA';
   var ISSUING_CA_PEM     = <?= json_encode(file_exists(ISSUING_CRT) ? trim((string) file_get_contents(ISSUING_CRT)) : '') ?>;
   var dcvCheckers        = <?= json_encode(DNS_CHECKERS, JSON_UNESCAPED_SLASHES) ?>;
   var PKI_DOMAIN         = <?= json_encode(PKI_DOMAIN) ?>;
+  var PKI_BASE_URL       = <?= json_encode(PKI_BASE_URL) ?>;
 
   function getRecaptchaToken(action) {
     return new Promise(function (resolve) {
@@ -1870,15 +1931,35 @@ $navLabel = 'Test CA';
       return '<span class="san-tag">' + esc(s) + '</span>';
     }).join('');
 
+    var isEccCert = (data.issuer || '').indexOf('ECC') >= 0;
+    var keyLabel  = isEccCert
+        ? 'ECDSA ' + (data.key_bits || '—') + ' bit'
+        : 'RSA '   + (data.key_bits || '—') + ' bit';
+
     certInfo.innerHTML = [
       row('Subject',    esc(data.subject    || '—')),
       row('SANs',       '<div class="san-list">' + (sanHtml || '—') + '</div>'),
-      row('Key',        'RSA ' + (data.key_bits || '—') + ' bit'),
+      row('Key',        keyLabel),
       row('Issuer',     esc(data.issuer     || '—')),
       row('Not Before', esc(data.not_before || '—')),
       row('Not After',  esc(data.not_after  || '—')),
       row('Serial',     esc(data.serial     || '—')),
     ].join('');
+
+    // Populate chain note with the correct (RSA or ECC) CA links
+    var chainNote = document.getElementById('chainNote');
+    if (chainNote) {
+      var rootFile = isEccCert ? 'meerkat-ecc-root.crt'    : 'meerkat-root.crt';
+      var issuFile = isEccCert ? 'meerkat-ecc-issuing.crt' : 'meerkat-issuing.crt';
+      var rootName = isEccCert ? 'Meerkat ECC Root CA'               : 'Meerkat Root CA';
+      var issuName = isEccCert ? 'Meerkat Test ECC Issuing CA 1'     : 'Meerkat Test Issuing CA 1';
+      chainNote.innerHTML =
+        'Chain: <a href="' + esc(PKI_BASE_URL + '/' + rootFile) + '">' + esc(rootName) + '</a>'
+        + ' → <a href="' + esc(PKI_BASE_URL + '/' + issuFile) + '">' + esc(issuName) + '</a>'
+        + ' → this certificate<br>'
+        + 'Install the Root CA to trust this cert locally for linter testing. '
+        + 'PKI repository: <a href="' + esc(PKI_BASE_URL) + '" target="_blank" rel="noopener">' + esc(PKI_DOMAIN) + '</a>';
+    }
 
     resultCard.hidden = false;
     resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2010,10 +2091,13 @@ $navLabel = 'Test CA';
     btnGenCsr.disabled     = true;
     btnGenCsr.textContent  = 'Generating…';
 
+    var ktRsa = document.getElementById('csrKtRsa');
+    var keyType = (ktRsa && !ktRsa.checked) ? 'ec' : 'rsa';
     var token = await getRecaptchaToken('generate_csr');
     var fd = new FormData();
     fd.append('action',            'generate_csr');
     fd.append('domains',           raw);
+    fd.append('key_type',          keyType);
     fd.append('g_recaptcha_token', token);
 
     try {
@@ -2034,7 +2118,8 @@ $navLabel = 'Test CA';
       if (pastePane) pastePane.classList.add('active');
 
       csrBuilderOk.hidden      = false;
-      csrBuilderOk.textContent = '✔ CSR ready — ' + (data.domains || []).join(', ') + '. Click Issue Certificate to continue.';
+      var ktLabel = data.key_type === 'ec' ? 'ECDSA P-256' : 'RSA 2048';
+      csrBuilderOk.textContent = '✔ CSR ready (' + ktLabel + ') — ' + (data.domains || []).join(', ') + '. Click Issue Certificate to continue.';
     } catch (err) {
       showCsrError('Request failed: ' + err.message);
     } finally {

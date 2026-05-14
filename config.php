@@ -64,6 +64,46 @@ define('ROOT_CA_SUBJ',
 define('ISSUING_CA_SUBJ',
     '/C=' . ISSUING_CA_DN['C'] . '/O=' . ISSUING_CA_DN['O'] . '/CN=' . ISSUING_CA_DN['CN']);
 
+// ── ECC CA distinguished names ─────────────────────────────────────────────────
+define('ECC_ROOT_CA_DN', [
+    'C'  => 'TN',
+    'O'  => 'Thameur Belghith',
+    'CN' => 'Meerkat ECC Root CA',
+]);
+define('ECC_ISSUING_CA_DN', [
+    'C'  => 'TN',
+    'O'  => 'Thameur Belghith',
+    'CN' => 'Meerkat Test ECC Issuing CA 1',
+]);
+define('ECC_ROOT_CA_SUBJ',
+    '/C=' . ECC_ROOT_CA_DN['C'] . '/O=' . ECC_ROOT_CA_DN['O'] . '/CN=' . ECC_ROOT_CA_DN['CN']);
+define('ECC_ISSUING_CA_SUBJ',
+    '/C=' . ECC_ISSUING_CA_DN['C'] . '/O=' . ECC_ISSUING_CA_DN['O'] . '/CN=' . ECC_ISSUING_CA_DN['CN']);
+
+// ECC CA curve selection — BR §7.1.3.1
+define('ECC_ROOT_CURVE',    'P-384');  // secp384r1 — stronger root key
+define('ECC_ISSUING_CURVE', 'P-256');  // prime256v1 — industry standard for issuing CAs
+
+// ECC CA filesystem paths
+define('ECC_ROOT_KEY',        PKI_PRIVATE_DIR . '/ecc-root.key');
+define('ECC_ROOT_CRT',        PKI_WEB_DIR     . '/meerkat-ecc-root.crt');
+define('ECC_ROOT_CRL',        PKI_WEB_DIR     . '/meerkat-ecc-root.crl');
+define('ECC_ROOT_DB_DIR',     PKI_CA_DIR      . '/ecc-root-db');
+
+define('ECC_ISSUING_KEY',     PKI_PRIVATE_DIR . '/ecc-issuing.key');
+define('ECC_ISSUING_CRT',     PKI_WEB_DIR     . '/meerkat-ecc-issuing.crt');
+define('ECC_ISSUING_DB_DIR',  PKI_CA_DIR      . '/ecc-issuing-db');
+define('ECC_ISSUING_DB_CNF',  ECC_ISSUING_DB_DIR . '/openssl.cnf');
+define('ECC_ISSUING_LOCK',    ECC_ISSUING_DB_DIR . '/factory.lock');
+define('ECC_ISSUING_DB_SRL',  ECC_ISSUING_DB_DIR . '/cert.srl');
+define('ECC_ISSUING_CRL_OUT', PKI_WEB_DIR     . '/meerkat-ecc-issuing.crl');
+
+// ECC CA URLs
+define('ECC_AIA_URL',      PKI_BASE_URL . '/meerkat-ecc-issuing.crt');
+define('ECC_CDP_URL',      PKI_BASE_URL . '/meerkat-ecc-issuing.crl');
+define('ECC_ROOT_AIA_URL', PKI_BASE_URL . '/meerkat-ecc-root.crt');
+define('ECC_ROOT_ARL_URL', PKI_BASE_URL . '/meerkat-ecc-root.crl');
+
 // ── Certificate policy ────────────────────────────────────────────────────────
 define('CERT_DAYS',        90);    // subscriber cert validity
 define('ROOT_CA_DAYS',   3650);    // ~10 years
