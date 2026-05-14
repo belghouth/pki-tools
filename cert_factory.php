@@ -60,7 +60,8 @@ function handle_issue(bool $precert = false): array
     file_put_contents($tmpCsr, $csrPem . "\n");
 
     try {
-        return process_csr($tmpCsr, $precert);
+        $omit_cn = !empty($_POST['omit_cn']);
+        return process_csr($tmpCsr, $precert, $omit_cn);
     } finally {
         @unlink($tmpCsr);
     }
@@ -323,11 +324,12 @@ function handle_generate_challenge(): array
     }
 
     $_SESSION['dcv'] = [
-        'method'  => $method,
-        'tokens'  => $tokens,
-        'csr_pem' => $csrPem,
-        'precert' => $precert,
-        'expires' => time() + 3600,
+        'method'   => $method,
+        'tokens'   => $tokens,
+        'csr_pem'  => $csrPem,
+        'precert'  => $precert,
+        'omit_cn'  => !empty($_POST['omit_cn']),
+        'expires'  => time() + 3600,
     ];
 
     return ['ok' => true, 'method' => $method, 'tokens' => $tokens, 'sans' => $sans];
@@ -367,12 +369,13 @@ function handle_verify_dcv(): array
 
     $csrPem  = $sess['csr_pem'];
     $precert = $sess['precert'];
+    $omit_cn = $sess['omit_cn'] ?? false;
     unset($_SESSION['dcv']);
 
     $tmpCsr = sys_get_temp_dir() . '/cf_csr_' . bin2hex(random_bytes(8)) . '.pem';
     file_put_contents($tmpCsr, $csrPem . "\n");
     try {
-        $result = process_csr($tmpCsr, $precert);
+        $result = process_csr($tmpCsr, $precert, $omit_cn);
         if (isset($result['ok']) && $result['ok']) {
             $result['dcv_passed'] = true;
         }
@@ -520,7 +523,7 @@ function is_reserved_name(string $name): bool
     return false;
 }
 
-function process_csr(string $csrFile, bool $precert = false): array
+function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = false): array
 {
     // 1. Parse (also validates PEM structure)
     $r = run_cmd([OPENSSL_BIN, 'req', '-in', $csrFile, '-noout', '-text']);
@@ -598,6 +601,8 @@ function process_csr(string $csrFile, bool $precert = false): array
         }
         if ($certCn === '') $certCn = substr($sans[0], 2);
 
+        // BR §7.1.4.2: commonName is NOT RECOMMENDED — omit when requested
+        $subj   = $omit_cn ? '/' : '/CN=' . $certCn;
         $sanStr = implode(', ', array_map(fn($s) => 'DNS:' . $s, $sans));
 
         $extLines = [
@@ -630,7 +635,7 @@ function process_csr(string $csrFile, bool $precert = false): array
                 '-config',     ISSUING_DB_CNF,
                 '-in',         $csrFile,
                 '-out',        $certFile,
-                '-subj',       '/CN=' . $certCn,
+                '-subj',       $subj,
                 '-extfile',    $extFile,
                 '-extensions', 'v3_ee',
                 '-days',       (string) CERT_DAYS,
@@ -658,7 +663,7 @@ function process_csr(string $csrFile, bool $precert = false): array
                 '-config',     ISSUING_DB_CNF,
                 '-in',         $csrFile,
                 '-out',        $preCertFile,
-                '-subj',       '/CN=' . $certCn,
+                '-subj',       $subj,
                 '-extfile',    $preExtFile,
                 '-extensions', 'v3_ee',
                 '-days',       (string) CERT_DAYS,
@@ -692,7 +697,7 @@ function process_csr(string $csrFile, bool $precert = false): array
                 '-config',     ISSUING_DB_CNF,
                 '-in',         $csrFile,
                 '-out',        $certFile,
-                '-subj',       '/CN=' . $certCn,
+                '-subj',       $subj,
                 '-extfile',    $extFile,
                 '-extensions', 'v3_ee',
                 '-days',       (string) CERT_DAYS,
@@ -719,7 +724,7 @@ function process_csr(string $csrFile, bool $precert = false): array
                 'operator' => $s['log_operator']    ?? '',
             ], $scts),
             'certificate' => trim($certPem),
-            'subject'     => 'CN=' . $certCn,
+            'subject'     => $omit_cn ? '(empty — CN omitted per BR §7.1.4.2)' : 'CN=' . $certCn,
             'sans'        => $sans,
             'key_bits'    => $keyBits,
             'issuer'      => $info['issuer']     ?? 'CN=Meerkat Test Issuing CA 1',
@@ -1318,6 +1323,13 @@ $navLabel = 'Test CA';
     .dcv-result-ok  { color: var(--accent); }
     .dcv-result-err { color: var(--danger); font-family: var(--mono); font-size: 0.77rem; }
 
+    .omit-cn-ref {
+      font-family: var(--mono); font-size: 0.65rem; letter-spacing: 0.04em;
+      padding: 0.1em 0.5em; border-radius: 3px; margin-left: 0.4rem;
+      background: rgba(251,191,36,0.08); color: var(--warn);
+      border: 1px solid rgba(251,191,36,0.25); vertical-align: middle;
+    }
+
     /* ── Footer ── */
     .site-footer {
       border-top: 1px solid var(--border); padding: 1.4rem 2rem;
@@ -1431,6 +1443,19 @@ $navLabel = 'Test CA';
           <p class="dcv-opt-note" id="dcvOptNote">Place a file at each domain's
             <code>/.well-known/pki-validation/TOKEN</code> URL containing exactly the token value.</p>
         </div>
+      </div>
+
+      <!-- Subject options -->
+      <div class="dcv-section" style="margin-top:0.6rem">
+        <label class="dcv-check-label">
+          <input type="checkbox" id="omitCn" name="omit_cn" value="1">
+          Omit commonName from subject
+          <span class="omit-cn-ref">BR §7.1.4.2 — commonName NOT RECOMMENDED</span>
+        </label>
+        <p class="dcv-opt-note" style="margin-top:0.4rem">
+          When checked the subject will be an empty sequence and the SAN extension is the
+          sole source of domain names, as recommended by the Baseline Requirements.
+        </p>
       </div>
 
       <div class="submit-row">
