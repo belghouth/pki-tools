@@ -19,7 +19,11 @@ const CDP_URL         = 'http://pki.thameur.org/meerkat-issuing.crl';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json; charset=utf-8');
     $action = $_POST['action'] ?? 'issue';
-    $result = ($action === 'revoke') ? handle_revoke() : handle_issue();
+    $result = match ($action) {
+        'revoke'       => handle_revoke(),
+        'generate_csr' => handle_generate_csr(),
+        default        => handle_issue(),
+    };
     echo json_encode($result, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
 }
@@ -147,6 +151,111 @@ function handle_revoke(): array
         fclose($lock);
         @unlink($tmpCert);
     }
+}
+
+function handle_generate_csr(): array
+{
+    if (recaptcha_configured()) {
+        $token = trim($_POST['g_recaptcha_token'] ?? '');
+        if (!recaptcha_verify($token, 'generate_csr')) {
+            return ['error' => 'reCAPTCHA verification failed. Please try again.'];
+        }
+    }
+
+    $raw = trim($_POST['domains'] ?? '');
+    if (!$raw) {
+        return ['error' => 'No domains provided'];
+    }
+
+    $domains = [];
+    foreach (explode(',', $raw) as $part) {
+        $d = strtolower(trim($part));
+        if ($d === '') continue;
+        if (!is_valid_dns($d)) {
+            return ['error' => "\"$d\" is not a valid domain name"];
+        }
+        if (is_reserved_name($d)) {
+            return ['error' => "\"$d\" is a reserved or internal name and cannot be issued to"];
+        }
+        if (in_array($d, $domains, true)) continue;
+        if (count($domains) >= MAX_SANS) {
+            return ['error' => 'Too many domains (max ' . MAX_SANS . ')'];
+        }
+        $domains[] = $d;
+    }
+
+    if (empty($domains)) {
+        return ['error' => 'No valid domains provided'];
+    }
+
+    $tmpKey = sys_get_temp_dir() . '/cf_gk_' . bin2hex(random_bytes(8)) . '.key';
+    $tmpCsr = sys_get_temp_dir() . '/cf_gc_' . bin2hex(random_bytes(8)) . '.csr';
+    $tmpCnf = sys_get_temp_dir() . '/cf_gn_' . bin2hex(random_bytes(8)) . '.cnf';
+
+    try {
+        $r = run_cmd([OPENSSL, 'genrsa', '-out', $tmpKey, '2048']);
+        if (!$r['ok']) {
+            return ['error' => 'Temporary key generation failed'];
+        }
+
+        $sanStr = implode(',', array_map(fn($d) => 'DNS:' . $d, $domains));
+        file_put_contents($tmpCnf, implode("\n", [
+            '[req]',
+            'distinguished_name = dn',
+            'req_extensions     = san',
+            'prompt             = no',
+            '[dn]',
+            'CN=' . $domains[0],
+            '[san]',
+            'subjectAltName = ' . $sanStr,
+        ]));
+
+        $r = run_cmd([OPENSSL, 'req', '-new',
+            '-key',    $tmpKey,
+            '-out',    $tmpCsr,
+            '-config', $tmpCnf,
+        ]);
+        if (!$r['ok']) {
+            return ['error' => 'CSR generation failed'];
+        }
+
+        $csrPem = (string) file_get_contents($tmpCsr);
+        if (!str_contains($csrPem, '-----BEGIN CERTIFICATE REQUEST-----')) {
+            return ['error' => 'CSR generation produced no output'];
+        }
+
+        return ['ok' => true, 'csr' => trim($csrPem), 'domains' => $domains];
+
+    } finally {
+        @unlink($tmpKey);
+        @unlink($tmpCsr);
+        @unlink($tmpCnf);
+    }
+}
+
+function is_reserved_name(string $name): bool
+{
+    $name = strtolower($name);
+
+    // IPv4 / IPv6 addresses
+    if (filter_var($name, FILTER_VALIDATE_IP) !== false) return true;
+
+    // Reverse DNS
+    if (str_ends_with($name, '.arpa')) return true;
+
+    // Tor hidden services
+    if (str_ends_with($name, '.onion')) return true;
+
+    // IANA / RFC 2606 / RFC 6761 special-use / internal names
+    foreach (['.local', '.localhost', '.internal', '.localdomain',
+              '.example', '.invalid', '.test', '.home', '.corp', '.lan'] as $sfx) {
+        if (str_ends_with($name, $sfx)) return true;
+    }
+
+    // Single-label (already caught by is_valid_dns requiring ≥2 labels, belt-and-suspenders)
+    if (!str_contains($name, '.')) return true;
+
+    return false;
 }
 
 function process_csr(string $csrFile): array
@@ -353,7 +462,7 @@ $navLabel = 'Test CA';
   <?php
   require_once __DIR__ . '/includes/seo.php';
   seo_head([
-    'title'       => 'Test Certificate Factory — BR-Compliant TLS Cert Issuance | thameur.org',
+    'title'       => 'Meerkat Test Certificate Factory — BR-Compliant TLS Cert Issuance | thameur.org',
     'description' => 'Submit a CSR and receive a BR-compliant DV TLS certificate signed by the Meerkat Test Issuing CA. RSA ≥ 2048 only. For linter testing and local chain validation.',
     'url'         => 'https://thameur.org/cert_factory.php',
   ]);
@@ -524,6 +633,48 @@ $navLabel = 'Test CA';
       padding-top: 1rem; border-top: 1px solid var(--border);
     }
 
+    /* ── CSR builder ── */
+    .csr-builder {
+      margin-top: 1.2rem; padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    .csr-builder-toggle {
+      background: none; border: none; color: var(--muted); cursor: pointer;
+      font-family: var(--sans); font-size: 0.82rem; padding: 0;
+      display: flex; align-items: center; gap: 0.4rem; transition: color 0.15s;
+    }
+    .csr-builder-toggle:hover { color: var(--accent); }
+    .toggle-chevron { font-size: 0.65rem; transition: transform 0.2s; display: inline-block; }
+    .toggle-chevron.open { transform: rotate(90deg); }
+    .csr-builder-body { margin-top: 0.9rem; }
+    .csr-warn-note {
+      border: 1px solid #854d0e; background: rgba(133,77,14,0.12);
+      border-radius: 6px; padding: 0.65rem 0.9rem; margin-bottom: 0.9rem;
+      font-size: 0.8rem; color: #fde68a; line-height: 1.6;
+    }
+    .csr-domain-row {
+      display: flex; gap: 0.6rem; align-items: stretch; flex-wrap: wrap;
+    }
+    .domain-input {
+      flex: 1; min-width: 200px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text); font-family: var(--mono);
+      font-size: 0.78rem; padding: 0.5em 0.9em; transition: border-color 0.15s;
+    }
+    .domain-input:focus { outline: none; border-color: var(--accent); }
+    .domain-input::placeholder { color: var(--muted); }
+    .csr-domain-hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.4rem; }
+    .csr-builder-error {
+      margin-top: 0.6rem; font-size: 0.8rem; color: var(--danger);
+      padding: 0.5rem 0.8rem; background: rgba(248,113,113,0.08);
+      border: 1px solid rgba(248,113,113,0.25); border-radius: 5px;
+    }
+    .csr-ok-badge {
+      margin-top: 0.6rem; font-size: 0.8rem; color: var(--accent);
+      padding: 0.5rem 0.8rem; background: rgba(0,212,170,0.07);
+      border: 1px solid rgba(0,212,170,0.25); border-radius: 5px;
+    }
+
     /* ── Revocation row ── */
     .revoke-row {
       display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;
@@ -578,7 +729,7 @@ $navLabel = 'Test CA';
 <main class="factory-wrap">
 
   <div class="page-header">
-    <h1>Test Certificate Factory</h1>
+    <h1>Meerkat Test Certificate Factory</h1>
     <p>Submit a CSR to receive a BR-compliant DV TLS certificate signed by the Meerkat Test Issuing CA.
        RSA ≥ 2048 only. Subject is rebuilt from the first SAN — all other CSR fields are stripped.</p>
   </div>
@@ -611,6 +762,30 @@ $navLabel = 'Test CA';
           <input type="file" id="csrFile" name="csr_file" accept=".pem,.csr,.txt">
         </div>
         <div class="file-selected" id="fileSelected" hidden></div>
+      </div>
+
+      <!-- CSR builder -->
+      <div class="csr-builder">
+        <button type="button" class="csr-builder-toggle" id="csrBuilderToggle">
+          <span class="toggle-chevron" id="toggleChevron">▶</span>
+          Create CSR for me
+        </button>
+        <div class="csr-builder-body" id="csrBuilderBody" hidden>
+          <div class="csr-warn-note">
+            ⚠ <strong>No private key will be delivered.</strong> A throw-away 2048-bit RSA key is
+            generated server-side and discarded immediately after signing. Use this option only to
+            test how a certificate looks — never to secure a real service.
+          </div>
+          <div class="csr-domain-row">
+            <input type="text" class="domain-input" id="domainInput"
+                   placeholder="example.com, www.example.com, api.example.com"
+                   spellcheck="false" autocomplete="off">
+            <button type="button" class="btn-primary" id="btnGenCsr">Generate CSR</button>
+          </div>
+          <p class="csr-domain-hint">Separate multiple domains with commas. No IPs, wildcards, or internal names.</p>
+          <div class="csr-builder-error" id="csrBuilderError" hidden></div>
+          <div class="csr-ok-badge" id="csrBuilderOk" hidden></div>
+        </div>
       </div>
 
       <div class="submit-row">
@@ -878,6 +1053,77 @@ $navLabel = 'Test CA';
     return String(s)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;')
       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ── CSR builder ─────────────────────────────────────────────────────────────
+  var csrBuilderToggle = document.getElementById('csrBuilderToggle');
+  var csrBuilderBody   = document.getElementById('csrBuilderBody');
+  var toggleChevron    = document.getElementById('toggleChevron');
+  var domainInput      = document.getElementById('domainInput');
+  var btnGenCsr        = document.getElementById('btnGenCsr');
+  var csrBuilderError  = document.getElementById('csrBuilderError');
+  var csrBuilderOk     = document.getElementById('csrBuilderOk');
+
+  csrBuilderToggle.addEventListener('click', function () {
+    var open = !csrBuilderBody.hidden;
+    csrBuilderBody.hidden = open;
+    toggleChevron.classList.toggle('open', !open);
+  });
+
+  btnGenCsr.addEventListener('click', function () { doGenCsr(); });
+  domainInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); doGenCsr(); }
+  });
+
+  async function doGenCsr() {
+    var raw = domainInput.value.trim();
+    if (!raw) {
+      showCsrError('Enter at least one domain.');
+      return;
+    }
+
+    csrBuilderError.hidden = true;
+    csrBuilderOk.hidden    = true;
+    btnGenCsr.disabled     = true;
+    btnGenCsr.textContent  = 'Generating…';
+
+    var token = await getRecaptchaToken('generate_csr');
+    var fd = new FormData();
+    fd.append('action',            'generate_csr');
+    fd.append('domains',           raw);
+    fd.append('g_recaptcha_token', token);
+
+    try {
+      var resp = await fetch(window.location.href, { method: 'POST', body: fd });
+      if (!resp.ok) throw new Error('Server returned ' + resp.status);
+      var data = await resp.json();
+      if (data.error) {
+        showCsrError(data.error);
+        return;
+      }
+      // Populate the paste tab and switch to it
+      document.getElementById('csrText').value = data.csr;
+      tabs.forEach(function (t) { t.classList.remove('active'); });
+      panes.forEach(function (p) { p.classList.remove('active'); });
+      var pasteTab  = document.querySelector('[data-tab="paste"]');
+      var pastePane = document.getElementById('pane-paste');
+      if (pasteTab)  pasteTab.classList.add('active');
+      if (pastePane) pastePane.classList.add('active');
+
+      csrBuilderOk.hidden      = false;
+      csrBuilderOk.textContent = '✔ CSR ready — ' + (data.domains || []).join(', ') + '. Click Issue Certificate to continue.';
+    } catch (err) {
+      showCsrError('Request failed: ' + err.message);
+    } finally {
+      btnGenCsr.disabled    = false;
+      btnGenCsr.textContent = 'Generate CSR';
+    }
+  }
+
+  function showCsrError(msg) {
+    csrBuilderError.hidden      = false;
+    csrBuilderError.textContent = '✕ ' + msg;
+    csrBuilderOk.hidden         = true;
   }
 
   // ── Revocation ───────────────────────────────────────────────────────────────

@@ -607,6 +607,8 @@ $html = <<<HTML
       SHA-256 &nbsp;&nbsp;&nbsp;&nbsp;<span>{$root_meta['fp']}</span>
     </div>
     <a class="dl-btn" href="/meerkat-root.crt">Download .crt</a>
+    &nbsp;
+    <a class="dl-btn" href="/meerkat-root.crl">Download Root ARL</a>
   </div>
 
   <div class="card">
@@ -624,20 +626,9 @@ $html = <<<HTML
     <a class="dl-btn" href="/meerkat-issuing.crl">Download issuing CRL</a>
   </div>
 
-  <div class="card">
-    <div class="card-title">Root ARL &amp; Issuing CRL</div>
-    <div class="card-meta">
-      Root ARL &nbsp;&nbsp;&nbsp;<span>http://pki.thameur.org/meerkat-root.crl</span> &nbsp;·&nbsp; 365-day validity<br>
-      Issuing CRL &nbsp;<span>http://pki.thameur.org/meerkat-issuing.crl</span> &nbsp;·&nbsp; 7-day validity
-    </div>
-    <a class="dl-btn" href="/meerkat-root.crl">Download Root ARL</a>
-    &nbsp;
-    <a class="dl-btn" href="/meerkat-issuing.crl">Download Issuing CRL</a>
-  </div>
-
   <div class="footer">
     <a href="https://thameur.org">thameur.org</a> &nbsp;·&nbsp;
-    <a href="https://thameur.org/linters.php">Linters</a> &nbsp;·&nbsp;
+    <a href="https://thameur.org/cert_factory.php">Meerkat CA</a> &nbsp;·&nbsp;
     Rotated on demand — fingerprints above are always current
   </div>
 
