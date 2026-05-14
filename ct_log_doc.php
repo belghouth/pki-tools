@@ -28,6 +28,18 @@ $navLabel = 'Meerkat CT Log';
     'title'       => 'Meerkat Testing CT Log — RFC 6962 Ephemeral Certificate Transparency | ' . SITE_DOMAIN,
     'description' => 'A RFC 6962-compliant testing Certificate Transparency log. Accepts precertificate chains and returns signed SCTs. Ephemeral — no entries are persisted. Randomises log identity across 8 fake CT operators for realistic testing.',
     'url'         => SITE_BASE_URL . '/ct_log_doc.php',
+    'jsonld'      => json_encode([
+      '@context'            => 'https://schema.org',
+      '@type'               => 'WebApplication',
+      'name'                => 'Meerkat Testing CT Log',
+      'url'                 => SITE_BASE_URL . '/ct_log_doc.php',
+      'description'         => 'RFC 6962-compliant ephemeral CT log for testing. Accepts precertificate chains and returns cryptographically signed SCTs across 8 randomised log identities.',
+      'applicationCategory' => 'SecurityApplication',
+      'operatingSystem'     => 'Any',
+      'isAccessibleForFree' => true,
+      'keywords'            => 'Certificate Transparency, CT log, RFC 6962, SCT, precertificate, WebPKI, testing',
+      'author'              => ['@id' => SITE_BASE_URL . '/#person', 'name' => 'Thameur Belghith'],
+    ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
   ]);
   ?>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">

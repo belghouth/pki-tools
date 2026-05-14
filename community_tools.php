@@ -11,6 +11,16 @@ $navLabel = 'Community Tools';
     'title'       => 'Community PKI Tools — Free Online Testing Tools for WebPKI Practitioners | ' . SITE_DOMAIN,
     'description' => 'A curated index of free, open-source community tools for PKI testing: ASN.1 decoders, TLS analysers, digital signature validators, CT log search, DNSSEC visualisers, and more.',
     'url'         => SITE_BASE_URL . '/community_tools.php',
+    'jsonld'      => json_encode([
+      '@context'            => 'https://schema.org',
+      '@type'               => 'CollectionPage',
+      'name'                => 'Community PKI Tools',
+      'url'                 => SITE_BASE_URL . '/community_tools.php',
+      'description'         => 'Curated index of free, open-source community tools for PKI testing: ASN.1 decoders, TLS analysers, CT log search, digital signature validators, and more.',
+      'isAccessibleForFree' => true,
+      'keywords'            => 'PKI tools, X.509, TLS, ASN.1, CT log, certificate testing, WebPKI, DNSSEC',
+      'author'              => ['@id' => SITE_BASE_URL . '/#person', 'name' => 'Thameur Belghith'],
+    ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
   ]);
   ?>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">

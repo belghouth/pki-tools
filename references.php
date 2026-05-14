@@ -11,6 +11,15 @@ $navLabel = 'PKI References';
     'title'       => 'PKI References — Essential Links for CA/Browser Forum & WebPKI Practitioners | ' . SITE_DOMAIN,
     'description' => 'Curated essential references for PKI practitioners: CABF Baseline Requirements, Apple & Chrome & Mozilla root programs, ETSI & WebTrust audit standards, CCADB, CT logs, key RFCs, and community resources.',
     'url'         => SITE_BASE_URL . '/references.php',
+    'jsonld'      => json_encode([
+      '@context'    => 'https://schema.org',
+      '@type'       => 'CollectionPage',
+      'name'        => 'PKI References',
+      'url'         => SITE_BASE_URL . '/references.php',
+      'description' => 'Curated essential references for PKI practitioners: CABF Baseline Requirements, root programs, ETSI & WebTrust audit standards, CCADB, CT logs, and key RFCs.',
+      'keywords'    => 'PKI references, CA/Browser Forum, Baseline Requirements, root programs, WebTrust, ETSI, CCADB, RFC 5280, X.509',
+      'author'      => ['@id' => SITE_BASE_URL . '/#person', 'name' => 'Thameur Belghith'],
+    ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
   ]);
   ?>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">

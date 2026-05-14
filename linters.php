@@ -456,18 +456,19 @@ if ($fetched_domain === '') {
 <?php
 require_once __DIR__ . '/includes/seo.php';
 seo_head([
-  'title'       => 'Meerkat Multi-Linter — zlint, pkilint, x509lint, and crt.sh  | ' . SITE_DOMAIN,
-  'description' => 'Run any X.509 certificate through zlint, pkilint, and x509lint simultaneously. Flags CA/Browser Forum Baseline Requirement violations and RFC 5280 issues with direct requirement references.',
+  'title'       => 'Meerkat Multi-Linter — zlint, pkilint, x509lint, pkimetal & crt.sh | ' . SITE_DOMAIN,
+  'description' => 'Run any X.509 certificate through zlint, pkilint, x509lint, pkimetal, and crt.sh simultaneously. Flags CA/Browser Forum Baseline Requirement violations and RFC 5280 issues with direct requirement references.',
   'url'         => SITE_BASE_URL . '/linters.php',
   'jsonld'      => json_encode([
     '@context'            => 'https://schema.org',
     '@type'               => 'WebApplication',
     'name'                => 'Meerkat Multi-Linter',
     'url'                 => SITE_BASE_URL . '/linters.php',
-    'description'         => 'Run any X.509 certificate through zlint, pkilint, and x509lint simultaneously.',
+    'description'         => 'Run any X.509 certificate through zlint, pkilint, x509lint, pkimetal, and crt.sh simultaneously. Flags CA/Browser Forum Baseline Requirement violations and RFC 5280 issues.',
     'applicationCategory' => 'SecurityApplication',
     'operatingSystem'     => 'Any',
     'isAccessibleForFree' => true,
+    'keywords'            => 'zlint, pkilint, x509lint, pkimetal, crt.sh, X.509, certificate linting, CA/Browser Forum, WebPKI, RFC 5280',
     'author'              => ['@id' => SITE_BASE_URL . '/#person', 'name' => 'Thameur Belghith'],
   ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
 ]);

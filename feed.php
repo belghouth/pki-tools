@@ -25,6 +25,15 @@ if (file_exists($cacheFile)) {
     'title'       => 'PKI News — Daily WebPKI & CA/Browser Forum Updates | ' . SITE_DOMAIN,
     'description' => "Daily PKI news aggregated from mozilla.dev.security.policy, CA/Browser Forum GitHub, IETF LAMPS WG, Mozilla Security Blog, Let's Encrypt, and more. Refreshed every 24 hours.",
     'url'         => SITE_BASE_URL . '/feed.php',
+    'jsonld'      => json_encode([
+      '@context'    => 'https://schema.org',
+      '@type'       => 'WebPage',
+      'name'        => 'PKI News — Daily WebPKI & CA/Browser Forum Updates',
+      'url'         => SITE_BASE_URL . '/feed.php',
+      'description' => "Daily PKI news aggregated from mozilla.dev.security.policy, CA/Browser Forum GitHub, IETF LAMPS WG, Mozilla Security Blog, and Let's Encrypt. Refreshed every 24 hours.",
+      'keywords'    => 'PKI news, CA/Browser Forum, WebPKI, Certificate Transparency, IETF LAMPS, mozilla.dev.security.policy',
+      'author'      => ['@id' => SITE_BASE_URL . '/#person', 'name' => 'Thameur Belghith'],
+    ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
   ]);
   ?>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
