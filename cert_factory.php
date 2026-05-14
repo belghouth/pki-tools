@@ -273,7 +273,7 @@ function handle_generate_challenge(): array
     }
 
     $method = $_POST['dcv_method'] ?? 'http';
-    if (!in_array($method, ['http', 'dns'], true)) {
+    if (!in_array($method, ['http', 'dns', 'dns-cname', 'tls-alpn'], true)) {
         return ['error' => 'Invalid DCV method'];
     }
     $precert = !empty($_POST['precert']);
@@ -303,8 +303,8 @@ function handle_generate_challenge(): array
         if (!is_valid_dns($san)) {
             return ['error' => "Invalid DNS name: \"$san\""];
         }
-        if ($method === 'http' && str_starts_with($san, '*.')) {
-            return ['error' => 'HTTP DCV cannot be used when the CSR contains wildcard SANs — switch to DNS TXT.'];
+        if (in_array($method, ['http', 'tls-alpn'], true) && str_starts_with($san, '*.')) {
+            return ['error' => ucfirst($method === 'http' ? 'HTTP' : 'TLS-ALPN') . ' DCV cannot be used for wildcard SANs — switch to DNS TXT or DNS CNAME.'];
         }
     }
 
@@ -350,9 +350,13 @@ function handle_verify_dcv(): array
     $allOk   = true;
 
     foreach ($tokens as $domain => $token) {
-        $r = $method === 'http'
-            ? dcv_verify_http($domain, $token)
-            : dcv_verify_dns($domain, $token);
+        $r = match ($method) {
+            'http'      => dcv_verify_http($domain, $token),
+            'dns'       => dcv_verify_dns($domain, $token),
+            'dns-cname' => dcv_verify_dns_cname($domain, $token),
+            'tls-alpn'  => dcv_verify_tls_alpn($domain, $token),
+            default     => ['ok' => false, 'error' => 'Unknown DCV method'],
+        };
         $results[$domain] = $r;
         if (!$r['ok']) $allOk = false;
     }
@@ -420,6 +424,74 @@ function dcv_verify_dns(string $domain, string $token): array
         }
     }
     return ['ok' => false, 'error' => 'TXT record _pki-validation.' . $domain . ' not found or value mismatch'];
+}
+
+function dcv_verify_dns_cname(string $domain, string $token): array
+{
+    // Expected: _pki-validation.DOMAIN CNAME TOKEN.dcv.PKI_DOMAIN
+    $cname_label = '_pki-validation.' . $domain;
+    $expected_target = strtolower($token . '.dcv.' . PKI_DOMAIN . '.');
+    $recs = @dns_get_record($cname_label, DNS_CNAME);
+    if ($recs === false || !is_array($recs) || empty($recs)) {
+        return ['ok' => false, 'error' => 'No CNAME record found for ' . $cname_label];
+    }
+    foreach ($recs as $rec) {
+        $target = strtolower(rtrim($rec['target'] ?? '', '.') . '.');
+        if ($target === $expected_target) {
+            return ['ok' => true];
+        }
+    }
+    $found = implode(', ', array_map(fn($r) => $r['target'] ?? '?', $recs));
+    return ['ok' => false, 'error' => "CNAME target mismatch — expected {$expected_target}, found: {$found}"];
+}
+
+function dcv_verify_tls_alpn(string $domain, string $token): array
+{
+    // Connect to domain:443 with ALPN "acme-tls/1", retrieve the presented certificate,
+    // then check its acmeValidation SAN extension contains SHA-256(token).
+    // We use openssl s_client because PHP stream contexts do not expose ALPN negotiation.
+    $expected_hash = hash('sha256', $token);
+    $cmd = [
+        OPENSSL_BIN, 's_client',
+        '-connect', $domain . ':443',
+        '-alpn', 'acme-tls/1',
+        '-servername', $domain,
+        '-showcerts',
+    ];
+    $r = run_cmd_input($cmd, '', 5);
+    if (!$r['ok'] && trim($r['out']) === '') {
+        return ['ok' => false, 'error' => 'TLS connection failed: ' . $r['err']];
+    }
+    $out = $r['out'];
+    // Extract the first PEM certificate from the output
+    if (!preg_match('/-----BEGIN CERTIFICATE-----(.+?)-----END CERTIFICATE-----/s', $out, $m)) {
+        return ['ok' => false, 'error' => 'Could not extract certificate from TLS handshake'];
+    }
+    $certPem = "-----BEGIN CERTIFICATE-----\n" . trim($m[1]) . "\n-----END CERTIFICATE-----\n";
+    $tmp = sys_get_temp_dir() . '/cf_alpn_' . bin2hex(random_bytes(6)) . '.pem';
+    file_put_contents($tmp, $certPem);
+    try {
+        // Check ALPN was actually negotiated
+        if (!str_contains($out, 'acme-tls/1')) {
+            return ['ok' => false, 'error' => 'Server did not negotiate ALPN "acme-tls/1"'];
+        }
+        // Dump the certificate text and look for the acmeValidation OID (1.3.6.1.5.5.7.1.31) or its hex value
+        $r2 = run_cmd([OPENSSL_BIN, 'x509', '-in', $tmp, '-noout', '-text']);
+        if (!$r2['ok']) {
+            return ['ok' => false, 'error' => 'Certificate parse failed'];
+        }
+        $certText = $r2['out'];
+        // The acmeValidation extension value is the SHA-256 hash as a 32-byte DER OCTET STRING
+        // openssl prints it as hex pairs; we look for the expected hash in the extension dump
+        $hashLower = strtolower($expected_hash);
+        $hashColon = implode(':', str_split($hashLower, 2)); // "ab:cd:ef:..."
+        if (str_contains(strtolower($certText), $hashLower) || str_contains(strtolower($certText), $hashColon)) {
+            return ['ok' => true];
+        }
+        return ['ok' => false, 'error' => 'acmeValidation extension not found or hash mismatch (expected SHA-256: ' . $expected_hash . ')'];
+    } finally {
+        @unlink($tmp);
+    }
 }
 
 function is_reserved_name(string $name): bool
@@ -890,6 +962,42 @@ function run_cmd(array $cmd): array
     return ['ok' => $code === 0, 'out' => (string) $out, 'err' => (string) $err, 'code' => $code];
 }
 
+// Like run_cmd but closes stdin immediately so commands that read from it (like openssl s_client) terminate.
+function run_cmd_input(array $cmd, string $stdin_data, int $timeout_sec = 10): array
+{
+    $proc = proc_open($cmd, [
+        0 => ['pipe', 'r'],
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ], $pipes);
+    if (!$proc) return ['ok' => false, 'out' => '', 'err' => 'proc_open failed', 'code' => -1];
+    if ($stdin_data !== '') fwrite($pipes[0], $stdin_data);
+    fclose($pipes[0]);
+    stream_set_blocking($pipes[1], false);
+    stream_set_blocking($pipes[2], false);
+    $out = $err = '';
+    $deadline = microtime(true) + $timeout_sec;
+    while (microtime(true) < $deadline) {
+        $r = [$pipes[1], $pipes[2]];
+        $w = $e = [];
+        if (@stream_select($r, $w, $e, 0, 100000) > 0) {
+            $out .= (string) stream_get_contents($pipes[1]);
+            $err .= (string) stream_get_contents($pipes[2]);
+        }
+        $status = proc_get_status($proc);
+        if (!$status['running']) break;
+    }
+    // Collect any remaining output
+    stream_set_blocking($pipes[1], true);
+    stream_set_blocking($pipes[2], true);
+    $out .= (string) stream_get_contents($pipes[1]);
+    $err .= (string) stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $code = proc_close($proc);
+    return ['ok' => $code === 0, 'out' => $out, 'err' => $err, 'code' => $code];
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 $navLabel = 'Test CA';
 ?><!DOCTYPE html>
@@ -1175,7 +1283,9 @@ $navLabel = 'Test CA';
       background: rgba(0,212,170,0.12); color: var(--accent);
       border: 1px solid rgba(0,212,170,0.3);
     }
-    .dcv-badge.dns { background: rgba(139,92,246,0.1); color: #a78bfa; border-color: rgba(139,92,246,0.3); }
+    .dcv-badge.dns       { background: rgba(139,92,246,0.1); color: #a78bfa; border-color: rgba(139,92,246,0.3); }
+    .dcv-badge.dns-cname { background: rgba(139,92,246,0.1); color: #a78bfa; border-color: rgba(139,92,246,0.3); }
+    .dcv-badge.tls-alpn  { background: rgba(251,191,36,0.1);  color: var(--warn); border-color: rgba(251,191,36,0.3); }
     .dcv-challenge-item { padding: 0.9rem 0; border-bottom: 1px solid var(--border); }
     .dcv-challenge-item:last-child { border-bottom: none; }
     .dcv-challenge-domain {
@@ -1306,6 +1416,14 @@ $navLabel = 'Test CA';
             <label class="dcv-method-opt">
               <input type="radio" name="dcv_method" value="dns" id="dcvDns">
               DNS TXT <code style="font-size:0.72rem;color:var(--muted)">_pki-validation</code>
+            </label>
+            <label class="dcv-method-opt">
+              <input type="radio" name="dcv_method" value="dns-cname" id="dcvDnsCname">
+              DNS CNAME <code style="font-size:0.72rem;color:var(--muted)">_pki-validation → TOKEN.dcv</code>
+            </label>
+            <label class="dcv-method-opt">
+              <input type="radio" name="dcv_method" value="tls-alpn" id="dcvTlsAlpn">
+              TLS-ALPN <code style="font-size:0.72rem;color:var(--muted)">port 443, acme-tls/1</code>
             </label>
           </div>
           <p class="dcv-opt-note" id="dcvOptNote">Place a file at each domain's
@@ -1763,12 +1881,17 @@ $navLabel = 'Test CA';
     }
   });
 
+  var dcvMethodNotes = {
+    'http':      'Place a file at each domain\'s /.well-known/pki-validation/TOKEN URL containing exactly the token value.',
+    'dns':       'Add a DNS TXT record named _pki-validation.DOMAIN with the token value.',
+    'dns-cname': 'Add a DNS CNAME record: _pki-validation.DOMAIN → TOKEN.dcv.' + window.location.hostname + '. The CA verifies the CNAME target.',
+    'tls-alpn':  'Host a TLS listener on port 443 for each domain. It must negotiate ALPN "acme-tls/1" and present a self-signed certificate containing the acmeValidation extension. Wildcards are not supported.'
+  };
+
   document.querySelectorAll('input[name="dcv_method"]').forEach(function (radio) {
     radio.addEventListener('change', function () {
-      var isHttp = document.getElementById('dcvHttp').checked;
-      dcvOptNote.textContent = isHttp
-        ? 'Place a file at each domain\'s /.well-known/pki-validation/TOKEN URL containing exactly the token value.'
-        : 'Add a DNS TXT record named _pki-validation.DOMAIN with the token value.';
+      var m = document.querySelector('input[name="dcv_method"]:checked').value;
+      dcvOptNote.textContent = dcvMethodNotes[m] || '';
       if (dcvChallengeActive) {
         dcvCard.hidden = true;
         dcvChallengeActive = false;
@@ -1824,26 +1947,48 @@ $navLabel = 'Test CA';
   }
 
   function renderDcvInstructions(data) {
-    var isHttp = data.method === 'http';
-    dcvBadge.textContent = isHttp ? 'HTTP' : 'DNS';
-    dcvBadge.className   = 'dcv-badge' + (isHttp ? '' : ' dns');
+    var m = data.method;
+    var badgeLabels = { 'http': 'HTTP', 'dns': 'DNS TXT', 'dns-cname': 'DNS CNAME', 'tls-alpn': 'TLS-ALPN' };
+    dcvBadge.textContent = badgeLabels[m] || m.toUpperCase();
+    dcvBadge.className   = 'dcv-badge ' + (m === 'http' ? '' : m);
 
     var html = '';
     Object.keys(data.tokens).forEach(function (domain) {
       var token = data.tokens[domain];
       html += '<div class="dcv-challenge-item">';
       html += '<div class="dcv-challenge-domain">' + esc(domain) + '</div>';
-      if (isHttp) {
+
+      if (m === 'http') {
         var urlRaw = 'http://' + domain + '/.well-known/pki-validation/' + token;
         html += tokenBlock('URL', esc(urlRaw), urlRaw);
         html += tokenBlock('File content (exact)', esc(token), token);
-      } else {
+
+      } else if (m === 'dns') {
         var nameRaw = '_pki-validation.' + domain;
         html += tokenBlock('DNS record name', esc(nameRaw), nameRaw);
         html += '<div class="dcv-token-block"><div class="dcv-token-label">Type</div>'
               + '<div class="dcv-token-row"><span class="dcv-token-value">TXT</span></div></div>';
         html += tokenBlock('Value', esc(token), token);
+
+      } else if (m === 'dns-cname') {
+        var cnameFrom = '_pki-validation.' + domain;
+        var cnameTo   = token + '.dcv.' + window.location.hostname + '.';
+        html += tokenBlock('CNAME record name', esc(cnameFrom), cnameFrom);
+        html += '<div class="dcv-token-block"><div class="dcv-token-label">Type</div>'
+              + '<div class="dcv-token-row"><span class="dcv-token-value">CNAME</span></div></div>';
+        html += tokenBlock('CNAME target (include trailing dot)', esc(cnameTo), cnameTo);
+
+      } else if (m === 'tls-alpn') {
+        // Compute SHA-256 of token in browser to display the expected extension value
+        html += tokenBlock('Token (used to derive the cert extension value)', esc(token), token);
+        html += '<div class="dcv-token-block"><div class="dcv-token-label">Setup</div>'
+              + '<div class="dcv-token-row"><span class="dcv-token-value" style="color:var(--muted);font-size:0.7rem">'
+              + 'Run a TLS listener on ' + esc(domain) + ':443 that negotiates ALPN "acme-tls/1" '
+              + 'and presents a self-signed cert with a subjectAltName of ' + esc(domain)
+              + ' and an acmeValidation extension (OID 1.3.6.1.5.5.7.1.31) containing SHA-256 of the token above.'
+              + '</span></div></div>';
       }
+
       html += '</div>';
     });
     dcvItems.innerHTML = html;

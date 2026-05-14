@@ -429,7 +429,12 @@ function acme_action_order(): array
     $raw    = trim($_POST['domains'] ?? '');
     $method = $_POST['challenge_method'] ?? 'http-01';
     if (!$raw) return ['error' => 'No domains provided'];
-    if (!in_array($method, ['http-01', 'dns-01'], true)) return ['error' => 'Invalid challenge method'];
+    $valid_methods = ['http-01', 'dns-01', 'tls-alpn-01', 'tls-sni-01', 'tls-sni-02', 'proofOfPossession'];
+    if (!in_array($method, $valid_methods, true)) return ['error' => 'Invalid challenge method'];
+
+    // Classify the requested method
+    $deprecated_methods = ['tls-sni-01', 'tls-sni-02', 'proofOfPossession'];
+    $is_deprecated = in_array($method, $deprecated_methods, true);
 
     $domains = [];
     foreach (explode(',', $raw) as $p) {
@@ -524,33 +529,51 @@ function acme_action_order(): array
             }
         }
 
+        // Flag any deprecated challenge types the server advertised
+        $known_deprecated = ['tls-sni-01', 'tls-sni-02', 'proofOfPossession'];
+        $server_deprecated = array_values(array_intersect($all_types, $known_deprecated));
+
         $authz_list[] = [
-            'domain'    => $domain,
-            'authz_url' => $authz_url,
-            'status'    => $authz['status'] ?? '?',
-            'wildcard'  => $authz['wildcard'] ?? false,
-            'challenge' => $selected,
-            'key_auth'  => $key_auth,
-            'dns_val'   => $dns_val,
-            'all_types' => $all_types,
+            'domain'             => $domain,
+            'authz_url'          => $authz_url,
+            'status'             => $authz['status'] ?? '?',
+            'wildcard'           => $authz['wildcard'] ?? false,
+            'challenge'          => $selected,
+            'key_auth'           => $key_auth,
+            'dns_val'            => $dns_val,
+            'all_types'          => $all_types,
+            'server_deprecated'  => $server_deprecated,
+            'is_deprecated_req'  => $is_deprecated,
         ];
+
+        $authz_warns = [];
+        foreach ($server_deprecated as $dep) {
+            $authz_warns[] = "Server advertised deprecated/forbidden challenge type: {$dep}";
+        }
+
         $steps[] = [
-            'name'   => "Fetch authz: {$domain}",
-            'ok'     => (bool) $selected,
-            'detail' => $selected
+            'name'     => "Fetch authz: {$domain}",
+            'ok'       => (bool) $selected,
+            'warn'     => !empty($authz_warns),
+            'detail'   => $selected
                 ? "{$method} available — authz " . ($authz['status'] ?? '?')
                 : "{$method} not offered (server has: " . implode(', ', $all_types) . ')',
+            'warnings' => $authz_warns,
         ];
     }
 
     $s['authz'] = $authz_list;
-    $no_chall = array_filter($authz_list, fn($a) => !$a['challenge']);
-    if (!empty($no_chall)) {
-        $doms = implode(', ', array_column(array_values($no_chall), 'domain'));
-        return ['error' => "{$method} not available for: {$doms}", 'steps' => $steps];
+    // For deprecated method tests: it's expected the server won't offer them — that's the point
+    if (!$is_deprecated) {
+        $no_chall = array_filter($authz_list, fn($a) => !$a['challenge']);
+        if (!empty($no_chall)) {
+            $doms = implode(', ', array_column(array_values($no_chall), 'domain'));
+            return ['error' => "{$method} not available for: {$doms}", 'steps' => $steps];
+        }
     }
 
-    return ['ok' => true, 'steps' => $steps, 'authz' => $authz_list, 'method' => $method];
+    return ['ok' => true, 'steps' => $steps, 'authz' => $authz_list, 'method' => $method,
+            'is_deprecated' => $is_deprecated];
 }
 
 function acme_action_verify(): array
@@ -558,9 +581,70 @@ function acme_action_verify(): array
     $s = &acme_sess();
     if (empty($s['authz'])) return ['error' => 'Session expired — restart the test'];
 
-    $steps = [];
+    $method      = $s['challenge_method'] ?? 'http-01';
+    $deprecated_methods = ['tls-sni-01', 'tls-sni-02', 'proofOfPossession'];
+    $is_deprecated = in_array($method, $deprecated_methods, true);
 
-    // Signal each challenge
+    $steps   = [];
+    $results = [];
+    $all_ok  = true;
+
+    // ── Deprecated method probe: signal and immediately report server reaction ──
+    if ($is_deprecated) {
+        foreach ($s['authz'] as $authz) {
+            $domain  = $authz['domain'];
+            $challs  = $authz['challenge'] ? [] : [];
+            // Find the deprecated challenge in the full authz by re-fetching
+            $ra = acme_post_req($authz['authz_url'], '');
+            acme_log_entry("Re-fetch authz for probe: {$domain}", 'POST', $authz['authz_url'], '(POST-as-GET)', $ra);
+            $full_challs = $ra['json']['challenges'] ?? [];
+            $dep_chall   = null;
+            foreach ($full_challs as $c) {
+                if ($c['type'] === $method) { $dep_chall = $c; break; }
+            }
+
+            if (!$dep_chall) {
+                // Server does not offer this deprecated method — correct behaviour
+                $steps[] = [
+                    'name'   => "Probe deprecated {$method}: {$domain}",
+                    'ok'     => true,
+                    'detail' => "Server correctly does not offer {$method} — compliant",
+                ];
+                $results[$domain] = ['ok' => true, 'deprecated_probe' => true, 'accepted' => false];
+                continue;
+            }
+
+            // Server advertises it — attempt to signal
+            $rv = acme_post_req($dep_chall['url'], new stdClass());
+            acme_log_entry("Signal deprecated {$method}: {$domain}", 'POST', $dep_chall['url'], '(JWS {})', $rv);
+            $server_accepted = ($rv['code'] === 200);
+
+            if ($server_accepted) {
+                $steps[] = [
+                    'name'   => "Probe deprecated {$method}: {$domain}",
+                    'ok'     => false,
+                    'detail' => "⛔ Server accepted forbidden challenge type {$method} — BR violation",
+                ];
+                $results[$domain] = ['ok' => false, 'deprecated_probe' => true, 'accepted' => true,
+                    'error' => "Server accepted forbidden challenge type: {$method}"];
+                $all_ok = false;
+            } else {
+                $prob = $rv['json'];
+                $rej  = "HTTP {$rv['code']}";
+                if (!empty($prob['type']))   $rej .= ' · ' . $prob['type'];
+                if (!empty($prob['detail'])) $rej .= ': ' . $prob['detail'];
+                $steps[] = [
+                    'name'   => "Probe deprecated {$method}: {$domain}",
+                    'ok'     => true,
+                    'detail' => "Server rejected {$method} — {$rej}",
+                ];
+                $results[$domain] = ['ok' => true, 'deprecated_probe' => true, 'accepted' => false];
+            }
+        }
+        return ['ok' => $all_ok, 'steps' => $steps, 'results' => $results, 'deprecated_probe' => true];
+    }
+
+    // ── Normal flow: signal challenge ──────────────────────────────────────────
     foreach ($s['authz'] as $authz) {
         $chall = $authz['challenge'];
         if (!$chall || empty($chall['url'])) continue;
@@ -575,9 +659,7 @@ function acme_action_verify(): array
         ];
     }
 
-    // Poll authorizations
-    $results = [];
-    $all_ok  = true;
+    // ── Poll authorizations ────────────────────────────────────────────────────
     foreach ($s['authz'] as $authz) {
         $domain    = $authz['domain'];
         $authz_url = $authz['authz_url'];
@@ -906,6 +988,11 @@ $navLabel = 'ACME Tester';
     .method-opts { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
     .method-opt { display: flex; align-items: center; gap: 0.4rem; font-size: 0.84rem; cursor: pointer; }
     .method-opt input[type=radio] { accent-color: var(--accent); }
+    .method-forbidden { color: var(--danger); }
+    .method-forbidden input[type=radio] { accent-color: var(--danger); }
+    .method-forbidden-badge { font-family: var(--mono); font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.06em; padding: 0.1em 0.4em; border-radius: 3px; background: rgba(248,113,113,0.12); color: var(--danger); border: 1px solid rgba(248,113,113,0.3); vertical-align: middle; }
+    .chall-badge.tls-alpn-01 { background: rgba(251,191,36,0.1); color: var(--warn); border-color: rgba(251,191,36,0.3); }
+    .chall-badge.forbidden   { background: rgba(248,113,113,0.1); color: var(--danger); border-color: rgba(248,113,113,0.3); }
 
     .skip-tls-label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; cursor: pointer; color: var(--muted); margin-top: 0.8rem; }
     .skip-tls-label input { accent-color: var(--warn); }
@@ -1097,7 +1184,12 @@ $navLabel = 'ACME Tester';
       <div class="method-opts">
         <label class="method-opt"><input type="radio" name="chall_method" value="http-01" checked> http-01</label>
         <label class="method-opt"><input type="radio" name="chall_method" value="dns-01"> dns-01</label>
+        <label class="method-opt"><input type="radio" name="chall_method" value="tls-alpn-01"> tls-alpn-01</label>
+        <label class="method-opt method-forbidden"><input type="radio" name="chall_method" value="tls-sni-01"> tls-sni-01 <span class="method-forbidden-badge">FORBIDDEN</span></label>
+        <label class="method-opt method-forbidden"><input type="radio" name="chall_method" value="tls-sni-02"> tls-sni-02 <span class="method-forbidden-badge">FORBIDDEN</span></label>
+        <label class="method-opt method-forbidden"><input type="radio" name="chall_method" value="proofOfPossession"> proofOfPossession <span class="method-forbidden-badge">FORBIDDEN</span></label>
       </div>
+      <div id="challMethodNote" style="font-size:0.75rem;color:var(--muted);margin-top:0.4rem;line-height:1.5"></div>
     </div>
 
     <!-- EAB toggle -->
@@ -1267,6 +1359,27 @@ $navLabel = 'ACME Tester';
     });
   }
 
+  // ── Challenge method selector notes ──────────────────────────────────────────
+  var challMethodNotes = {
+    'http-01':          'RFC 8555 §8.3 — serve a key authorization file at http://DOMAIN/.well-known/acme-challenge/TOKEN',
+    'dns-01':           'RFC 8555 §8.4 — add a DNS TXT record _acme-challenge.DOMAIN with the SHA-256 of the key authorization (base64url)',
+    'tls-alpn-01':      'RFC 8737 — host a TLS listener on DOMAIN:443 negotiating ALPN "acme-tls/1"; present a self-signed cert with a subjectAltName of the domain and an acmeValidation SAN extension containing SHA-256 of the key authorization',
+    'tls-sni-01':       '⛔ FORBIDDEN — retired 2019. Shared-hosting bypass attack. Compliant servers must not offer this. Selecting it will probe whether the server wrongly accepts it.',
+    'tls-sni-02':       '⛔ FORBIDDEN — retired 2019. Successor to tls-sni-01, same vulnerability. Compliant servers must not offer this.',
+    'proofOfPossession':'⛔ FORBIDDEN — pre-RFC 8555 ACME draft only. Must not exist in production. Selecting it will probe whether the server wrongly accepts it.',
+  };
+  var challMethodNote = document.getElementById('challMethodNote');
+  function updateChallNote() {
+    var m = document.querySelector('input[name="chall_method"]:checked')?.value || 'http-01';
+    challMethodNote.textContent = challMethodNotes[m] || '';
+    challMethodNote.style.color = (m === 'tls-sni-01' || m === 'tls-sni-02' || m === 'proofOfPossession')
+      ? 'var(--danger)' : 'var(--muted)';
+  }
+  document.querySelectorAll('input[name="chall_method"]').forEach(function (r) {
+    r.addEventListener('change', updateChallNote);
+  });
+  updateChallNote();
+
   // ── EAB generator ────────────────────────────────────────────────────────────
   document.getElementById('btnGenEab').addEventListener('click', function () {
     var kidBytes = new Uint8Array(8);
@@ -1336,34 +1449,89 @@ $navLabel = 'ACME Tester';
     setLoading(false);
 
     // ── Show challenges ──
-    renderChallenges(data2.authz || [], method);
+    var isDeprecated = data2.is_deprecated || false;
+    renderChallenges(data2.authz || [], method, isDeprecated);
   }
 
-  function renderChallenges(authz, method) {
-    var isHttp = method === 'http-01';
+  var FORBIDDEN_METHODS = ['tls-sni-01', 'tls-sni-02', 'proofOfPossession'];
+
+  function renderChallenges(authz, method, isDeprecated) {
+    var badgeCls = method === 'http-01' ? '' :
+                   method === 'dns-01'  ? ' dns' :
+                   method === 'tls-alpn-01' ? ' tls-alpn-01' : ' forbidden';
     challBadge.textContent = method;
-    challBadge.className   = 'chall-badge' + (isHttp ? '' : ' dns');
+    challBadge.className   = 'chall-badge' + badgeCls;
 
     var html = '';
+
+    if (isDeprecated) {
+      html += '<div style="padding:0.7rem 0;color:var(--danger);font-size:0.82rem">'
+        + '⛔ Probing server compliance for forbidden method <strong>' + esc(method) + '</strong>. '
+        + 'No challenge setup required — click <strong>Probe Server</strong> to signal the challenge and record the server\'s response.'
+        + '</div>';
+      authz.forEach(function (a) {
+        html += '<div class="chall-item">';
+        html += '<div class="chall-domain">' + esc(a.domain) + (a.wildcard ? ' <span style="color:var(--purple);font-size:0.68rem">[wildcard]</span>' : '') + '</div>';
+        var offered = (a.all_types || []).indexOf(method) !== -1;
+        html += '<div style="font-size:0.77rem;margin-top:0.3rem;color:' + (offered ? 'var(--danger)' : 'var(--muted)') + '">'
+          + (offered ? '⚠ Server advertises this forbidden method' : '— Server does not advertise this method (correct)')
+          + '</div>';
+        if ((a.server_deprecated || []).length) {
+          html += '<div style="font-size:0.73rem;color:var(--danger);margin-top:0.25rem">'
+            + '⛔ Server advertises: ' + esc((a.server_deprecated || []).join(', '))
+            + '</div>';
+        }
+        html += '<div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem">All challenge types offered: '
+          + esc((a.all_types || []).join(', ') || 'none') + '</div>';
+        html += '</div>';
+      });
+      challItems.innerHTML = html;
+      btnVerify.textContent = 'Probe Server';
+      challError.hidden = true;
+      challCard.hidden  = false;
+      challCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+
     authz.forEach(function (a) {
       var domain = a.domain;
       var chall  = a.challenge || {};
       var token  = chall.token || '';
       html += '<div class="chall-item">';
       html += '<div class="chall-domain">' + esc(domain) + (a.wildcard ? ' <span style="color:var(--purple);font-size:0.68rem">[wildcard]</span>' : '') + '</div>';
-      if (isHttp) {
+
+      if (method === 'http-01') {
         var url = 'http://' + domain + '/.well-known/acme-challenge/' + token;
         html += tknBlock('URL', esc(url), url);
         html += tknBlock('File content (key authorization)', esc(a.key_auth), a.key_auth);
-      } else {
+
+      } else if (method === 'dns-01') {
         var name = '_acme-challenge.' + domain;
         html += tknBlock('DNS record name', esc(name), name);
         html += '<div class="token-block"><div class="token-label">Type</div><div class="token-row"><span class="token-value">TXT</span></div></div>';
         html += tknBlock('Value (SHA-256 of key authorization, base64url)', esc(a.dns_val), a.dns_val);
+
+      } else if (method === 'tls-alpn-01') {
+        html += tknBlock('Key authorization (token.thumbprint)', esc(a.key_auth), a.key_auth);
+        html += '<div class="token-block"><div class="token-label">Setup</div>'
+          + '<div class="token-row"><span class="token-value" style="color:var(--muted);font-size:0.7rem">'
+          + 'Start a TLS listener on <strong>' + esc(domain) + ':443</strong> that negotiates ALPN <code>acme-tls/1</code>. '
+          + 'Present a self-signed certificate with a SAN of <code>' + esc(domain) + '</code> and an acmeValidation extension '
+          + '(OID 1.3.6.1.5.5.7.1.31) containing the SHA-256 of the key authorization above.'
+          + '</span></div></div>';
       }
+
+      // Show any deprecated types the server also advertised
+      if ((a.server_deprecated || []).length) {
+        html += '<div style="font-size:0.73rem;color:var(--danger);margin-top:0.4rem">'
+          + '⛔ Server also advertises forbidden: ' + esc((a.server_deprecated || []).join(', '))
+          + '</div>';
+      }
+
       html += '</div>';
     });
     challItems.innerHTML = html;
+    btnVerify.textContent = 'Verify & Continue';
     challError.hidden = true;
     challCard.hidden  = false;
     challCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1408,6 +1576,14 @@ $navLabel = 'ACME Tester';
     });
 
     if (data.error) { challErrMsg.textContent = data.error; challError.hidden = false; return; }
+
+    // Deprecated probe — no finalization; report results and stop
+    if (data.deprecated_probe) {
+      challCard.hidden = true;
+      setLoading(false);
+      return;
+    }
+
     if (!data.ok)   { challErrMsg.textContent = 'One or more authorizations failed — fix the challenge and retry.'; challError.hidden = false; return; }
 
     // All valid — finalize
@@ -1701,6 +1877,7 @@ $navLabel = 'ACME Tester';
     reportSummary.innerHTML = '';
     pemOutput.value = '';
     reportBtnRow.hidden = true;
+    btnVerify.textContent = 'Verify & Continue';
     progressCard.hidden = challCard.hidden = certCard.hidden = postCard.hidden = reportCard.hidden = true;
   }
 
