@@ -8,7 +8,7 @@
  *
  * This module calls a pkimetal instance via HTTP — either a local Docker
  * container or a remote instance. The endpoint is configured via the
- * PKIMETAL_URL environment variable (default: http://127.0.0.1:8080).
+ * PKIMETAL_URL environment variable (default: PKIMETAL_URL constant from config.php).
  *
  * API:
  *   POST /lintcert
@@ -32,6 +32,8 @@ if (!isset($linters_dir)) {
     exit('403 Forbidden: this file must not be accessed directly.');
 }
 
+require_once __DIR__ . '/../config.php';
+
 // ── Configuration ────────────────────────────────────────────────────────────
 
 function pkimetal_base_url(): string {
@@ -39,7 +41,7 @@ function pkimetal_base_url(): string {
     if ($env !== false && $env !== '') {
         return rtrim($env, '/');
     }
-    return 'http://127.0.0.1:8080';
+    return PKIMETAL_URL;
 }
 
 // ── Availability check ───────────────────────────────────────────────────────

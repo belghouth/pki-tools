@@ -8,9 +8,9 @@ $navLabel = 'Privacy Policy';
   <?php
   require_once __DIR__ . '/includes/seo.php';
   seo_head([
-    'title'       => 'Privacy Policy — thameur.org',
-    'description' => 'Privacy policy for thameur.org — how we handle cookies, Google AdSense advertising, and your data.',
-    'url'         => 'https://thameur.org/privacy.php',
+    'title'       => 'Privacy Policy — ' . SITE_DOMAIN,
+    'description' => 'Privacy policy for ' . SITE_DOMAIN . ' — how we handle cookies, Google AdSense advertising, and your data.',
+    'url'         => SITE_BASE_URL . '/privacy.php',
     'robots'      => 'noindex, follow',
   ]);
   ?>
@@ -60,10 +60,10 @@ $navLabel = 'Privacy Policy';
 
 <div class="prose">
   <h1>Privacy Policy</h1>
-  <p class="meta">Effective date: <?= date('d F Y') ?> &nbsp;·&nbsp; thameur.org</p>
+  <p class="meta">Effective date: <?= date('d F Y') ?> &nbsp;·&nbsp; <?= SITE_DOMAIN ?></p>
 
   <h2>1. Who We Are</h2>
-  <p>This website (<strong>thameur.org</strong>) is operated by Thameur Belghith. Questions about this policy can be directed to <a href="mailto:me@thameur.org">me@thameur.org</a>.</p>
+  <p>This website (<strong><?= SITE_DOMAIN ?></strong>) is operated by Thameur Belghith. Questions about this policy can be directed to <a href="<?= 'mailto:' . CONTACT_EMAIL ?>"><?= CONTACT_EMAIL ?></a>.</p>
 
   <h2>2. Information We Collect</h2>
   <p>We collect limited data in the following ways:</p>
@@ -101,7 +101,7 @@ $navLabel = 'Privacy Policy';
   </ul>
 
   <h2>7. Your Rights (GDPR)</h2>
-  <p>If you are located in the European Economic Area you have the right to access, rectify, or erase personal data we hold about you, object to or restrict its processing, and lodge a complaint with a supervisory authority. To exercise these rights, contact us at <a href="mailto:me@thameur.org">me@thameur.org</a>.</p>
+  <p>If you are located in the European Economic Area you have the right to access, rectify, or erase personal data we hold about you, object to or restrict its processing, and lodge a complaint with a supervisory authority. To exercise these rights, contact us at <a href="<?= 'mailto:' . CONTACT_EMAIL ?>"><?= CONTACT_EMAIL ?></a>.</p>
 
   <h2>8. Children's Privacy</h2>
   <p>This site is not directed at children under the age of 13. We do not knowingly collect personal information from children.</p>
@@ -110,10 +110,10 @@ $navLabel = 'Privacy Policy';
   <p>We may update this policy periodically. The effective date at the top of the page reflects the most recent revision. Continued use of the site constitutes acceptance of the updated policy.</p>
 
   <h2>10. Contact</h2>
-  <p>For privacy-related questions or requests: <a href="mailto:me@thameur.org">me@thameur.org</a></p>
+  <p>For privacy-related questions or requests: <a href="<?= 'mailto:' . CONTACT_EMAIL ?>"><?= CONTACT_EMAIL ?></a></p>
 
   <div class="prose-footer">
-    &copy; <?= date('Y') ?> Thameur Belghith &nbsp;·&nbsp; <a href="/">thameur.org</a>
+    &copy; <?= date('Y') ?> Thameur Belghith &nbsp;·&nbsp; <a href="/"><?= SITE_DOMAIN ?></a>
   </div>
 </div>
 
@@ -122,7 +122,7 @@ $navLabel = 'Privacy Policy';
   <div class="site-footer-links">
     <a href="/">Home</a>
     <a href="/privacy.php">Privacy Policy</a>
-    <a href="mailto:me@thameur.org">me@thameur.org</a>
+    <a href="<?= 'mailto:' . CONTACT_EMAIL ?>"><?= CONTACT_EMAIL ?></a>
   </div>
 </footer>
 

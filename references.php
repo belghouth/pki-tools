@@ -8,9 +8,9 @@ $navLabel = 'PKI References';
   <?php
   require_once __DIR__ . '/includes/seo.php';
   seo_head([
-    'title'       => 'PKI References — Essential Links for CA/Browser Forum & WebPKI Practitioners | thameur.org',
+    'title'       => 'PKI References — Essential Links for CA/Browser Forum & WebPKI Practitioners | ' . SITE_DOMAIN,
     'description' => 'Curated essential references for PKI practitioners: CABF Baseline Requirements, Apple & Chrome & Mozilla root programs, ETSI & WebTrust audit standards, CCADB, CT logs, key RFCs, and community resources.',
-    'url'         => 'https://thameur.org/references.php',
+    'url'         => SITE_BASE_URL . '/references.php',
   ]);
   ?>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -533,7 +533,7 @@ $navLabel = 'PKI References';
 
   <div style="border-top:1px solid var(--border);margin-top:2rem;padding-top:1.5rem;font-family:var(--mono);font-size:0.72rem;color:var(--muted);">
     Links checked <?= date('F Y') ?>. Policies and standards are maintained by their respective organizations — always verify you are reading the current version.
-    &nbsp;·&nbsp; <a href="mailto:me@thameur.org">Suggest a resource</a>
+    &nbsp;·&nbsp; <a href="<?= 'mailto:' . CONTACT_EMAIL ?>">Suggest a resource</a>
   </div>
 </main>
 
@@ -543,7 +543,7 @@ $navLabel = 'PKI References';
     <a href="/">Home</a>
     <a href="/references.php">PKI References</a>
     <a href="/privacy.php">Privacy Policy</a>
-    <a href="mailto:me@thameur.org">me@thameur.org</a>
+    <a href="<?= 'mailto:' . CONTACT_EMAIL ?>"><?= CONTACT_EMAIL ?></a>
   </div>
 </footer>
 

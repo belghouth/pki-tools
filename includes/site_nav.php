@@ -137,7 +137,7 @@ $_navLabel = $navLabel ?? '';
 
   <a href="/" class="snav-home">
     <img src="/img/meerkat_120.png" alt="">
-    <span class="snav-wordmark">thameur.org</span>
+    <span class="snav-wordmark"><?= SITE_DOMAIN ?></span>
   </a>
 
   <?php if ($_navLabel !== ''): ?>
@@ -188,7 +188,7 @@ $_navLabel = $navLabel ?? '';
       References
     </a>
 
-    <a href="mailto:me@thameur.org" class="snav-link" role="menuitem">
+    <a href="<?= 'mailto:' . CONTACT_EMAIL ?>" class="snav-link" role="menuitem">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/>
       </svg>

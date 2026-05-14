@@ -24,6 +24,8 @@ if (!isset($revocation_invoked) || $revocation_invoked !== true) {
     exit('403 Forbidden: this file must not be accessed directly.');
 }
 
+require_once __DIR__ . '/config.php';
+
 // ── pkilint binary resolver (reuse pattern from pkilint.php) ─────────────────
 // We call pkilint_binary() if pkilint.php is already loaded; otherwise use
 // our own resolver for lint_crl and lint_ocsp_response.
@@ -630,7 +632,7 @@ function revoc_pkilint_version(): string {
 
 function revoc_pkimetal_url(): string {
     $env = getenv('PKIMETAL_URL');
-    return ($env !== false && $env !== '') ? rtrim($env, '/') : 'http://127.0.0.1:8080';
+    return ($env !== false && $env !== '') ? rtrim($env, '/') : PKIMETAL_URL;
 }
 
 function revoc_pkimetal_available(): bool {

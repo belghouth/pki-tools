@@ -1,5 +1,6 @@
 <?php
 // ── Contact form AJAX handler ───────────────────────────────────────────────
+require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/recaptcha.php';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'contact') {
@@ -31,22 +32,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
         }
     }
 
-    $to       = 'me@thameur.org';
+    $to       = CONTACT_EMAIL;
     $mailSubj = $subject !== ''
-        ? '[thameur.org] ' . mb_substr($subject, 0, 100)
-        : '[thameur.org] Message from ' . $name;
+        ? '[' . SITE_DOMAIN . '] ' . mb_substr($subject, 0, 100)
+        : '[' . SITE_DOMAIN . '] Message from ' . $name;
     $body     = "Name:    {$name}\nEmail:   {$email}\n\n" . wordwrap($message, 72);
     $headers  = implode("\r\n", [
-        'From: no-reply@thameur.org',
+        'From: ' . NOREPLY_EMAIL,
         'Reply-To: ' . $email,
         'Content-Type: text/plain; charset=UTF-8',
-        'X-Mailer: thameur.org/contact',
+        'X-Mailer: ' . SITE_DOMAIN . '/contact',
     ]);
 
     $sent = @mail($to, $mailSubj, $body, $headers);
     echo json_encode($sent
         ? ['ok' => true, 'message' => "Thanks {$name} — I'll be in touch."]
-        : ['error' => 'Mail could not be sent. Please email me directly at me@thameur.org']
+        : ['error' => 'Mail could not be sent. Please email me directly at ' . CONTACT_EMAIL]
     );
     exit;
 }
@@ -61,17 +62,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
   seo_head([
     'title'       => 'Thameur Belghith — PKI & Trust Services Engineer',
     'description' => 'Free browser-based PKI tools for WebPKI compliance, certificate linting, CPS analysis, and CA audit support. Built by Thameur Belghith, PKI & Trust Services Engineer.',
-    'url'         => 'https://thameur.org/',
+    'url'         => SITE_BASE_URL . '/',
     'jsonld'      => json_encode([
       '@context' => 'https://schema.org',
       '@graph'   => [
         [
           '@type'    => 'Person',
-          '@id'      => 'https://thameur.org/#person',
+          '@id'      => SITE_BASE_URL . '/#person',
           'name'     => 'Thameur Belghith',
           'jobTitle' => 'PKI & Trust Services Engineer',
-          'url'      => 'https://thameur.org/',
-          'email'    => 'mailto:me@thameur.org',
+          'url'      => SITE_BASE_URL . '/',
+          'email'    => 'mailto:' . CONTACT_EMAIL,
           'sameAs'   => [
             'https://github.com/belghouth',
             'https://www.linkedin.com/in/belghouth/',
@@ -79,11 +80,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
         ],
         [
           '@type'       => 'WebSite',
-          '@id'         => 'https://thameur.org/#website',
-          'url'         => 'https://thameur.org/',
-          'name'        => 'thameur.org',
+          '@id'         => SITE_BASE_URL . '/#website',
+          'url'         => SITE_BASE_URL . '/',
+          'name'        => SITE_DOMAIN,
           'description' => 'Free PKI tools and resources for WebPKI practitioners and CA auditors.',
-          'author'      => ['@id' => 'https://thameur.org/#person'],
+          'author'      => ['@id' => SITE_BASE_URL . '/#person'],
         ],
       ],
     ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
@@ -590,7 +591,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
           <div class="about-links">
             <a href="https://github.com/belghouth" class="pill-link" target="_blank" rel="noopener">GitHub</a>
             <a href="https://www.linkedin.com/in/belghouth/" class="pill-link" target="_blank" rel="noopener">LinkedIn</a>
-            <a href="mailto:me@thameur.org" class="pill-link">Email</a>
+            <a href="<?= 'mailto:' . CONTACT_EMAIL ?>" class="pill-link">Email</a>
           </div>
 
           <a href="https://www.linkedin.com/in/belghouth/" class="li-card" target="_blank" rel="noopener" aria-label="LinkedIn profile">
@@ -734,9 +735,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       <h2 class="section-heading">Get in Touch</h2>
       <p class="section-sub">Questions about the tools, PKI consulting, or just want to connect.</p>
 
-      <a href="mailto:me@thameur.org" class="contact-email-card">
+      <a href="<?= 'mailto:' . CONTACT_EMAIL ?>" class="contact-email-card">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28"><path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-        <span>me@thameur.org</span>
+        <span><?= CONTACT_EMAIL ?></span>
       </a>
 
       <p class="contact-note">
@@ -757,7 +758,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     <a href="/community_tools.php">Community Tools</a>
     <a href="/references.php">References</a>
     <a href="/privacy.php">Privacy</a>
-    <a href="mailto:me@thameur.org">me@thameur.org</a>
+    <a href="<?= 'mailto:' . CONTACT_EMAIL ?>"><?= CONTACT_EMAIL ?></a>
   </div>
 </footer>
 

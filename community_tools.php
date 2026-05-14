@@ -8,9 +8,9 @@ $navLabel = 'Community Tools';
   <?php
   require_once __DIR__ . '/includes/seo.php';
   seo_head([
-    'title'       => 'Community PKI Tools — Free Online Testing Tools for WebPKI Practitioners | thameur.org',
+    'title'       => 'Community PKI Tools — Free Online Testing Tools for WebPKI Practitioners | ' . SITE_DOMAIN,
     'description' => 'A curated index of free, open-source community tools for PKI testing: ASN.1 decoders, TLS analysers, digital signature validators, CT log search, DNSSEC visualisers, and more.',
-    'url'         => 'https://thameur.org/community_tools.php',
+    'url'         => SITE_BASE_URL . '/community_tools.php',
   ]);
   ?>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -151,7 +151,7 @@ $navLabel = 'Community Tools';
   <p class="page-sub">Free, open-source online testing tools from the WebPKI community — paste, upload, or enter a domain and get instant results.</p>
 
   <div class="ct-disclaimer">
-    <strong>Curation policy:</strong> only free, community-driven or openly-licensed tools are listed here. No commercial products, no sponsored entries. Links and status of third-party tools may change — if you spot a dead link or a worthy addition, <a href="mailto:me@thameur.org">let me know</a>.
+    <strong>Curation policy:</strong> only free, community-driven or openly-licensed tools are listed here. No commercial products, no sponsored entries. Links and status of third-party tools may change — if you spot a dead link or a worthy addition, <a href="<?= 'mailto:' . CONTACT_EMAIL ?>">let me know</a>.
   </div>
 
   <nav class="toc" aria-label="Table of contents">
@@ -227,7 +227,7 @@ $navLabel = 'Community Tools';
 
       <div class="ct-card">
         <div class="ct-card-top">
-          <div class="ct-card-name">Certificate Linters — thameur.org</div>
+          <div class="ct-card-name">Certificate Linters — <?= SITE_DOMAIN ?></div>
           <span class="ct-card-oss">Open Source</span>
         </div>
         <div class="ct-card-desc">Run zlint, pkilint, and x509lint simultaneously on the same certificate, or pull a live cert from any domain. Flags CABF BR violations and RFC 5280 issues with direct requirement references. Includes OCSP and CRL revocation checks.</div>
@@ -473,7 +473,7 @@ $navLabel = 'Community Tools';
     <a href="/feed.php">PKI News</a>
     <a href="/references.php">References</a>
     <a href="/privacy.php">Privacy</a>
-    <a href="mailto:me@thameur.org">me@thameur.org</a>
+    <a href="<?= 'mailto:' . CONTACT_EMAIL ?>"><?= CONTACT_EMAIL ?></a>
   </div>
 </footer>
 

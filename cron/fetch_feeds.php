@@ -17,9 +17,11 @@
 
 if (php_sapi_name() !== 'cli') { http_response_code(403); exit; }
 
+require_once __DIR__ . '/../config.php';
+
 define('CACHE_FILE',    dirname(__DIR__) . '/includes/feed_cache.json');
 define('FETCH_TIMEOUT', 20);
-define('USER_AGENT',    'PKITools-FeedBot/1.0 (+https://thameur.org/feed.php)');
+define('USER_AGENT',    'PKITools-FeedBot/1.0 (+' . SITE_BASE_URL . '/feed.php)');
 
 // ── Feed sources ──────────────────────────────────────────────────────────────
 

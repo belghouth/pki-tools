@@ -25,9 +25,9 @@ $navLabel = 'Meerkat CT Log';
   <?php
   require_once __DIR__ . '/includes/seo.php';
   seo_head([
-    'title'       => 'Meerkat Testing CT Log — RFC 6962 Ephemeral Certificate Transparency | thameur.org',
+    'title'       => 'Meerkat Testing CT Log — RFC 6962 Ephemeral Certificate Transparency | ' . SITE_DOMAIN,
     'description' => 'A RFC 6962-compliant testing Certificate Transparency log. Accepts precertificate chains and returns signed SCTs. Ephemeral — no entries are persisted. Randomises log identity across 8 fake CT operators for realistic testing.',
-    'url'         => 'https://thameur.org/ct_log_doc.php',
+    'url'         => SITE_BASE_URL . '/ct_log_doc.php',
   ]);
   ?>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -414,7 +414,7 @@ $navLabel = 'Meerkat CT Log';
 <span class="cmd">openssl x509 -in issuing-ca.pem -outform DER | base64 -w0</span></div>
 
     <h3>Step 3 — Submit to add-pre-chain</h3>
-    <div class="code-block"><span class="cmd">curl -s -X POST https://thameur.org/ct/v1/add-pre-chain \
+    <div class="code-block"><span class="cmd">curl -s -X POST <?= CT_LOG_URL ?> \
   -H 'Content-Type: application/json' \
   -d '{
     "chain": [
@@ -472,7 +472,7 @@ $navLabel = 'Meerkat CT Log';
     <a href="/">Home</a>
     <a href="/references.php">PKI References</a>
     <a href="/privacy.php">Privacy Policy</a>
-    <a href="mailto:me@thameur.org">me@thameur.org</a>
+    <a href="<?= 'mailto:' . CONTACT_EMAIL ?>"><?= CONTACT_EMAIL ?></a>
   </div>
 </footer>
 

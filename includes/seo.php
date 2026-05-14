@@ -12,17 +12,19 @@
  *   description  string  Meta description (150–160 chars recommended)
  *
  * Optional opts:
- *   url     string  Canonical URL (default: https://thameur.org + REQUEST_URI, no query)
+ *   url     string  Canonical URL (default: SITE_BASE_URL + REQUEST_URI, no query)
  *   type    string  OG type — 'website' (default) or 'article'
  *   robots  string  Meta robots value (default: 'index, follow')
  *   image   string  OG/Twitter image URL (default: /img/og-social.png)
  *   jsonld  string  Pre-encoded JSON-LD string (omit to skip the <script> block)
  */
+require_once __DIR__ . '/../config.php';
+
 function seo_head(array $opts): void {
-    $base  = 'https://thameur.org';
+    $base  = SITE_BASE_URL;
     $image = $opts['image'] ?? $base . '/img/og-social.png';
 
-    $title = htmlspecialchars($opts['title']       ?? 'thameur.org',         ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $title = htmlspecialchars($opts['title']       ?? SITE_DOMAIN,           ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     $desc  = htmlspecialchars($opts['description'] ?? '',                    ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     $url   = htmlspecialchars(
         $opts['url'] ?? $base . strtok($_SERVER['REQUEST_URI'] ?? '/', '?'),
@@ -40,14 +42,14 @@ function seo_head(array $opts): void {
 
     // Open Graph
     echo "  <meta property=\"og:type\"        content=\"{$type}\">\n";
-    echo "  <meta property=\"og:site_name\"   content=\"thameur.org\">\n";
+    echo "  <meta property=\"og:site_name\"   content=\"" . SITE_DOMAIN . "\">\n";
     echo "  <meta property=\"og:url\"         content=\"{$url}\">\n";
     echo "  <meta property=\"og:title\"       content=\"{$title}\">\n";
     echo "  <meta property=\"og:description\" content=\"{$desc}\">\n";
     echo "  <meta property=\"og:image\"       content=\"{$img}\">\n";
     echo "  <meta property=\"og:image:width\"  content=\"1200\">\n";
     echo "  <meta property=\"og:image:height\" content=\"630\">\n";
-    echo "  <meta property=\"og:image:alt\"   content=\"thameur.org — PKI Tools\">\n";
+    echo "  <meta property=\"og:image:alt\"   content=\"" . SITE_DOMAIN . " — PKI Tools\">\n";
 
     // Twitter Card
     echo "  <meta name=\"twitter:card\"        content=\"summary_large_image\">\n";

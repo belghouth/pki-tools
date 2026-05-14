@@ -8,15 +8,15 @@
  * Usage:
  *   php scripts/gen_test_pki.php
  *
- * Output:
- *   /var/www/thameur.org/pki-ca/private/root.key       — Root CA key (mode 600)
- *   /var/www/thameur.org/pki-ca/private/issuing.key    — Issuing CA key (mode 600)
- *   /var/www/thameur.org/pki-ca/root-db/openssl.cnf    — persistent Root CA config (for cron)
- *   /var/www/thameur.org/pki-ca/issuing-db/openssl.cnf — persistent Issuing CA config (for cron)
- *   /var/www/pki.thameur.org/meerkat-root.crt
- *   /var/www/pki.thameur.org/meerkat-root.crl          — Root ARL (lists revoked CAs, 365-day validity)
- *   /var/www/pki.thameur.org/meerkat-issuing.crt
- *   /var/www/pki.thameur.org/meerkat-issuing.crl       — Issuing CRL (lists revoked end-entities, 7-day validity)
+ * Output paths are derived from config.php (PKI_PRIVATE_DIR, PKI_WEB_DIR, etc.):
+ *   PKI_PRIVATE_DIR/root.key       — Root CA key (mode 600)
+ *   PKI_PRIVATE_DIR/issuing.key    — Issuing CA key (mode 600)
+ *   ROOT_DB_DIR/openssl.cnf        — persistent Root CA config (for cron)
+ *   ISSUING_DB_DIR/openssl.cnf     — persistent Issuing CA config (for cron)
+ *   ROOT_CRT                       — Meerkat Root CA certificate
+ *   ROOT_CRL                       — Root ARL (365-day validity)
+ *   ISSUING_CRT                    — Meerkat Issuing CA certificate
+ *   ISSUING_CRL_OUT                — Issuing CRL (7-day validity)
  */
 
 if (php_sapi_name() !== 'cli') {
@@ -73,6 +73,11 @@ $ISSU_AIA_URL = AIA_URL;
 $ISSU_CRL_URL = CDP_URL;        // CRL signed by Issuing (CDP in end-entity certs)
 
 $cert_days = CERT_DAYS;         // default_days in issuing CA openssl.cnf
+
+// Site identity variables for HTML template heredoc interpolation
+$pki_domain    = PKI_DOMAIN;
+$site_domain   = SITE_DOMAIN;
+$site_base_url = SITE_BASE_URL;
 
 // ── Pre-flight ────────────────────────────────────────────────────────────────
 
@@ -512,7 +517,7 @@ if (is_executable($zlint)) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10. Write index.html for pki.thameur.org
+// 10. Write index.html for PKI_WEB_DIR
 // ─────────────────────────────────────────────────────────────────────────────
 
 step('Writing index.html');
@@ -543,7 +548,7 @@ $html = <<<HTML
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Meerkat Test PKI — pki.thameur.org</title>
+  <title>Meerkat Test PKI — {$pki_domain}</title>
   <style>
     :root {
       --bg: #0e1014; --surface: #13171e; --border: #2a3040;
@@ -622,12 +627,12 @@ $html = <<<HTML
 <div class="wrap">
 
   <h1>Meerkat Test PKI</h1>
-  <p class="sub">pki.thameur.org &nbsp;·&nbsp; Generated {$generated}</p>
+  <p class="sub">{$pki_domain} &nbsp;·&nbsp; Generated {$generated}</p>
 
   <div class="warning">
     <strong>Test use only.</strong> These certificates are not trusted by any
     browser or operating system and must never be used to secure real services.
-    They exist solely to validate linter behaviour on <a href="https://thameur.org">thameur.org</a>.
+    They exist solely to validate linter behaviour on <a href="{$site_base_url}">{$site_domain}</a>.
   </div>
 
   <h2>Certificates &amp; CRL</h2>
@@ -657,8 +662,8 @@ $html = <<<HTML
       Not before &nbsp;<span>{$issu_meta['not_before']}</span><br>
       Not after &nbsp;&nbsp;<span>{$issu_meta['not_after']}</span><br>
       SHA-256 &nbsp;&nbsp;&nbsp;&nbsp;<span>{$issu_meta['fp']}</span><br>
-      AIA &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>http://pki.thameur.org/meerkat-root.crt</span><br>
-      CDP &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>http://pki.thameur.org/meerkat-root.crl</span>
+      AIA &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>{$ROOT_AIA_URL}</span><br>
+      CDP &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>{$ROOT_ARL_URL}</span>
     </div>
     <div class="pem-wrap">
       <textarea class="pem-field" id="issu-pem" readonly spellcheck="false">{$issu_pem}</textarea>
@@ -671,8 +676,8 @@ $html = <<<HTML
   </div>
 
   <div class="footer">
-    <a href="https://thameur.org">thameur.org</a> &nbsp;·&nbsp;
-    <a href="https://thameur.org/cert_factory.php">Meerkat CA</a> &nbsp;·&nbsp;
+    <a href="{$site_base_url}">{$site_domain}</a> &nbsp;·&nbsp;
+    <a href="{$site_base_url}/cert_factory.php">Meerkat CA</a> &nbsp;·&nbsp;
     Rotated on demand — fingerprints above are always current
   </div>
 

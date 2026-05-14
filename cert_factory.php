@@ -718,9 +718,9 @@ $navLabel = 'Test CA';
   <?php
   require_once __DIR__ . '/includes/seo.php';
   seo_head([
-    'title'       => 'Meerkat TLS Test Certificate Factory — BR-Compliant DV TLS | thameur.org',
+    'title'       => 'Meerkat TLS Test Certificate Factory — BR-Compliant DV TLS | ' . SITE_DOMAIN,
     'description' => 'Issue BR-compliant DV TLS certificates from the Meerkat Test CA. DNS SANs only — no IPs, no email. RSA ≥ 2048. CN derived from SANs. For linter testing and chain validation.',
-    'url'         => 'https://thameur.org/cert_factory.php',
+    'url'         => SITE_BASE_URL . '/cert_factory.php',
   ]);
   ?>
   <?= recaptcha_head() ?>
@@ -1092,11 +1092,11 @@ $navLabel = 'Test CA';
     </div>
 
     <p class="chain-note">
-      Chain: <a href="https://pki.thameur.org/meerkat-root.crt">Meerkat Root CA</a>
-      → <a href="https://pki.thameur.org/meerkat-issuing.crt">Meerkat Test Issuing CA 1</a>
+      Chain: <a href="<?= PKI_BASE_URL ?>/meerkat-root.crt">Meerkat Root CA</a>
+      → <a href="<?= PKI_BASE_URL ?>/meerkat-issuing.crt">Meerkat Test Issuing CA 1</a>
       → this certificate<br>
       Install the Root CA to trust this cert locally for linter testing.
-      PKI repository: <a href="https://pki.thameur.org" target="_blank" rel="noopener">pki.thameur.org</a>
+      PKI repository: <a href="<?= PKI_BASE_URL ?>" target="_blank" rel="noopener"><?= PKI_DOMAIN ?></a>
     </p>
 
     <div class="revoke-row" id="revokeRow">
@@ -1122,7 +1122,7 @@ $navLabel = 'Test CA';
     <a href="/">Home</a>
     <a href="/references.php">PKI References</a>
     <a href="/privacy.php">Privacy Policy</a>
-    <a href="mailto:me@thameur.org">me@thameur.org</a>
+    <a href="<?= 'mailto:' . CONTACT_EMAIL ?>"><?= CONTACT_EMAIL ?></a>
   </div>
 </footer>
 

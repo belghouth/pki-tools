@@ -188,19 +188,19 @@ if ($secondsRemaining !== null) {
     <?php
     require_once __DIR__ . '/includes/seo.php';
     seo_head([
-      'title'       => 'ACME Automation Testing Endpoint — RFC 8555 Live Demo | thameur.org',
+      'title'       => 'ACME Automation Testing Endpoint — RFC 8555 Live Demo | ' . SITE_DOMAIN,
       'description' => 'Live reference implementation of an automated certificate renewal endpoint as required by the Chrome Root Program and validated by Mozilla. Demonstrates RFC 8555 ACME renewal verification in a production environment.',
-      'url'         => 'https://thameur.org/acme-endpoint.php',
+      'url'         => SITE_BASE_URL . '/acme-endpoint.php',
       'jsonld'      => json_encode([
         '@context'            => 'https://schema.org',
         '@type'               => 'WebApplication',
         'name'                => 'ACME Automation Endpoint Demo',
-        'url'                 => 'https://thameur.org/acme-endpoint.php',
+        'url'                 => SITE_BASE_URL . '/acme-endpoint.php',
         'description'         => 'Live reference implementation of an automated certificate renewal endpoint demonstrating RFC 8555 ACME renewal verification.',
         'applicationCategory' => 'SecurityApplication',
         'operatingSystem'     => 'Any',
         'isAccessibleForFree' => true,
-        'author'              => ['@id' => 'https://thameur.org/#person', 'name' => 'Thameur Belghith'],
+        'author'              => ['@id' => SITE_BASE_URL . '/#person', 'name' => 'Thameur Belghith'],
       ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
     ]);
     ?>

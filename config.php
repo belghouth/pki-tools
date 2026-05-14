@@ -77,6 +77,13 @@ define('MAX_CSR_BYTES',  65536);   // 64 KB
 define('MAX_SANS',         100);
 define('CAA_ISSUER',  SITE_DOMAIN);
 
+// ── Contact ───────────────────────────────────────────────────────────────────
+define('CONTACT_EMAIL', 'me@thameur.org');
+define('NOREPLY_EMAIL', 'no-reply@thameur.org');
+
+// ── External services ─────────────────────────────────────────────────────────
+define('PKIMETAL_URL',  'http://127.0.0.1:8080');
+
 // ── CT log identities ─────────────────────────────────────────────────────────
 // Key = filename stem in PKI_CT_KEYS_DIR (e.g. "kablouti" → kablouti.pem / kablouti.id)
 // Value = [description, operator, mmd_seconds]

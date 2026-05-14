@@ -118,19 +118,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <?php
   require_once __DIR__ . '/includes/seo.php';
   seo_head([
-    'title'       => 'Meerkat Artifact Parser — Universal PKI Artifact Identifier | thameur.org',
+    'title'       => 'Meerkat Artifact Parser — Universal PKI Artifact Identifier | ' . SITE_DOMAIN,
     'description' => 'Identify and parse any PKI artifact instantly: X.509 certificates, CSRs, CRLs, public keys, CMS/PKCS#7, OCSP responses, and RFC 3161 timestamp tokens. Supports PEM and DER. Private keys rejected server-side.',
-    'url'         => 'https://thameur.org/artifact_parser.php',
+    'url'         => SITE_BASE_URL . '/artifact_parser.php',
     'jsonld'      => json_encode([
       '@context'            => 'https://schema.org',
       '@type'               => 'WebApplication',
       'name'                => 'Meerkat Artifact Parser',
-      'url'                 => 'https://thameur.org/artifact_parser.php',
+      'url'                 => SITE_BASE_URL . '/artifact_parser.php',
       'description'         => 'Universal PKI artifact identifier and parser. Recognises X.509 certificates, CSRs, CRLs, public keys, CMS/PKCS#7, OCSP responses, and RFC 3161 timestamp tokens.',
       'applicationCategory' => 'SecurityApplication',
       'operatingSystem'     => 'Any',
       'isAccessibleForFree' => true,
-      'author'              => ['@id' => 'https://thameur.org/#person', 'name' => 'Thameur Belghith'],
+      'author'              => ['@id' => SITE_BASE_URL . '/#person', 'name' => 'Thameur Belghith'],
     ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT),
   ]);
   ?>
@@ -497,7 +497,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <a href="/">Home</a>
     <a href="/references.php">PKI References</a>
     <a href="/privacy.php">Privacy Policy</a>
-    <a href="mailto:me@thameur.org">me@thameur.org</a>
+    <a href="<?= 'mailto:' . CONTACT_EMAIL ?>"><?= CONTACT_EMAIL ?></a>
   </div>
 </footer>
 

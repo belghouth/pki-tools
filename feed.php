@@ -22,9 +22,9 @@ if (file_exists($cacheFile)) {
   <?php
   require_once __DIR__ . '/includes/seo.php';
   seo_head([
-    'title'       => 'PKI News — Daily WebPKI & CA/Browser Forum Updates | thameur.org',
+    'title'       => 'PKI News — Daily WebPKI & CA/Browser Forum Updates | ' . SITE_DOMAIN,
     'description' => "Daily PKI news aggregated from mozilla.dev.security.policy, CA/Browser Forum GitHub, IETF LAMPS WG, Mozilla Security Blog, Let's Encrypt, and more. Refreshed every 24 hours.",
-    'url'         => 'https://thameur.org/feed.php',
+    'url'         => SITE_BASE_URL . '/feed.php',
   ]);
   ?>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -251,7 +251,7 @@ if (file_exists($cacheFile)) {
     <a href="/">Home</a>
     <a href="/references.php">PKI References</a>
     <a href="/privacy.php">Privacy Policy</a>
-    <a href="mailto:me@thameur.org">me@thameur.org</a>
+    <a href="<?= 'mailto:' . CONTACT_EMAIL ?>"><?= CONTACT_EMAIL ?></a>
   </div>
 </footer>
 

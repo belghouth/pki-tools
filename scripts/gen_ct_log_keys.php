@@ -6,7 +6,7 @@
 // Safe to re-run: existing keys are preserved.
 // Run as root (or a user with write access to the PKI directory).
 //
-// Usage:  php /var/www/thameur.org/scripts/gen_ct_log_keys.php
+// Usage:  php scripts/gen_ct_log_keys.php  (run from the pki-tools root)
 
 require_once __DIR__ . '/../config.php';
 
