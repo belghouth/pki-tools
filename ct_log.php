@@ -268,15 +268,22 @@ function handle_add_pre_chain(): void
     $precert_der = $ders[0];
     $issuer_der  = $ders[1] ?? null;
 
-    // Validate precert has the CT poison extension
-    $r = ct_run([CT_OPENSSL, 'x509', '-inform', 'DER', '-in', '-', '-noout', '-text'], $precert_der);
-    if (!$r['ok']) {
-        ct_error(400, 'chain[0] could not be parsed as an X.509 certificate');
+    // Parse the precert and strip the CT poison extension using the pure-PHP DER parser.
+    // Do NOT use `openssl x509` here — OpenSSL 3.x rejects certificates that carry an
+    // unknown critical extension (the CT poison OID), so that command always fails on
+    // valid precerts.  cert_tbs_raw() throws if the DER is structurally invalid, and
+    // tbs_strip_poison() throws if the poison extension is absent — both give us the
+    // validation we need without touching the openssl CLI.
+    try {
+        $tbs_raw   = cert_tbs_raw($precert_der);
+    } catch (\Throwable $e) {
+        ct_error(400, 'chain[0] could not be parsed as an X.509 certificate: ' . $e->getMessage());
         return;
     }
-    if (!str_contains($r['out'], '1.3.6.1.4.1.11129.2.4.3') &&
-        !str_contains($r['out'], 'ct_precert_poison') &&
-        !stripos($r['out'], 'poison')) {
+
+    try {
+        $tbs_clean = tbs_strip_poison($tbs_raw);
+    } catch (\Throwable $e) {
         ct_error(400, 'chain[0] does not contain the CT poison extension (OID 1.3.6.1.4.1.11129.2.4.3, RFC 6962 §3.1) — submit a precertificate, not a final certificate');
         return;
     }
@@ -296,8 +303,6 @@ function handle_add_pre_chain(): void
     }
 
     try {
-        $tbs_raw   = cert_tbs_raw($precert_der);
-        $tbs_clean = tbs_strip_poison($tbs_raw);
         $spki_hash = issuer_spki_hash($issuer_der);
         $log       = load_random_log();
         $sct       = build_sct($tbs_clean, $spki_hash, $log);
