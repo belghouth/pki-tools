@@ -2,14 +2,14 @@
 // ── Read log identities (if keys have been generated) ─────────────────────────
 const CT_DOC_KEYS_DIR = '/var/www/thameur.org/pki-ca/ct-log-keys/';
 const CT_DOC_LOG_META = [
-    'lynx'    => ['Meerkat Lynx CT 2025h1',   'Perihelion Certificate Services'],
-    'osprey'  => ['Meerkat Osprey CT 2025h2',  'Boreal Trust Infrastructure'],
-    'kestrel' => ['Meerkat Kestrel CT 2026h1', 'Austral Digital Logs'],
-    'merlin'  => ['Meerkat Merlin CT 2025',    'Solstice CT Authority'],
-    'harrier' => ['Meerkat Harrier CT 2026',   'Vernal Certificate Logs'],
-    'falcon'  => ['Meerkat Falcon CT 2025h2',  'Zenith Log Services'],
-    'ibis'    => ['Meerkat Ibis CT 2026h1',    'Meridian Digital Trust'],
-    'wren'    => ['Meerkat Wren CT 2025',      'Apex Certificate Transparency'],
+    'lynx'    => ['Meerkat Lynx CT 2025h1',   'Kablouti Certificate Services'],
+    'osprey'  => ['Meerkat Osprey CT 2025h2',  'Karkoub Trust Infrastructure'],
+    'kestrel' => ['Meerkat Kestrel CT 2026h1', 'Sal7ouf Digital Logs'],
+    'merlin'  => ['Meerkat Merlin CT 2025',    'Farhoud CT Authority'],
+    'harrier' => ['Meerkat Harrier CT 2026',   'Habhoub Certificate Logs'],
+    'falcon'  => ['Meerkat Falcon CT 2025h2',  'Sardouk Log Services'],
+    'ibis'    => ['Meerkat Ibis CT 2026h1',    'Dhibi Digital Trust'],
+    'wren'    => ['Meerkat Wren CT 2025',      'Bousannoun Certificate Transparency'],
 ];
 
 $log_identities = [];
