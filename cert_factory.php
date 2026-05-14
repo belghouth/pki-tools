@@ -685,6 +685,12 @@ function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = fal
                 return ['error' => 'Precert issuance failed: ' . trim($rPre['err'] ?: $rPre['out'])];
             }
 
+            // Step 1b: zlint validation — errors and above block issuance
+            $zlintErr = run_zlint_check($preCertFile);
+            if ($zlintErr !== null) {
+                return ['error' => "Certificate blocked by zlint:\n" . $zlintErr];
+            }
+
             // Step 2: submit precert chain to CT log(s) and collect SCTs
             $precertPem = (string) file_get_contents($preCertFile);
             $issuerPem  = (string) file_get_contents(ISSUING_CRT);
@@ -755,6 +761,51 @@ function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = fal
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Run zlint on a PEM cert file and return error-level findings as a string,
+ * or null if there are no errors/fatals (or zlint is not installed).
+ */
+function run_zlint_check(string $certFile): ?string
+{
+    $envBin = getenv('ZLINT_BIN');
+    $bin    = ($envBin !== false && $envBin !== '') ? $envBin
+            : trim(shell_exec('command -v zlint 2>/dev/null') ?? '');
+
+    if ($bin === '' || !is_executable($bin)) {
+        return null; // zlint not available — skip silently
+    }
+
+    $lines     = [];
+    $exit_code = null;
+    exec(escapeshellarg($bin) . ' ' . escapeshellarg($certFile) . ' 2>&1', $lines, $exit_code);
+    $output = implode("\n", $lines);
+
+    // If zlint couldn't parse the cert at all, skip blocking.
+    if ($output === '' || str_contains($output, 'level=fatal')) {
+        return null;
+    }
+
+    $errors = [];
+    foreach (explode("\n", $output) as $line) {
+        $line = trim($line);
+        if ($line === '') continue;
+        $decoded = json_decode($line, true);
+        if (!is_array($decoded)) continue;
+        foreach ($decoded as $lintName => $result) {
+            $sev = strtolower($result['result'] ?? '');
+            if ($sev === 'error' || $sev === 'fatal') {
+                $msg = $lintName;
+                if (!empty($result['details'])) {
+                    $msg .= ': ' . $result['details'];
+                }
+                $errors[] = $msg;
+            }
+        }
+    }
+
+    return $errors !== [] ? implode("\n", $errors) : null;
+}
 
 function extract_dns_sans(string $text): array
 {
