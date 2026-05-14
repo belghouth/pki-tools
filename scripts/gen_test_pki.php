@@ -525,6 +525,9 @@ $root_meta = cert_meta($openssl, $ROOT_CRT);
 $issu_meta = cert_meta($openssl, $ISSU_CRT);
 $generated = gmdate('j F Y \a\t H:i \U\T\C');
 
+$root_pem = htmlspecialchars(trim((string) file_get_contents($ROOT_CRT)), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+$issu_pem = htmlspecialchars(trim((string) file_get_contents($ISSU_CRT)), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+
 $html = <<<HTML
 <!DOCTYPE html>
 <html lang="en">
@@ -578,6 +581,28 @@ $html = <<<HTML
     }
     .dl-btn:hover { background: rgba(0,212,170,0.1); color: #fff; border-color: #fff; }
 
+    .pem-wrap { margin-top: 0.9rem; }
+    .pem-field {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--muted); font-family: var(--mono);
+      font-size: 0.65rem; line-height: 1.55; padding: 0.7rem 0.9rem;
+      resize: vertical; min-height: 96px; cursor: default;
+    }
+    .pem-field:focus { outline: none; }
+    .pem-actions {
+      display: flex; gap: 0.5rem; margin-top: 0.55rem;
+      flex-wrap: wrap; align-items: center;
+    }
+    .pem-actions .dl-btn { margin-top: 0; }
+    .pem-btn {
+      font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.06em;
+      text-transform: uppercase; border: 1px solid var(--border);
+      background: none; color: var(--muted); border-radius: 4px;
+      padding: 0.3em 0.85em; cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .pem-btn:hover { border-color: var(--accent); color: var(--accent); }
+
     .footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border);
               font-family: var(--mono); font-size: 0.68rem; color: var(--muted); }
     .footer a { color: var(--muted); }
@@ -606,9 +631,14 @@ $html = <<<HTML
       Not after &nbsp;&nbsp;<span>{$root_meta['not_after']}</span><br>
       SHA-256 &nbsp;&nbsp;&nbsp;&nbsp;<span>{$root_meta['fp']}</span>
     </div>
-    <a class="dl-btn" href="/meerkat-root.crt">Download .crt</a>
-    &nbsp;
-    <a class="dl-btn" href="/meerkat-root.crl">Download Root ARL</a>
+    <div class="pem-wrap">
+      <textarea class="pem-field" id="root-pem" readonly spellcheck="false">{$root_pem}</textarea>
+      <div class="pem-actions">
+        <button class="pem-btn" onclick="copyPem('root-pem', this)">Copy</button>
+        <button class="pem-btn" onclick="dlPem('root-pem', 'meerkat-root.crt')">Download .crt</button>
+        <a class="dl-btn" href="/meerkat-root.crl">Download Root ARL</a>
+      </div>
+    </div>
   </div>
 
   <div class="card">
@@ -621,9 +651,14 @@ $html = <<<HTML
       AIA &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>http://pki.thameur.org/meerkat-root.crt</span><br>
       CDP &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>http://pki.thameur.org/meerkat-root.crl</span>
     </div>
-    <a class="dl-btn" href="/meerkat-issuing.crt">Download .crt</a>
-    &nbsp;
-    <a class="dl-btn" href="/meerkat-issuing.crl">Download issuing CRL</a>
+    <div class="pem-wrap">
+      <textarea class="pem-field" id="issu-pem" readonly spellcheck="false">{$issu_pem}</textarea>
+      <div class="pem-actions">
+        <button class="pem-btn" onclick="copyPem('issu-pem', this)">Copy</button>
+        <button class="pem-btn" onclick="dlPem('issu-pem', 'meerkat-issuing.crt')">Download .crt</button>
+        <a class="dl-btn" href="/meerkat-issuing.crl">Download Issuing CRL</a>
+      </div>
+    </div>
   </div>
 
   <div class="footer">
@@ -633,6 +668,26 @@ $html = <<<HTML
   </div>
 
 </div>
+<script>
+function copyPem(id, btn) {
+  var t = document.getElementById(id);
+  if (!t) return;
+  navigator.clipboard.writeText(t.value).then(function() {
+    var o = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.textContent = o; }, 1800);
+  });
+}
+function dlPem(id, filename) {
+  var t = document.getElementById(id);
+  if (!t) return;
+  var blob = new Blob([t.value], { type: 'application/x-x509-ca-cert' });
+  var url = URL.createObjectURL(blob);
+  var a = Object.assign(document.createElement('a'), { href: url, download: filename });
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+</script>
 </body>
 </html>
 HTML;
