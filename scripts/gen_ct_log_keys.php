@@ -12,9 +12,10 @@ $OPENSSL  = '/usr/bin/openssl';
 $KEYS_DIR = '/var/www/thameur.org/pki-ca/ct-log-keys';
 
 $logs = [
-    'lynx', 'osprey', 'kestrel', 'merlin',
-    'harrier', 'falcon', 'ibis', 'wren',
+    'kablouti', 'karkoub', 'sal7ouf', 'farhoud',
+    'habhoub', 'sardouk', 'dhibi', 'bousannoun'
 ];
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 
