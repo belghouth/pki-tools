@@ -81,7 +81,7 @@ function handle_revoke(): array
         return ['error' => 'No valid certificate PEM provided'];
     }
 
-    $allowed = ['unspecified', 'keyCompromise', 'affiliationChanged', 'superseded', 'cessationOfOperation', 'privilegeWithdrawn'];
+    $allowed = ['unspecified', 'keyCompromise', 'affiliationChanged', 'superseded', 'cessationOfOperation'];
     $reason  = $_POST['reason'] ?? 'unspecified';
     if (!in_array($reason, $allowed, true)) {
         return ['error' => 'Invalid revocation reason'];
@@ -1766,7 +1766,6 @@ $navLabel = 'Test CA';
         <option value="affiliationChanged">Affiliation Changed</option>
         <option value="superseded">Superseded</option>
         <option value="cessationOfOperation">Cessation of Operation</option>
-        <option value="privilegeWithdrawn">Privilege Withdrawn</option>
       </select>
       <button class="btn-danger" id="btnRevoke">Revoke this Certificate</button>
     </div>
