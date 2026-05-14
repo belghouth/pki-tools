@@ -574,6 +574,17 @@ function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = fal
         }
     }
 
+    // 7b. TLD validation against IANA registry (issuance only — not CSR generation)
+    foreach ($sans as $san) {
+        $base   = str_starts_with($san, '*.') ? substr($san, 2) : $san;
+        $labels = explode('.', $base);
+        $tld    = end($labels);
+        $err    = validate_tld($tld);
+        if ($err !== null) {
+            return ['error' => "\"$san\" — $err"];
+        }
+    }
+
     // 8. CAA check
     $caaErr = check_caa($sans);
     if ($caaErr !== null) {
@@ -921,6 +932,51 @@ function caa_check_domain(string $domain, bool $isWild, string $issuer): ?string
         return null; // CAA records present but no issue/issuewild — no restriction
     }
     return null; // no CAA records found anywhere — issuance permitted
+}
+
+function validate_tld(string $tld): ?string
+{
+    static $known = null;
+
+    if ($known === null) {
+        $cache = sys_get_temp_dir() . '/iana_tlds.txt';
+        // Refresh the cache if absent or older than 7 days
+        if (!file_exists($cache) || filemtime($cache) < time() - 604800) {
+            $raw = @file_get_contents('https://data.iana.org/TLD/tlds-alpha-by-domain.txt');
+            if ($raw !== false && strlen($raw) > 100) {
+                file_put_contents($cache, $raw);
+            }
+        }
+        if (file_exists($cache)) {
+            $lines = file($cache, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            $known = [];
+            foreach ($lines as $line) {
+                if ($line !== '' && $line[0] !== '#') {
+                    $known[strtolower($line)] = true;
+                }
+            }
+        }
+    }
+
+    $lower = strtolower($tld);
+
+    // All-numeric TLD is always invalid (RFC 1123 / BR)
+    if (ctype_digit($tld)) {
+        return "TLD \".$tld\" is all-numeric and not a valid delegated TLD";
+    }
+
+    if ($known !== null) {
+        if (!isset($known[$lower])) {
+            return "TLD \".$tld\" is not in the IANA registry of delegated TLDs";
+        }
+        return null;
+    }
+
+    // Fallback when IANA list is unavailable: reject numeric and single-char TLDs
+    if (strlen($tld) < 2 || !preg_match('/^[a-zA-Z]+$/', $tld)) {
+        return "TLD \".$tld\" does not appear to be a valid delegated TLD";
+    }
+    return null;
 }
 
 function is_valid_dns(string $name): bool
