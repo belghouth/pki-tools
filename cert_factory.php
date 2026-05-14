@@ -132,6 +132,9 @@ function handle_revoke(): array
             return ['error' => 'Revocation failed'];
         }
 
+        // Prune revoked entries whose certificates have since expired (RFC 5280 §5).
+        prune_expired_revoked(dirname($revokeDbCnf) . '/index.txt');
+
         // Immediately regenerate the CRL so the revoked cert is visible.
         // openssl ca -gencrl outputs PEM only; convert to DER separately.
         $crlPem = sys_get_temp_dir() . '/cf_crl_' . bin2hex(random_bytes(8)) . '.pem';
@@ -1139,6 +1142,19 @@ function parse_cert(string $certFile): array
     if (preg_match('/Not After\s*:\s*(.+)/i',    $t, $m)) $out['not_after']  = trim($m[1]);
     if (preg_match('/Serial Number:\s*\n?\s*([0-9a-f:]+)/i', $t, $m)) $out['serial'] = trim($m[1]);
     return $out;
+}
+
+function prune_expired_revoked(string $indexFile): void
+{
+    if (!is_file($indexFile)) return;
+    $now = gmdate('ymdHis') . 'Z';
+    $out = [];
+    foreach (file($indexFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+        $fields = explode("\t", $line);
+        if (($fields[0] ?? '') === 'R' && isset($fields[1]) && $fields[1] <= $now) continue;
+        $out[] = $line;
+    }
+    file_put_contents($indexFile, $out ? implode("\n", $out) . "\n" : '');
 }
 
 function run_cmd(array $cmd): array

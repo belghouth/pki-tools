@@ -14,6 +14,14 @@ exec >> "$LOGFILE" 2>&1
 
 echo "===== $(date -u '+%Y-%m-%d %H:%M:%S UTC') ===== refresh_issuing_crl"
 
+prune_expired_revoked() {
+    local INDEX="$1"
+    local now
+    now=$(date -u '+%y%m%d%H%M%SZ')
+    awk -v now="$now" 'BEGIN{FS="\t"} !($1=="R" && $2<=now)' "$INDEX" > "${INDEX}.tmp" \
+        && mv "${INDEX}.tmp" "$INDEX"
+}
+
 refresh_crl() {
     local CONFIG="$1"
     local OUT="$2"
@@ -23,6 +31,8 @@ refresh_crl() {
         echo "SKIP: $CONFIG not found — run gen_test_pki.php first"
         return 0
     fi
+
+    prune_expired_revoked "$DB/index.txt"
 
     TMP="$(mktemp)"
     /usr/bin/openssl ca \
