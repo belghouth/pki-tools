@@ -470,7 +470,10 @@ function dcv_verify_dns_cname(string $domain, string $token): array
         $target = strtolower(rtrim($rec['data'] ?? '', '.') . '.');
         if ($target === $expected_target) return ['ok' => true];
     }
-    $found = implode(', ', array_filter(array_map(fn($r) => $r['data'] ?? null, $answers)));
+    $found = implode(', ', array_filter(array_map(
+        fn($r) => isset($r['data']) ? strtolower(rtrim($r['data'], '.') . '.') : null,
+        $answers
+    )));
     return ['ok' => false, 'error' => "CNAME target mismatch — expected {$expected_target}, found: {$found}"];
 }
 
@@ -1715,6 +1718,7 @@ $navLabel = 'Test CA';
   var RECAPTCHA_SITE_KEY = <?= json_encode(RECAPTCHA_SITE_KEY) ?>;
   var ISSUING_CA_PEM     = <?= json_encode(file_exists(ISSUING_CRT) ? trim((string) file_get_contents(ISSUING_CRT)) : '') ?>;
   var dcvCheckers        = <?= json_encode(DNS_CHECKERS, JSON_UNESCAPED_SLASHES) ?>;
+  var PKI_DOMAIN         = <?= json_encode(PKI_DOMAIN) ?>;
 
   function getRecaptchaToken(action) {
     return new Promise(function (resolve) {
@@ -2168,7 +2172,7 @@ $navLabel = 'Test CA';
 
       } else if (m === 'dns-cname') {
         var cnameFrom = '_pki-validation.' + domain;
-        var cnameTo   = token + '.dcv.' + window.location.hostname + '.';
+        var cnameTo   = token + '.dcv.' + PKI_DOMAIN + '.';
         html += tokenBlock('CNAME record name', esc(cnameFrom), cnameFrom);
         html += '<div class="dcv-token-block"><div class="dcv-token-label">Type</div>'
               + '<div class="dcv-token-row"><span class="dcv-token-value">CNAME</span></div></div>';
