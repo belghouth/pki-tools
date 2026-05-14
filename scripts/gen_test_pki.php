@@ -125,7 +125,8 @@ foreach ([$PKI_CA, $PRIV, $PKI_WEB, $ROOT_DB, $ISSU_DB] as $dir) {
         info("created $dir");
     }
 }
-chmod($PRIV, 0700);
+// private/ is root-owned but www-data needs execute (traverse) to reach the keys
+chgrp($PRIV, 'www-data'); chmod($PRIV, 0710);
 
 // .gitignore: keep directory, ignore all private key material
 $gi = $PKI_CA . '/.gitignore';
@@ -249,7 +250,6 @@ if (!$r['ok']) {
     exit(1);
 }
 // Root key stays root-only; issuing key readable by www-data for cert_factory.php
-chgrp($PRIV,     'www-data'); chmod($PRIV,     0710);
 chgrp($ISSU_KEY, 'www-data'); chmod($ISSU_KEY, 0640);
 ok('Issuing CA key: ' . $ISSU_KEY);
 
