@@ -1336,6 +1336,16 @@ if ($parse_pem !== '' && parse_pem($parse_pem) !== null):
 <?php endif; ?>
 
 <?php require __DIR__ . '/includes/cookie_banner.php'; ?>
+<script>
+(function () {
+  // Cert prefill from cert factory (Lint button)
+  var cert = sessionStorage.getItem('pki_prefill_cert');
+  if (!cert) return;
+  sessionStorage.removeItem('pki_prefill_cert');
+  var ta = document.querySelector('[name=ee_pem]');
+  if (ta && !ta.value.trim()) ta.value = cert;
+}());
+</script>
 </body>
 </html>
 

@@ -98,6 +98,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'ms'       => $ms,
                         'fname'    => $fname,
                         'n_mods'   => count(ArtifactRegistry::all()),
+                        'pem'      => $parsed['pem'] ?? null,
+                        'is_csr'   => str_contains($module->label(), 'CSR'),
                     ];
                 } catch (Throwable $e) {
                     $error = 'Parse error: ' . htmlspecialchars($e->getMessage());
@@ -263,6 +265,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     /* ── Loaded modules footer ── */
     .ap-modules-list { margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
+
+    /* ── Issue-cert CTA (shown for CSR results) ── */
+    .ap-csr-action {
+      margin-bottom: 1.5rem; display: flex; justify-content: flex-end;
+    }
+    .ap-btn-issue-cert {
+      font-family: var(--mono); font-size: .75rem; text-transform: uppercase; letter-spacing: .07em;
+      background: none; color: var(--accent);
+      border: 1px solid rgba(0,212,170,.4); border-radius: var(--radius);
+      padding: .5em 1.1em; cursor: pointer; font-weight: 600;
+      transition: background .15s, border-color .15s;
+    }
+    .ap-btn-issue-cert:hover { background: rgba(0,212,170,.08); border-color: var(--accent); }
     .ap-modules-list h3 { font-family: var(--mono); font-size: .65rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: .6rem; }
     .ap-mod-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
     .ap-mod-chip { font-family: var(--mono); font-size: .65rem; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 3px; padding: .15em .55em; }
@@ -445,6 +460,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
   </div>
 
+  <?php if ($result['is_csr'] && $result['pem']): ?>
+  <!-- Issue certificate CTA for CSR results -->
+  <div class="ap-csr-action">
+    <button type="button" class="ap-btn-issue-cert" id="btnIssueCert"
+            data-pem="<?= htmlspecialchars(trim($result['pem']), ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8') ?>">
+      Issue Certificate from this CSR →
+    </button>
+  </div>
+  <?php endif; ?>
+
   <!-- Parsed output -->
   <?= $result['rendered'] ?>
 
@@ -546,6 +571,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       document.getElementById('tab-upload').click();
     }
   });
+
+  // ── Cert prefill from cert factory (Lint / Parse buttons) ────────────────────
+  (function () {
+    var cert = sessionStorage.getItem('pki_prefill_cert');
+    if (!cert) return;
+    sessionStorage.removeItem('pki_prefill_cert');
+    var ta = document.getElementById('apPem');
+    if (ta && !ta.value.trim()) {
+      ta.value = cert;
+      // Auto-submit so the result appears immediately
+      document.getElementById('apForm').submit();
+    }
+  }());
+
+  // ── Issue Certificate from CSR ────────────────────────────────────────────────
+  var btnIssueCert = document.getElementById('btnIssueCert');
+  if (btnIssueCert) {
+    btnIssueCert.addEventListener('click', function () {
+      sessionStorage.setItem('pki_prefill_csr', btnIssueCert.dataset.pem);
+      window.location.href = '/cert_factory.php';
+    });
+  }
 }());
 </script>
 </body>

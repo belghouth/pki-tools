@@ -926,6 +926,8 @@ $navLabel = 'Test CA';
       <div class="result-actions">
         <button class="btn-ghost" id="btnCopy">Copy PEM</button>
         <button class="btn-ghost" id="btnDl">Download .crt</button>
+        <button class="btn-ghost" id="btnLint">Lint</button>
+        <button class="btn-ghost" id="btnParse">Parse</button>
       </div>
     </div>
 
@@ -1158,6 +1160,37 @@ $navLabel = 'Test CA';
   function row(key, val) {
     return '<span class="ci-key">' + key + '</span><span class="ci-val">' + val + '</span>';
   }
+
+  // ── CSR prefill from artifact parser ────────────────────────────────────────
+  (function () {
+    var csr = sessionStorage.getItem('pki_prefill_csr');
+    if (!csr) return;
+    sessionStorage.removeItem('pki_prefill_csr');
+    var ta = document.getElementById('csrText');
+    if (ta && !ta.value.trim()) {
+      ta.value = csr;
+      // Ensure paste tab is active
+      tabs.forEach(function (t) { t.classList.remove('active'); });
+      panes.forEach(function (p) { p.classList.remove('active'); });
+      var pasteTab  = document.querySelector('[data-tab="paste"]');
+      var pastePane = document.getElementById('pane-paste');
+      if (pasteTab)  pasteTab.classList.add('active');
+      if (pastePane) pastePane.classList.add('active');
+    }
+  }());
+
+  // ── Lint / Parse ─────────────────────────────────────────────────────────────
+  document.getElementById('btnLint').addEventListener('click', function () {
+    if (!pemOutput.value) return;
+    sessionStorage.setItem('pki_prefill_cert', pemOutput.value);
+    window.location.href = '/linters.php';
+  });
+
+  document.getElementById('btnParse').addEventListener('click', function () {
+    if (!pemOutput.value) return;
+    sessionStorage.setItem('pki_prefill_cert', pemOutput.value);
+    window.location.href = '/artifact_parser.php';
+  });
 
   // ── Copy / Download ──────────────────────────────────────────────────────────
   document.getElementById('btnCopy').addEventListener('click', function () {
