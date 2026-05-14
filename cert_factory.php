@@ -429,18 +429,6 @@ function process_csr(string $csrFile, bool $precert = false): array
             // Step 2: submit precert chain to CT log(s) and collect SCTs
             $precertPem = (string) file_get_contents($preCertFile);
             $issuerPem  = (string) file_get_contents(ISSUING_CRT);
-
-error_log("Precert file: " . $preCertFile);
-    error_log("Precert length: " . strlen($precertPem));
-    error_log("Issuer cert: " . ISSUING_CRT);
-    error_log("Issuer length: " . strlen($issuerPem));
-
-    error_log("Precert SHA256: " . hash('sha256', $precertPem));
-    error_log("Issuer SHA256: " . hash('sha256', $issuerPem));
-
-    error_log("Precert PEM:\n" . $precertPem);
-    error_log("Issuer PEM:\n" . $issuerPem);
-
             $needed     = ct_required_count(CERT_DAYS);
 
             for ($i = 0; $i < $needed; $i++) {
@@ -543,14 +531,26 @@ function ct_required_count(int $days): int
 
 function ct_submit(string $precert_pem, string $issuer_pem): array
 {
-    // PEM body is already base64(DER) — strip headers + whitespace to get raw base64
-    $pem_b64 = static fn(string $p): string =>
-        preg_replace('/\s+/', '', preg_replace('/-----[^-]+-----/', '', $p));
+    // Extract the base64 body of the FIRST PEM block only (handles files with a chain)
+    $pem_b64 = static function(string $p): string {
+        if (preg_match('/-----BEGIN [^-]+-----\s*(.*?)\s*-----END [^-]+-----/s', $p, $m)) {
+            return preg_replace('/\s+/', '', $m[1]);
+        }
+        return '';
+    };
 
-    $payload = json_encode(['chain' => [
-        $pem_b64($precert_pem),
-        $pem_b64($issuer_pem),
-    ]]);
+    $chain0 = $pem_b64($precert_pem);
+    $chain1 = $pem_b64($issuer_pem);
+    if ($chain0 === '' || $chain1 === '') {
+        return ['error' => 'Failed to extract DER from certificate PEM'];
+    }
+
+    // JSON_UNESCAPED_SLASHES is required: base64 contains '/' which PHP escapes to '\/'
+    // by default, corrupting the value for any CT log that doesn't unescape it first.
+    $payload = json_encode(['chain' => [$chain0, $chain1]], JSON_UNESCAPED_SLASHES);
+    if ($payload === false) {
+        return ['error' => 'Failed to encode CT submission payload'];
+    }
 
     $ch = curl_init();
     curl_setopt_array($ch, [
