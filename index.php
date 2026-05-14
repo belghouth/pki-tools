@@ -693,8 +693,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
           <div class="tool-card-bar tool-card-bar--orange"></div>
           <div class="tool-card-body">
             <div class="tool-card-icon">🏭</div>
-            <div class="tool-card-name">Meerkat Test Certificate Factory</div>
-            <div class="tool-card-desc">Submit a CSR and receive a BR-compliant DV TLS certificate signed by the Meerkat Test Issuing CA. Subject is rebuilt from the first SAN — all other fields stripped. RSA ≥ 2048 only. Useful for validating linter behaviour against a known-good chain.</div>
+            <div class="tool-card-name">Meerkat TLS Test Certificate Factory</div>
+            <div class="tool-card-desc">Issue BR-compliant DV TLS certificates from the Meerkat Test CA. Accepts a CSR or generates one on-the-fly from a list of domains. Only DNS SANs accepted — no IPs, no email. Subject CN is derived from the first SAN; all other CSR fields are stripped.</div>
             <div class="tool-card-tags">
               <span class="tag">Test CA</span>
               <span class="tag">BR Compliance</span>

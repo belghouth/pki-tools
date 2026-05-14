@@ -563,8 +563,8 @@ $navLabel = 'Test CA';
   <?php
   require_once __DIR__ . '/includes/seo.php';
   seo_head([
-    'title'       => 'Meerkat Test Certificate Factory — BR-Compliant TLS Cert Issuance | thameur.org',
-    'description' => 'Submit a CSR and receive a BR-compliant DV TLS certificate signed by the Meerkat Test Issuing CA. RSA ≥ 2048 only. For linter testing and local chain validation.',
+    'title'       => 'Meerkat TLS Test Certificate Factory — BR-Compliant DV TLS | thameur.org',
+    'description' => 'Issue BR-compliant DV TLS certificates from the Meerkat Test CA. DNS SANs only — no IPs, no email. RSA ≥ 2048. CN derived from SANs. For linter testing and chain validation.',
     'url'         => 'https://thameur.org/cert_factory.php',
   ]);
   ?>
@@ -832,9 +832,10 @@ $navLabel = 'Test CA';
 <main class="factory-wrap">
 
   <div class="page-header">
-    <h1>Meerkat Test Certificate Factory</h1>
-    <p>Submit a CSR to receive a BR-compliant DV TLS certificate signed by the Meerkat Test Issuing CA.
-       RSA ≥ 2048 only. Subject is rebuilt from the first SAN — all other CSR fields are stripped.</p>
+    <h1>Meerkat TLS Test Certificate Factory</h1>
+    <p>Issue a BR-compliant DV TLS certificate from the Meerkat Test CA. Only DNS SANs are accepted —
+       IPs, email addresses, and other SAN types are rejected. CN is always derived from the first DNS SAN;
+       all other CSR fields are stripped. RSA ≥ 2048 only.</p>
   </div>
 
   <div class="warn-banner">
