@@ -34,24 +34,6 @@ function run(array $cmd): array
     return ['ok' => $code === 0, 'out' => (string) $out, 'err' => (string) $err];
 }
 
-function run_in(array $cmd, string $stdin): array
-{
-    $proc = proc_open($cmd, [
-        0 => ['pipe', 'r'],
-        1 => ['pipe', 'w'],
-        2 => ['pipe', 'w'],
-    ], $pipes);
-    if (!$proc) return ['ok' => false, 'out' => '', 'err' => 'proc_open failed'];
-    fwrite($pipes[0], $stdin);
-    fclose($pipes[0]);
-    $out  = stream_get_contents($pipes[1]);
-    $err  = stream_get_contents($pipes[2]);
-    fclose($pipes[1]);
-    fclose($pipes[2]);
-    $code = proc_close($proc);
-    return ['ok' => $code === 0, 'out' => (string) $out, 'err' => (string) $err];
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 
 if (!is_dir($KEYS_DIR)) {
@@ -83,13 +65,15 @@ foreach ($logs as $name) {
         continue;
     }
 
-    // Export SubjectPublicKeyInfo DER so we can compute the Log ID
-    $key_pem = file_get_contents($tmp_key);
-    $r2 = run_in([$OPENSSL, 'ec', '-in', '-', '-pubout', '-outform', 'DER'], $key_pem);
+    // Export SubjectPublicKeyInfo DER from the temp file so we can compute the Log ID.
+    // Use 'openssl pkey' (not the legacy 'openssl ec') — OpenSSL 3.x STORE routines
+    // reject '-' as a stdin specifier, so we read from the temp file directly.
+    $r2 = run([$OPENSSL, 'pkey', '-in', $tmp_key, '-pubout', '-outform', 'DER']);
+    $key_pem = (string) file_get_contents($tmp_key);
     @unlink($tmp_key);
 
     if (!$r2['ok']) {
-        echo " FAILED (ec -pubout): {$r2['err']}\n";
+        echo " FAILED (pkey -pubout): {$r2['err']}\n";
         $all_ok = false;
         continue;
     }

@@ -899,7 +899,7 @@ $navLabel = 'Test CA';
                    spellcheck="false" autocomplete="off">
             <button type="button" class="btn-primary" id="btnGenCsr">Generate CSR</button>
           </div>
-          <p class="csr-domain-hint">Separate multiple domains with commas. No IPs, wildcards, or internal names.</p>
+          <p class="csr-domain-hint">Separate multiple domains with commas. No IPs, or internal names.</p>
           <div class="csr-builder-error" id="csrBuilderError" hidden></div>
           <div class="csr-ok-badge" id="csrBuilderOk" hidden></div>
         </div>
@@ -948,6 +948,7 @@ $navLabel = 'Test CA';
       → <a href="https://pki.thameur.org/meerkat-issuing.crt">Meerkat Test Issuing CA 1</a>
       → this certificate<br>
       Install the Root CA to trust this cert locally for linter testing.
+      PKI repository: <a href="https://pki.thameur.org" target="_blank" rel="noopener">pki.thameur.org</a>
     </p>
 
     <div class="revoke-row" id="revokeRow">
