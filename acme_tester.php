@@ -758,7 +758,81 @@ function acme_action_ari(): array
 
 function acme_action_report(): array
 {
-    return ['ok' => true, 'log' => $_SESSION['acme_log'] ?? []];
+    $log = $_SESSION['acme_log'] ?? [];
+    $s   = acme_sess();
+    $dir = $s['directory'] ?? [];
+
+    // Build URL summary: collect all unique URLs from the log
+    $urls_seen = [];
+    foreach ($log as $entry) {
+        $u = $entry['url'] ?? '';
+        if ($u) $urls_seen[] = $u;
+    }
+
+    // Parse each URL into components grouped by origin
+    $origins = [];
+    foreach ($urls_seen as $u) {
+        $p = parse_url($u);
+        if (!$p || empty($p['host'])) continue;
+        $scheme = strtolower($p['scheme'] ?? 'https');
+        $host   = strtolower($p['host']);
+        $port   = (int)($p['port'] ?? ($scheme === 'https' ? 443 : 80));
+        $path   = $p['path'] ?? '/';
+        $key    = $scheme . '://' . $host . ':' . $port;
+        if (!isset($origins[$key])) {
+            $origins[$key] = ['scheme' => $scheme, 'host' => $host, 'port' => $port, 'paths' => []];
+        }
+        if (!in_array($path, $origins[$key]['paths'], true)) {
+            $origins[$key]['paths'][] = $path;
+        }
+    }
+
+    // Annotate directory fields with which URL each maps to
+    $dir_map = [];
+    $dir_fields = ['newNonce', 'newAccount', 'newOrder', 'revokeCert', 'keyChange', 'renewalInfo'];
+    foreach ($dir_fields as $f) {
+        if (isset($dir[$f])) $dir_map[$f] = $dir[$f];
+    }
+
+    // Technology fingerprinting
+    $tech_signals = [];
+    $all_urls_str = implode(' ', $urls_seen);
+    $tech_patterns = [
+        'EJBCA'              => ['/ejbca/', ':8442', ':8080/ejbca'],
+        'Boulder (Let\'s Encrypt)' => ['acme-v02.api.letsencrypt.org', 'acme-staging-v02.api.letsencrypt.org'],
+        'Smallstep/step-ca'  => ['/acme/', '/1.0/'],
+        'Sectigo'            => ['sectigo.com', 'comodo.com'],
+        'DigiCert'           => ['digicert.com'],
+        'GlobalSign'         => ['globalsign.com'],
+        'ZeroSSL'            => ['zerossl.com'],
+        'Entrust'            => ['entrust.com'],
+        'Buypass'            => ['buypass.com'],
+        'SwissSign'          => ['swisssign.com'],
+        'Google Trust Services' => ['pki.goog'],
+        'Microsoft'          => ['microsoft.com'],
+        'Venafi'             => ['venafi.com'],
+        'AppViewX'           => ['appviewx.com'],
+        'Keyfactor'          => ['keyfactor.com'],
+        'Dogtag/RHCS'        => ['/ca/acme/', ':8080/ca/', ':8443/ca/'],
+    ];
+    foreach ($tech_patterns as $tech => $patterns) {
+        foreach ($patterns as $pat) {
+            if (stripos($all_urls_str, $pat) !== false) {
+                if (!in_array($tech, $tech_signals, true)) $tech_signals[] = $tech;
+                break;
+            }
+        }
+    }
+
+    return [
+        'ok'        => true,
+        'log'       => $log,
+        'url_summary' => [
+            'origins'   => array_values($origins),
+            'dir_map'   => $dir_map,
+            'tech'      => $tech_signals,
+        ],
+    ];
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -952,6 +1026,27 @@ $navLabel = 'ACME Tester';
     .raw-label:first-child { margin-top: 0; }
     .report-dl-row { margin-top: 1rem; display: flex; gap: 0.8rem; }
 
+    /* ── Report summary ── */
+    .rpt-summary { margin-bottom: 1.4rem; }
+    .rpt-tech { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem; padding: 0.5rem 0.8rem; background: rgba(139,92,246,0.07); border: 1px solid rgba(139,92,246,0.18); border-radius: 6px; font-size: 0.78rem; }
+    .rpt-tech-label { color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
+    .rpt-tech-tag { padding: 0.12em 0.55em; background: rgba(139,92,246,0.15); color: var(--purple); border: 1px solid rgba(139,92,246,0.3); border-radius: 4px; font-size: 0.72rem; font-family: var(--mono); }
+    .rpt-origin { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 0.9rem; overflow: hidden; }
+    .rpt-origin-hdr { display: flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.9rem; background: var(--surface2); flex-wrap: wrap; }
+    .rpt-scheme { font-family: var(--mono); font-size: 0.68rem; padding: 0.1em 0.5em; border-radius: 3px; background: rgba(0,212,170,0.1); color: var(--accent); border: 1px solid rgba(0,212,170,0.2); }
+    .rpt-host { font-family: var(--mono); font-size: 0.82rem; color: var(--text); font-weight: 600; }
+    .rpt-port { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
+    .rpt-port-warn { font-size: 0.66rem; color: var(--warn); background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.25); border-radius: 3px; padding: 0.08em 0.45em; }
+    .rpt-paths { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+    .rpt-paths thead th { text-align: left; font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 0.35rem 0.9rem; border-bottom: 1px solid var(--border); background: var(--surface2); }
+    .rpt-paths tbody tr { border-bottom: 1px solid var(--border); }
+    .rpt-paths tbody tr:last-child { border-bottom: none; }
+    .rpt-path-cell { padding: 0.38rem 0.9rem; font-family: var(--mono); color: var(--text); word-break: break-all; }
+    .rpt-path-cell code { background: none; font-size: 0.74rem; }
+    .rpt-field-cell { padding: 0.38rem 0.9rem; }
+    .rpt-field-tag { display: inline-block; font-family: var(--mono); font-size: 0.65rem; padding: 0.08em 0.4em; border-radius: 3px; background: rgba(0,212,170,0.08); color: var(--accent); border: 1px solid rgba(0,212,170,0.18); margin: 0.1em; }
+    .rpt-field-none { color: var(--muted); font-size: 0.72rem; }
+
     /* ── Footer ── */
     .site-footer { border-top: 1px solid var(--border); padding: 1.4rem 2rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
     .site-footer a { color: var(--muted); }
@@ -1059,6 +1154,9 @@ $navLabel = 'ACME Tester';
   <div class="card" id="progressCard" hidden>
     <div class="card-title">Test Progress</div>
     <div class="steps-list" id="stepsList"></div>
+    <div class="submit-row" style="margin-top:1.2rem" id="reportBtnRow" hidden>
+      <button class="btn-report" id="btnReport">Generate Report</button>
+    </div>
   </div>
 
   <!-- Challenge card -->
@@ -1099,14 +1197,12 @@ $navLabel = 'ACME Tester';
   <div class="card" id="postCard" hidden>
     <div class="card-title">Post-Issuance Tests</div>
     <div class="steps-list" id="postSteps"></div>
-    <div class="submit-row" style="margin-top:1.2rem">
-      <button class="btn-report" id="btnReport">Generate Report</button>
-    </div>
   </div>
 
   <!-- Report card -->
   <div class="card" id="reportCard" hidden>
     <div class="card-title" style="color:var(--purple)">Protocol Evidence Report</div>
+    <div id="reportSummary"></div>
     <div id="reportEntries"></div>
     <div class="report-dl-row">
       <button class="btn-ghost" id="btnDlReport">Download Report (JSON)</button>
@@ -1151,9 +1247,11 @@ $navLabel = 'ACME Tester';
   var certCard    = document.getElementById('certCard');
   var certInfoGrid= document.getElementById('certInfoGrid');
   var pemOutput   = document.getElementById('pemOutput');
-  var postCard    = document.getElementById('postCard');
-  var postSteps   = document.getElementById('postSteps');
-  var reportCard  = document.getElementById('reportCard');
+  var postCard      = document.getElementById('postCard');
+  var postSteps     = document.getElementById('postSteps');
+  var reportBtnRow  = document.getElementById('reportBtnRow');
+  var reportCard    = document.getElementById('reportCard');
+  var reportSummary = document.getElementById('reportSummary');
   var reportEntries = document.getElementById('reportEntries');
 
   // ── Toggles ──────────────────────────────────────────────────────────────────
@@ -1219,6 +1317,7 @@ $navLabel = 'ACME Tester';
     var data = await post(fd);
     if (!data) return;
     progressCard.hidden = false;
+    reportBtnRow.hidden = false;
     appendSteps(data.steps || []);
     if (data.error) { showError(data.error); setLoading(false); return; }
 
@@ -1408,15 +1507,76 @@ $navLabel = 'ACME Tester';
   document.getElementById('btnReport').addEventListener('click', async function () {
     var data = await post(fd1('report'));
     if (!data || !data.log) return;
-    reportData = data.log;
+    reportData = data;
+    renderReportSummary(data.url_summary || {});
     renderReport(data.log);
     reportCard.hidden = false;
     reportCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
+  function renderReportSummary(summary) {
+    var origins = summary.origins || [];
+    var dirMap  = summary.dir_map || {};
+    var tech    = summary.tech    || [];
+
+    // Build a reverse lookup: url → field name(s)
+    var urlToFields = {};
+    Object.keys(dirMap).forEach(function (field) {
+      var u = dirMap[field];
+      if (!urlToFields[u]) urlToFields[u] = [];
+      urlToFields[u].push(field);
+    });
+
+    var html = '<div class="rpt-summary">';
+
+    // Technology detection banner
+    if (tech.length) {
+      html += '<div class="rpt-tech">'
+        + '<span class="rpt-tech-label">Detected technology:</span> '
+        + tech.map(function (t) { return '<span class="rpt-tech-tag">' + esc(t) + '</span>'; }).join(' ')
+        + '</div>';
+    }
+
+    // One block per origin (unique scheme+host+port)
+    origins.forEach(function (o) {
+      var defaultPort = o.scheme === 'https' ? 443 : 80;
+      var portNote = (o.port !== defaultPort) ? ' <span class="rpt-port-warn">non-standard port</span>' : '';
+      html += '<div class="rpt-origin">';
+      html += '<div class="rpt-origin-hdr">'
+        + '<span class="rpt-scheme">' + esc(o.scheme.toUpperCase()) + '</span>'
+        + '<span class="rpt-host">' + esc(o.host) + '</span>'
+        + '<span class="rpt-port">:' + esc(String(o.port)) + '</span>'
+        + portNote
+        + '</div>';
+      html += '<table class="rpt-paths">'
+        + '<thead><tr><th>Path</th><th>ACME field</th></tr></thead><tbody>';
+      o.paths.forEach(function (path) {
+        var fullUrl = o.scheme + '://' + o.host + ':' + o.port + path;
+        var fields  = urlToFields[fullUrl] || [];
+        html += '<tr>'
+          + '<td class="rpt-path-cell"><code>' + esc(path) + '</code></td>'
+          + '<td class="rpt-field-cell">'
+          + (fields.length ? fields.map(function (f) { return '<span class="rpt-field-tag">' + esc(f) + '</span>'; }).join(' ') : '<span class="rpt-field-none">—</span>')
+          + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    });
+
+    if (!origins.length) {
+      html += '<p style="color:var(--muted);font-size:0.82rem">No URL data recorded yet.</p>';
+    }
+
+    html += '</div>';
+    reportSummary.innerHTML = html;
+  }
+
   function renderReport(log) {
     reportEntries.innerHTML = '';
-    log.forEach(function (entry, i) {
+    if (!log.length) {
+      reportEntries.innerHTML = '<p style="color:var(--muted);font-size:0.82rem;padding:0.5rem 0">No log entries yet.</p>';
+      return;
+    }
+    log.forEach(function (entry) {
       var isOk   = entry.ok;
       var meth   = (entry.method || 'GET').toUpperCase();
       var div    = document.createElement('div');
@@ -1538,7 +1698,9 @@ $navLabel = 'ACME Tester';
     certInfoGrid.innerHTML = '';
     postSteps.innerHTML = '';
     reportEntries.innerHTML = '';
+    reportSummary.innerHTML = '';
     pemOutput.value = '';
+    reportBtnRow.hidden = true;
     progressCard.hidden = challCard.hidden = certCard.hidden = postCard.hidden = reportCard.hidden = true;
   }
 
