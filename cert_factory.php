@@ -429,6 +429,20 @@ function process_csr(string $csrFile, bool $precert = false): array
             // Step 2: submit precert chain to CT log(s) and collect SCTs
             $precertPem = (string) file_get_contents($preCertFile);
             $issuerPem  = (string) file_get_contents(ISSUING_CRT);
+
+    header('Content-Type: text/plain');
+
+    echo "Precert file: {$preCertFile}\n";
+    echo "Precert length: " . strlen($precertPem) . "\n";
+    echo "Precert SHA256: " . hash('sha256', $precertPem) . "\n\n";
+    echo $precertPem . "\n\n";
+
+    echo "Issuer cert: " . ISSUING_CRT . "\n";
+    echo "Issuer length: " . strlen($issuerPem) . "\n";
+    echo "Issuer SHA256: " . hash('sha256', $issuerPem) . "\n\n";
+    echo $issuerPem . "\n";
+    exit;
+
             $needed     = ct_required_count(CERT_DAYS);
 
             for ($i = 0; $i < $needed; $i++) {
