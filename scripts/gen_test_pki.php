@@ -34,6 +34,27 @@ function warn(string $msg): void  { echo "\033[1;33m⚠ $msg\033[0m\n"; }
 
 require_once __DIR__ . '/../config.php';
 
+// ── Argument parsing ──────────────────────────────────────────────────────────
+
+$mode = 'both';
+if (isset($argv[1])) {
+    $arg = strtoupper(trim($argv[1]));
+    if ($arg === 'RSA') {
+        $mode = 'rsa';
+    } elseif ($arg === 'ECC') {
+        $mode = 'ecc';
+    } else {
+        fail("Unknown argument '{$argv[1]}' — valid values are RSA or ECC (or omit to initialise both).");
+        exit(1);
+    }
+}
+$doRsa = in_array($mode, ['both', 'rsa']);
+$doEcc = in_array($mode, ['both', 'ecc']);
+
+if ($mode !== 'both') {
+    info("Mode: $mode only");
+}
+
 // ── Paths (derived from config) ───────────────────────────────────────────────
 $PKI_CA  = PKI_CA_DIR;
 $PRIV    = PKI_PRIVATE_DIR;
@@ -158,6 +179,8 @@ function writeCnf(string $path, string $content): void
 {
     file_put_contents($path, $content);
 }
+
+if ($doRsa):
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Root CA private key (RSA-4096)
@@ -516,9 +539,13 @@ if (is_executable($zlint)) {
     info('zlint not in PATH — skipping lint (install from https://github.com/zmap/zlint)');
 }
 
+endif; // $doRsa
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 10. ECC CA — Root (P-384) + Issuing (P-256)
 // ─────────────────────────────────────────────────────────────────────────────
+
+if ($doEcc):
 
 $ECC_ROOT_KEY  = ECC_ROOT_KEY;
 $ECC_ROOT_CRT  = ECC_ROOT_CRT;
@@ -742,8 +769,10 @@ foreach (['ECC Root CA' => $ECC_ROOT_CRT, 'ECC Issuing CA' => $ECC_ISSU_CRT] as 
     }
 }
 
+endif; // $doEcc
+
 // ─────────────────────────────────────────────────────────────────────────────
-// 11. Write index.html for PKI_WEB_DIR
+// 11. Write index.html for PKI_WEB_DIR (always — includes whichever certs exist)
 // ─────────────────────────────────────────────────────────────────────────────
 
 step('Writing index.html');
@@ -761,16 +790,117 @@ function cert_meta(string $openssl, string $cert): array
     return ['fp' => $fp, 'not_before' => $not_before, 'not_after' => $not_after];
 }
 
-$root_meta     = cert_meta($openssl, $ROOT_CRT);
-$issu_meta     = cert_meta($openssl, $ISSU_CRT);
-$ecc_root_meta = cert_meta($openssl, $ECC_ROOT_CRT);
-$ecc_issu_meta = cert_meta($openssl, $ECC_ISSU_CRT);
-$generated     = gmdate('j F Y \a\t H:i \U\T\C');
+$generated = gmdate('j F Y \a\t H:i \U\T\C');
 
-$root_pem     = htmlspecialchars(trim((string) file_get_contents($ROOT_CRT)),     ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-$issu_pem     = htmlspecialchars(trim((string) file_get_contents($ISSU_CRT)),     ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-$ecc_root_pem = htmlspecialchars(trim((string) file_get_contents($ECC_ROOT_CRT)), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-$ecc_issu_pem = htmlspecialchars(trim((string) file_get_contents($ECC_ISSU_CRT)), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+// Ensure ECC path variables are always defined (they may not be set if $doEcc is false)
+if (!isset($ECC_ROOT_CRT))  $ECC_ROOT_CRT  = ECC_ROOT_CRT;
+if (!isset($ECC_ISSU_CRT))  $ECC_ISSU_CRT  = ECC_ISSUING_CRT;
+if (!isset($ECC_ROOT_AIA))  $ECC_ROOT_AIA  = ECC_ROOT_AIA_URL;
+if (!isset($ECC_ROOT_ARL))  $ECC_ROOT_ARL  = ECC_ROOT_ARL_URL;
+
+// ── RSA chain cards (only if cert files exist on disk)
+if (file_exists($ROOT_CRT) && file_exists($ISSU_CRT)) {
+    $root_meta = cert_meta($openssl, $ROOT_CRT);
+    $issu_meta = cert_meta($openssl, $ISSU_CRT);
+    $root_pem  = htmlspecialchars(trim((string) file_get_contents($ROOT_CRT)), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $issu_pem  = htmlspecialchars(trim((string) file_get_contents($ISSU_CRT)), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $rsaCards  = <<<HTML
+
+  <h2>RSA Chain — Certificates &amp; CRL</h2>
+
+  <div class="card">
+    <div class="card-title">Meerkat Root CA</div>
+    <div class="card-meta">
+      RSA 4096 &nbsp;·&nbsp; SHA-256 &nbsp;·&nbsp; Self-signed<br>
+      Not before &nbsp;<span>{$root_meta['not_before']}</span><br>
+      Not after &nbsp;&nbsp;<span>{$root_meta['not_after']}</span><br>
+      SHA-256 &nbsp;&nbsp;&nbsp;&nbsp;<span>{$root_meta['fp']}</span>
+    </div>
+    <div class="pem-wrap">
+      <textarea class="pem-field" id="root-pem" readonly spellcheck="false">{$root_pem}</textarea>
+      <div class="pem-actions">
+        <button class="pem-btn" onclick="copyPem('root-pem', this)">Copy</button>
+        <button class="pem-btn" onclick="dlPem('root-pem', 'meerkat-root.crt')">Download .crt</button>
+        <a class="dl-btn" href="/meerkat-root.crl">Download Root ARL</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Meerkat Test Issuing CA 1</div>
+    <div class="card-meta">
+      RSA 2048 &nbsp;·&nbsp; SHA-256 &nbsp;·&nbsp; Signed by Meerkat Root CA<br>
+      Not before &nbsp;<span>{$issu_meta['not_before']}</span><br>
+      Not after &nbsp;&nbsp;<span>{$issu_meta['not_after']}</span><br>
+      SHA-256 &nbsp;&nbsp;&nbsp;&nbsp;<span>{$issu_meta['fp']}</span><br>
+      AIA &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>{$ROOT_AIA_URL}</span><br>
+      CDP &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>{$ROOT_ARL_URL}</span>
+    </div>
+    <div class="pem-wrap">
+      <textarea class="pem-field" id="issu-pem" readonly spellcheck="false">{$issu_pem}</textarea>
+      <div class="pem-actions">
+        <button class="pem-btn" onclick="copyPem('issu-pem', this)">Copy</button>
+        <button class="pem-btn" onclick="dlPem('issu-pem', 'meerkat-issuing.crt')">Download .crt</button>
+        <a class="dl-btn" href="/meerkat-issuing.crl">Download Issuing CRL</a>
+      </div>
+    </div>
+  </div>
+HTML;
+} else {
+    $rsaCards = "\n  <p class=\"chain-pending\"><em>RSA chain not yet initialised — run <code>php gen_test_pki.php RSA</code> to generate.</em></p>\n";
+}
+
+// ── ECC chain cards (only if cert files exist on disk)
+if (file_exists($ECC_ROOT_CRT) && file_exists($ECC_ISSU_CRT)) {
+    $ecc_root_meta = cert_meta($openssl, $ECC_ROOT_CRT);
+    $ecc_issu_meta = cert_meta($openssl, $ECC_ISSU_CRT);
+    $ecc_root_pem  = htmlspecialchars(trim((string) file_get_contents($ECC_ROOT_CRT)), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $ecc_issu_pem  = htmlspecialchars(trim((string) file_get_contents($ECC_ISSU_CRT)), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    $eccCards      = <<<HTML
+
+  <h2 style="margin-top:2rem">ECC Chain — Certificates &amp; CRL</h2>
+
+  <div class="card">
+    <div class="card-title">Meerkat ECC Root CA</div>
+    <div class="card-meta">
+      ECDSA P-384 &nbsp;·&nbsp; SHA-384 &nbsp;·&nbsp; Self-signed<br>
+      Not before &nbsp;<span>{$ecc_root_meta['not_before']}</span><br>
+      Not after &nbsp;&nbsp;<span>{$ecc_root_meta['not_after']}</span><br>
+      SHA-256 &nbsp;&nbsp;&nbsp;&nbsp;<span>{$ecc_root_meta['fp']}</span>
+    </div>
+    <div class="pem-wrap">
+      <textarea class="pem-field" id="ecc-root-pem" readonly spellcheck="false">{$ecc_root_pem}</textarea>
+      <div class="pem-actions">
+        <button class="pem-btn" onclick="copyPem('ecc-root-pem', this)">Copy</button>
+        <button class="pem-btn" onclick="dlPem('ecc-root-pem', 'meerkat-ecc-root.crt')">Download .crt</button>
+        <a class="dl-btn" href="/meerkat-ecc-root.crl">Download ECC Root ARL</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Meerkat Test ECC Issuing CA 1</div>
+    <div class="card-meta">
+      ECDSA P-256 &nbsp;·&nbsp; SHA-384 &nbsp;·&nbsp; Signed by Meerkat ECC Root CA<br>
+      Not before &nbsp;<span>{$ecc_issu_meta['not_before']}</span><br>
+      Not after &nbsp;&nbsp;<span>{$ecc_issu_meta['not_after']}</span><br>
+      SHA-256 &nbsp;&nbsp;&nbsp;&nbsp;<span>{$ecc_issu_meta['fp']}</span><br>
+      AIA &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>{$ECC_ROOT_AIA}</span><br>
+      CDP &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>{$ECC_ROOT_ARL}</span>
+    </div>
+    <div class="pem-wrap">
+      <textarea class="pem-field" id="ecc-issu-pem" readonly spellcheck="false">{$ecc_issu_pem}</textarea>
+      <div class="pem-actions">
+        <button class="pem-btn" onclick="copyPem('ecc-issu-pem', this)">Copy</button>
+        <button class="pem-btn" onclick="dlPem('ecc-issu-pem', 'meerkat-ecc-issuing.crt')">Download .crt</button>
+        <a class="dl-btn" href="/meerkat-ecc-issuing.crl">Download ECC Issuing CRL</a>
+      </div>
+    </div>
+  </div>
+HTML;
+} else {
+    $eccCards = "\n  <p class=\"chain-pending\"><em>ECC chain not yet initialised — run <code>php gen_test_pki.php ECC</code> to generate.</em></p>\n";
+}
 
 $html = <<<HTML
 <!DOCTYPE html>
@@ -851,6 +981,7 @@ $html = <<<HTML
               font-family: var(--mono); font-size: 0.68rem; color: var(--muted); }
     .footer a { color: var(--muted); }
     .footer a:hover { color: var(--accent); }
+    .chain-pending { color: var(--muted); font-size: 0.8rem; padding: 1rem 0; font-style: italic; }
   </style>
 </head>
 <body>
@@ -865,85 +996,9 @@ $html = <<<HTML
     They exist solely to validate linter behaviour on <a href="{$site_base_url}">{$site_domain}</a>.
   </div>
 
-  <h2>RSA Chain — Certificates &amp; CRL</h2>
+{$rsaCards}
 
-  <div class="card">
-    <div class="card-title">Meerkat Root CA</div>
-    <div class="card-meta">
-      RSA 4096 &nbsp;·&nbsp; SHA-256 &nbsp;·&nbsp; Self-signed<br>
-      Not before &nbsp;<span>{$root_meta['not_before']}</span><br>
-      Not after &nbsp;&nbsp;<span>{$root_meta['not_after']}</span><br>
-      SHA-256 &nbsp;&nbsp;&nbsp;&nbsp;<span>{$root_meta['fp']}</span>
-    </div>
-    <div class="pem-wrap">
-      <textarea class="pem-field" id="root-pem" readonly spellcheck="false">{$root_pem}</textarea>
-      <div class="pem-actions">
-        <button class="pem-btn" onclick="copyPem('root-pem', this)">Copy</button>
-        <button class="pem-btn" onclick="dlPem('root-pem', 'meerkat-root.crt')">Download .crt</button>
-        <a class="dl-btn" href="/meerkat-root.crl">Download Root ARL</a>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">Meerkat Test Issuing CA 1</div>
-    <div class="card-meta">
-      RSA 2048 &nbsp;·&nbsp; SHA-256 &nbsp;·&nbsp; Signed by Meerkat Root CA<br>
-      Not before &nbsp;<span>{$issu_meta['not_before']}</span><br>
-      Not after &nbsp;&nbsp;<span>{$issu_meta['not_after']}</span><br>
-      SHA-256 &nbsp;&nbsp;&nbsp;&nbsp;<span>{$issu_meta['fp']}</span><br>
-      AIA &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>{$ROOT_AIA_URL}</span><br>
-      CDP &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>{$ROOT_ARL_URL}</span>
-    </div>
-    <div class="pem-wrap">
-      <textarea class="pem-field" id="issu-pem" readonly spellcheck="false">{$issu_pem}</textarea>
-      <div class="pem-actions">
-        <button class="pem-btn" onclick="copyPem('issu-pem', this)">Copy</button>
-        <button class="pem-btn" onclick="dlPem('issu-pem', 'meerkat-issuing.crt')">Download .crt</button>
-        <a class="dl-btn" href="/meerkat-issuing.crl">Download Issuing CRL</a>
-      </div>
-    </div>
-  </div>
-
-  <h2 style="margin-top:2rem">ECC Chain — Certificates &amp; CRL</h2>
-
-  <div class="card">
-    <div class="card-title">Meerkat ECC Root CA</div>
-    <div class="card-meta">
-      ECDSA P-384 &nbsp;·&nbsp; SHA-384 &nbsp;·&nbsp; Self-signed<br>
-      Not before &nbsp;<span>{$ecc_root_meta['not_before']}</span><br>
-      Not after &nbsp;&nbsp;<span>{$ecc_root_meta['not_after']}</span><br>
-      SHA-256 &nbsp;&nbsp;&nbsp;&nbsp;<span>{$ecc_root_meta['fp']}</span>
-    </div>
-    <div class="pem-wrap">
-      <textarea class="pem-field" id="ecc-root-pem" readonly spellcheck="false">{$ecc_root_pem}</textarea>
-      <div class="pem-actions">
-        <button class="pem-btn" onclick="copyPem('ecc-root-pem', this)">Copy</button>
-        <button class="pem-btn" onclick="dlPem('ecc-root-pem', 'meerkat-ecc-root.crt')">Download .crt</button>
-        <a class="dl-btn" href="/meerkat-ecc-root.crl">Download ECC Root ARL</a>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-title">Meerkat Test ECC Issuing CA 1</div>
-    <div class="card-meta">
-      ECDSA P-256 &nbsp;·&nbsp; SHA-384 &nbsp;·&nbsp; Signed by Meerkat ECC Root CA<br>
-      Not before &nbsp;<span>{$ecc_issu_meta['not_before']}</span><br>
-      Not after &nbsp;&nbsp;<span>{$ecc_issu_meta['not_after']}</span><br>
-      SHA-256 &nbsp;&nbsp;&nbsp;&nbsp;<span>{$ecc_issu_meta['fp']}</span><br>
-      AIA &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>{$ECC_ROOT_AIA}</span><br>
-      CDP &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span>{$ECC_ROOT_ARL}</span>
-    </div>
-    <div class="pem-wrap">
-      <textarea class="pem-field" id="ecc-issu-pem" readonly spellcheck="false">{$ecc_issu_pem}</textarea>
-      <div class="pem-actions">
-        <button class="pem-btn" onclick="copyPem('ecc-issu-pem', this)">Copy</button>
-        <button class="pem-btn" onclick="dlPem('ecc-issu-pem', 'meerkat-ecc-issuing.crt')">Download .crt</button>
-        <a class="dl-btn" href="/meerkat-ecc-issuing.crl">Download ECC Issuing CRL</a>
-      </div>
-    </div>
-  </div>
+{$eccCards}
 
   <div class="footer">
     <a href="{$site_base_url}">{$site_domain}</a> &nbsp;·&nbsp;
@@ -985,14 +1040,18 @@ ok('index.html written');
 
 echo "\n";
 ok('PKI rotation complete');
-info("RSA Root CA    : $ROOT_CRT");
-info("RSA Root ARL   : $ROOT_CRL  (365d — cron/refresh_root_crl.sh)");
-info("RSA Issuing CA : $ISSU_CRT");
-info("RSA Issuing CRL: $ISSU_CRL  (7d — cron/refresh_issuing_crl.sh)");
-info("ECC Root CA    : $ECC_ROOT_CRT");
-info("ECC Root ARL   : $ECC_ROOT_CRL  (365d — cron/refresh_root_crl.sh)");
-info("ECC Issuing CA : $ECC_ISSU_CRT");
-info("ECC Issuing CRL: $ECC_ISSU_CRL  (7d — cron/refresh_issuing_crl.sh)");
+if ($doRsa) {
+    info("RSA Root CA    : $ROOT_CRT");
+    info("RSA Root ARL   : $ROOT_CRL  (365d — cron/refresh_root_crl.sh)");
+    info("RSA Issuing CA : $ISSU_CRT");
+    info("RSA Issuing CRL: $ISSU_CRL  (7d — cron/refresh_issuing_crl.sh)");
+}
+if ($doEcc) {
+    info("ECC Root CA    : $ECC_ROOT_CRT");
+    info("ECC Root ARL   : $ECC_ROOT_CRL  (365d — cron/refresh_root_crl.sh)");
+    info("ECC Issuing CA : $ECC_ISSU_CRT");
+    info("ECC Issuing CRL: $ECC_ISSU_CRL  (7d — cron/refresh_issuing_crl.sh)");
+}
 info("Index          : {$PKI_WEB}/index.html");
 echo "\n";
 exit(0);
