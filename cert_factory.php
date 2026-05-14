@@ -619,7 +619,7 @@ function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = fal
             'certificatePolicies    = 2.23.140.1.2.1',
             'authorityInfoAccess    = caIssuers;URI:' . AIA_URL,
             'crlDistributionPoints  = URI:' . CDP_URL,
-            'subjectAltName         = ' . $sanStr,
+            'subjectAltName         = ' . ($omit_cn ? 'critical, ' : '') . $sanStr,
         ];
 
         if ($precert) {
