@@ -220,11 +220,14 @@ function build_sct(string $tbs_clean, string $spki_hash, array $log): array
     $ds = "\x04\x03" . pack('n', strlen($sig_der)) . $sig_der;
 
     return [
-        'sct_version' => 0,
-        'id'          => base64_encode($log['log_id']),
-        'timestamp'   => $ts,
-        'extensions'  => '',
-        'signature'   => base64_encode($ds),
+        'sct_version'     => 0,
+        'id'              => base64_encode($log['log_id']),
+        'timestamp'       => $ts,
+        'extensions'      => '',
+        'signature'       => base64_encode($ds),
+        // Non-standard fields — for display in tooling; RFC 6962 clients ignore unknown fields
+        'log_description' => $log['meta'][0],
+        'log_operator'    => $log['meta'][1],
     ];
 }
 

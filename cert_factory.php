@@ -343,14 +343,13 @@ function process_csr(string $csrFile, bool $precert = false): array
         return ['error' => 'Another issuance is in progress — please retry in a moment'];
     }
 
-    $extFile  = sys_get_temp_dir() . '/cf_ext_'  . bin2hex(random_bytes(8)) . '.cnf';
-    $certFile = sys_get_temp_dir() . '/cf_cert_' . bin2hex(random_bytes(8)) . '.pem';
+    $extFile     = sys_get_temp_dir() . '/cf_ext_'  . bin2hex(random_bytes(8)) . '.cnf';
+    $certFile    = sys_get_temp_dir() . '/cf_cert_' . bin2hex(random_bytes(8)) . '.pem';
+    $preExtFile  = null;
+    $preCertFile = null;
+    $scts        = [];
 
     try {
-        // Random 128-bit serial — written before each signing so every cert
-        // gets fresh entropy (BR §7.1.2.4 requires ≥64 bits; 128 is standard)
-        file_put_contents(ISSUING_DB_SRL, strtoupper(bin2hex(random_bytes(16))) . "\n");
-
         // CN must never be a wildcard — use first non-wildcard SAN
         $certCn = '';
         foreach ($sans as $s) {
@@ -374,27 +373,92 @@ function process_csr(string $csrFile, bool $precert = false): array
             'crlDistributionPoints  = URI:' . CDP_URL,
             'subjectAltName         = ' . $sanStr,
         ];
+
         if ($precert) {
+            // ── Precertificate (user-requested) ──────────────────────────────────
             // RFC 6962 §3.1 CT poison extension — critical, ASN.1 NULL (DER 05 00)
             $extLines[] = '1.3.6.1.4.1.11129.2.4.3 = critical, DER:05:00';
-        }
-        file_put_contents($extFile, implode("\n", $extLines));
+            file_put_contents($extFile, implode("\n", $extLines));
+            // BR §7.1.2.4 random 128-bit serial
+            file_put_contents(ISSUING_DB_SRL, strtoupper(bin2hex(random_bytes(16))) . "\n");
 
-        $r = run_cmd([
-            OPENSSL, 'ca',
-            '-config',     ISSUING_DB_CNF,
-            '-in',         $csrFile,
-            '-out',        $certFile,
-            '-subj',       '/CN=' . $certCn,
-            '-extfile',    $extFile,
-            '-extensions', 'v3_ee',
-            '-days',       (string) CERT_DAYS,
-            '-notext',
-            '-batch',
-        ]);
+            $r = run_cmd([
+                OPENSSL, 'ca',
+                '-config',     ISSUING_DB_CNF,
+                '-in',         $csrFile,
+                '-out',        $certFile,
+                '-subj',       '/CN=' . $certCn,
+                '-extfile',    $extFile,
+                '-extensions', 'v3_ee',
+                '-days',       (string) CERT_DAYS,
+                '-notext',
+                '-batch',
+            ]);
+            if (!$r['ok']) {
+                return ['error' => 'Signing failed: ' . trim($r['err'] ?: $r['out'])];
+            }
 
-        if (!$r['ok']) {
-            return ['error' => 'Signing failed: ' . trim($r['err'] ?: $r['out'])];
+        } else {
+            // ── Regular certificate — issue precert → get SCTs → issue final cert ─
+
+            // Step 1: issue precert internally (not returned to user)
+            $preExtFile  = sys_get_temp_dir() . '/cf_ext_pre_'  . bin2hex(random_bytes(8)) . '.cnf';
+            $preCertFile = sys_get_temp_dir() . '/cf_cert_pre_' . bin2hex(random_bytes(8)) . '.pem';
+
+            file_put_contents($preExtFile, implode("\n", array_merge($extLines, [
+                '1.3.6.1.4.1.11129.2.4.3 = critical, DER:05:00',
+            ])));
+            file_put_contents(ISSUING_DB_SRL, strtoupper(bin2hex(random_bytes(16))) . "\n");
+
+            $rPre = run_cmd([
+                OPENSSL, 'ca',
+                '-config',     ISSUING_DB_CNF,
+                '-in',         $csrFile,
+                '-out',        $preCertFile,
+                '-subj',       '/CN=' . $certCn,
+                '-extfile',    $preExtFile,
+                '-extensions', 'v3_ee',
+                '-days',       (string) CERT_DAYS,
+                '-notext',
+                '-batch',
+            ]);
+            if (!$rPre['ok']) {
+                return ['error' => 'Precert issuance failed: ' . trim($rPre['err'] ?: $rPre['out'])];
+            }
+
+            // Step 2: submit precert chain to CT log(s) and collect SCTs
+            $precertPem = (string) file_get_contents($preCertFile);
+            $issuerPem  = (string) file_get_contents(ISSUING_CRT);
+            $needed     = ct_required_count(CERT_DAYS);
+
+            for ($i = 0; $i < $needed; $i++) {
+                $sct = ct_submit($precertPem, $issuerPem);
+                if (isset($sct['error'])) {
+                    return ['error' => 'CT log submission failed: ' . $sct['error']];
+                }
+                $scts[] = $sct;
+            }
+
+            // Step 3: issue final cert with embedded SCT list (OID 1.3.6.1.4.1.11129.2.4.2)
+            $extLines[] = '1.3.6.1.4.1.11129.2.4.2 = ' . ct_build_sct_ext($scts);
+            file_put_contents($extFile, implode("\n", $extLines));
+            file_put_contents(ISSUING_DB_SRL, strtoupper(bin2hex(random_bytes(16))) . "\n");
+
+            $r = run_cmd([
+                OPENSSL, 'ca',
+                '-config',     ISSUING_DB_CNF,
+                '-in',         $csrFile,
+                '-out',        $certFile,
+                '-subj',       '/CN=' . $certCn,
+                '-extfile',    $extFile,
+                '-extensions', 'v3_ee',
+                '-days',       (string) CERT_DAYS,
+                '-notext',
+                '-batch',
+            ]);
+            if (!$r['ok']) {
+                return ['error' => 'Signing failed: ' . trim($r['err'] ?: $r['out'])];
+            }
         }
 
         $certPem = (string) file_get_contents($certFile);
@@ -405,16 +469,20 @@ function process_csr(string $csrFile, bool $precert = false): array
         $info = parse_cert($certFile);
 
         return [
-            'ok'         => true,
-            'precert'    => $precert,
-            'certificate'=> trim($certPem),
-            'subject'    => 'CN=' . $certCn,
-            'sans'       => $sans,
-            'key_bits'   => $keyBits,
-            'issuer'     => $info['issuer']     ?? 'CN=Meerkat Test Issuing CA 1',
-            'not_before' => $info['not_before'] ?? '',
-            'not_after'  => $info['not_after']  ?? '',
-            'serial'     => $info['serial']     ?? '',
+            'ok'          => true,
+            'precert'     => $precert,
+            'scts'        => array_map(fn($s) => [
+                'log'      => $s['log_description'] ?? 'Meerkat Testing CT Log',
+                'operator' => $s['log_operator']    ?? '',
+            ], $scts),
+            'certificate' => trim($certPem),
+            'subject'     => 'CN=' . $certCn,
+            'sans'        => $sans,
+            'key_bits'    => $keyBits,
+            'issuer'      => $info['issuer']     ?? 'CN=Meerkat Test Issuing CA 1',
+            'not_before'  => $info['not_before'] ?? '',
+            'not_after'   => $info['not_after']  ?? '',
+            'serial'      => $info['serial']     ?? '',
         ];
 
     } finally {
@@ -422,6 +490,8 @@ function process_csr(string $csrFile, bool $precert = false): array
         fclose($lock);
         @unlink($extFile);
         @unlink($certFile);
+        if ($preExtFile)  @unlink($preExtFile);
+        if ($preCertFile) @unlink($preCertFile);
     }
 }
 
@@ -448,6 +518,85 @@ function extract_cn(string $text): string
     }
     return '';
 }
+
+// ── CT log integration ────────────────────────────────────────────────────────
+
+function ct_required_count(int $days): int
+{
+    // Chrome CT policy / BR SCT count requirements by validity period
+    if ($days <= 180) return 2;
+    if ($days <= 397) return 3;
+    return 4;
+}
+
+function ct_submit(string $precert_pem, string $issuer_pem): array
+{
+    // PEM body is already base64(DER) — strip headers + whitespace to get raw base64
+    $pem_b64 = static fn(string $p): string =>
+        preg_replace('/\s+/', '', preg_replace('/-----[^-]+-----/', '', $p));
+
+    $payload = json_encode(['chain' => [
+        $pem_b64($precert_pem),
+        $pem_b64($issuer_pem),
+    ]]);
+
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL            => 'https://thameur.org/ct/v1/add-pre-chain',
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $payload,
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 10,
+        // Bypass DNS — connect to loopback directly to avoid an external round-trip
+        CURLOPT_RESOLVE        => ['thameur.org:443:127.0.0.1'],
+    ]);
+    $body = (string) curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $cerr = curl_error($ch);
+    curl_close($ch);
+
+    if ($cerr !== '')  return ['error' => "cURL: $cerr"];
+    if ($code !== 200) return ['error' => "CT log HTTP $code: " . substr($body, 0, 300)];
+    $json = json_decode($body, true);
+    if (!is_array($json) || !isset($json['id'])) return ['error' => 'Invalid CT log response'];
+    return $json;
+}
+
+function ct_sct_binary(array $sct): string
+{
+    // Binary SCT (RFC 6962 §3.2): version(1) + log_id(32) + timestamp(8 BE uint64)
+    // + extensions_len(2=0) + DigitallySigned
+    return "\x00"
+         . base64_decode($sct['id'])
+         . pack('J', (int) $sct['timestamp'])
+         . "\x00\x00"
+         . base64_decode($sct['signature']);
+}
+
+function ct_build_sct_ext(array $scts): string
+{
+    // TLS-serialized SignedCertificateTimestampList (RFC 6962 §3.3)
+    $entries = '';
+    foreach ($scts as $sct) {
+        $bin      = ct_sct_binary($sct);
+        $entries .= pack('n', strlen($bin)) . $bin;
+    }
+    $list = pack('n', strlen($entries)) . $entries;
+
+    // Extension value is OCTET STRING { list_bytes } (OID 1.3.6.1.4.1.11129.2.4.2)
+    $len = strlen($list);
+    $der = $len < 0x80
+        ? "\x04" . chr($len) . $list
+        : ($len < 0x100
+            ? "\x04\x81" . chr($len) . $list
+            : "\x04\x82" . pack('n', $len) . $list);
+
+    // Return as OpenSSL DER: literal for the extension file
+    return 'DER:' . implode(':', str_split(bin2hex($der), 2));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 if (!defined('DNS_CAA')) define('DNS_CAA', 256);
 
