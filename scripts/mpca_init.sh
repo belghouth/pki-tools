@@ -82,7 +82,7 @@ init_ca_db() {
   mkdir -p "$dir"/{certs,crl,csr,private}
   chmod 700 "$dir/private"
   # Always reset — this function is only called when the user chose to reinitialise.
-  touch "$dir/index.txt"
+  > "$dir/index.txt"
   printf 'unique_subject = no\n' > "$dir/index.txt.attr"
   openssl rand -hex 8 | tr '[:lower:]' '[:upper:]' > "$dir/serial"
   printf '01\n' > "$dir/crlnumber"
