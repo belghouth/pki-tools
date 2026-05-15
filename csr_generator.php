@@ -4,10 +4,11 @@ require_once __DIR__ . '/config.php';
 
 // ── Allowed values ────────────────────────────────────────────────────────────
 
-const ALLOWED_ALGOS  = ['rsa', 'ec', 'ed25519'];
-const ALLOWED_HASHES = ['sha256', 'sha384', 'sha512'];
-const ALLOWED_RSA_SIZES = [2048, 3072, 4096];
-const ALLOWED_EC_CURVES = ['P-256', 'P-384', 'P-521'];
+const ALLOWED_ALGOS     = ['rsa', 'ec', 'ed25519', 'dsa'];
+const ALLOWED_HASHES    = ['md5', 'sha1', 'sha256', 'sha384', 'sha512'];
+const ALLOWED_RSA_SIZES = [512, 1024, 2048, 3072, 4096];
+const ALLOWED_DSA_SIZES = [1024, 2048, 3072];
+const ALLOWED_EC_CURVES = ['P-192', 'P-224', 'P-256', 'P-384', 'P-521'];
 
 // Known DN attribute names → [oid, encoding, maxLen, deprecated]
 // encoding: utf8 | print | ia5
@@ -134,6 +135,13 @@ function generate_csr(array $p): array
         $curve = $p['curve'];
         $r = run_proc([$openssl, 'genpkey', '-algorithm', 'EC',
             '-pkeyopt', "ec_paramgen_curve:$curve", '-out', $keyFile]);
+    } elseif ($algo === 'dsa') {
+        $bits = (int) $p['keySize'];
+        $paramsFile = "$tmp/dsa_params.pem";
+        $r = run_proc([$openssl, 'genpkey', '-genparam', '-algorithm', 'DSA',
+            '-pkeyopt', "dsa_paramgen_bits:$bits", '-out', $paramsFile]);
+        if (!$r['ok']) return ['error' => 'DSA param generation failed: ' . trim($r['err'])];
+        $r = run_proc([$openssl, 'genpkey', '-paramfile', $paramsFile, '-out', $keyFile]);
     } else {
         $r = run_proc([$openssl, 'genpkey', '-algorithm', 'Ed25519', '-out', $keyFile]);
     }
@@ -179,6 +187,10 @@ function generate_csr(array $p): array
     // Build openssl req command
     $cmd = [$openssl, 'req', '-new', '-key', $keyFile, '-out', $csrFile, '-config', $cnfFile];
     if ($algo !== 'ed25519') $cmd = array_merge($cmd, ["-$hash"]);
+    // Legacy security level needed for MD5 or SHA-1 on OpenSSL 3
+    if (in_array($hash, ['md5', 'sha1'], true)) {
+        $cmd = array_merge($cmd, ['-legacy']);
+    }
 
     $r = run_proc($cmd);
     if (!$r['ok']) return ['error' => 'CSR generation failed: ' . trim($r['err'])];
@@ -219,8 +231,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         { echo json_encode(['error' => "Invalid algorithm: $algo"]); exit; }
     if ($algo !== 'ed25519' && !in_array($hash, ALLOWED_HASHES, true))
         { echo json_encode(['error' => "Invalid hash: $hash"]); exit; }
-    if ($algo === 'rsa' && !in_array($keySize, ALLOWED_RSA_SIZES, true))
-        { echo json_encode(['error' => "Invalid RSA key size: $keySize"]); exit; }
+    if (in_array($algo, ['rsa', 'dsa'], true) && !in_array($keySize, $algo === 'dsa' ? ALLOWED_DSA_SIZES : ALLOWED_RSA_SIZES, true))
+        { echo json_encode(['error' => "Invalid key size: $keySize"]); exit; }
     if ($algo === 'ec' && !in_array($curve, ALLOWED_EC_CURVES, true))
         { echo json_encode(['error' => "Invalid curve: $curve"]); exit; }
     if (!is_array($dn) || !is_array($san))
@@ -332,8 +344,8 @@ $pki_base_url  = PKI_BASE_URL;
                       background: rgba(0,212,170,.08); border: 1px solid rgba(0,212,170,.2);
                       border-radius: 3px; padding: .1em .4em; white-space: nowrap; flex-shrink: 0; }
 
-    /* Deprecated option in select */
-    option.deprecated { color: var(--warn); }
+    /* Deprecated / retired options in selects */
+    option.deprecated, option.retired { color: var(--warn); }
 
     /* Buttons */
     .btn-primary { background: var(--accent); color: #000; border: none; border-radius: 5px;
@@ -388,33 +400,66 @@ $pki_base_url  = PKI_BASE_URL;
       <div class="param-group">
         <label>Algorithm</label>
         <select id="algo">
-          <option value="rsa">RSA</option>
-          <option value="ec" selected>ECDSA</option>
-          <option value="ed25519">Ed25519</option>
+          <optgroup label="Current">
+            <option value="rsa">RSA</option>
+            <option value="ec" selected>ECDSA</option>
+            <option value="ed25519">Ed25519</option>
+          </optgroup>
+          <optgroup label="⚠ Retired">
+            <option value="dsa" class="retired">DSA — withdrawn from BR</option>
+          </optgroup>
         </select>
       </div>
       <div class="param-group" id="rsaSizeGroup" style="display:none">
         <label>Key size</label>
         <select id="rsaSize">
-          <option value="2048" selected>2048 bit &nbsp;(recommended)</option>
-          <option value="3072">3072 bit</option>
-          <option value="4096">4096 bit</option>
+          <optgroup label="Current">
+            <option value="2048" selected>2048 bit &nbsp;(recommended)</option>
+            <option value="3072">3072 bit</option>
+            <option value="4096">4096 bit</option>
+          </optgroup>
+          <optgroup label="⚠ Retired">
+            <option value="1024" class="retired">1024 bit — broken</option>
+            <option value="512"  class="retired">512 bit — severely broken</option>
+          </optgroup>
+        </select>
+      </div>
+      <div class="param-group" id="dsaSizeGroup" style="display:none">
+        <label>Key size</label>
+        <select id="dsaSize">
+          <optgroup label="⚠ Retired — DSA not in BR">
+            <option value="2048" selected>2048 bit</option>
+            <option value="1024" class="retired">1024 bit — broken</option>
+            <option value="3072">3072 bit</option>
+          </optgroup>
         </select>
       </div>
       <div class="param-group" id="ecCurveGroup">
         <label>Curve</label>
         <select id="ecCurve">
-          <option value="P-256" selected>P-256 &nbsp;(recommended)</option>
-          <option value="P-384">P-384</option>
-          <option value="P-521">P-521</option>
+          <optgroup label="Current (BR §7.1.3.1)">
+            <option value="P-256" selected>P-256 &nbsp;(recommended)</option>
+            <option value="P-384">P-384</option>
+            <option value="P-521">P-521</option>
+          </optgroup>
+          <optgroup label="⚠ Retired">
+            <option value="P-224" class="retired">P-224 — not in BR §7.1.3.1</option>
+            <option value="P-192" class="retired">P-192 — too short, withdrawn</option>
+          </optgroup>
         </select>
       </div>
       <div class="param-group" id="hashGroup">
         <label>Signature hash</label>
         <select id="hashAlgo">
-          <option value="sha256" selected>SHA-256 &nbsp;(recommended)</option>
-          <option value="sha384">SHA-384</option>
-          <option value="sha512">SHA-512</option>
+          <optgroup label="Current">
+            <option value="sha256" selected>SHA-256 &nbsp;(recommended)</option>
+            <option value="sha384">SHA-384</option>
+            <option value="sha512">SHA-512</option>
+          </optgroup>
+          <optgroup label="⚠ Retired">
+            <option value="sha1" class="retired">SHA-1 — forbidden in TLS (BR §7.1.3.2)</option>
+            <option value="md5"  class="retired">MD5 — cryptographically broken</option>
+          </optgroup>
         </select>
       </div>
     </div>
@@ -716,19 +761,18 @@ function removeRow(id) {
 // ── Key param toggles ─────────────────────────────────────────────────────────
 document.getElementById('algo').addEventListener('change', function(){
   var v = this.value;
-  document.getElementById('rsaSizeGroup').style.display = v === 'rsa'   ? '' : 'none';
-  document.getElementById('ecCurveGroup').style.display = v === 'ec'    ? '' : 'none';
-  document.getElementById('hashGroup').style.display    = v !== 'ed25519' ? '' : 'none';
-  // Enforce SHA-384 recommendation for P-384 and P-521
+  document.getElementById('rsaSizeGroup').style.display  = v === 'rsa'     ? '' : 'none';
+  document.getElementById('dsaSizeGroup').style.display  = v === 'dsa'     ? '' : 'none';
+  document.getElementById('ecCurveGroup').style.display  = v === 'ec'      ? '' : 'none';
+  document.getElementById('hashGroup').style.display     = v !== 'ed25519' ? '' : 'none';
   if (v === 'ec') syncHashToCurve();
 });
 document.getElementById('ecCurve').addEventListener('change', syncHashToCurve);
 function syncHashToCurve() {
-  var curve = document.getElementById('ecCurve').value;
+  var curve   = document.getElementById('ecCurve').value;
   var hashSel = document.getElementById('hashAlgo');
-  if (curve === 'P-384' || curve === 'P-521') {
-    if (hashSel.value === 'sha256') hashSel.value = 'sha384';
-  }
+  if ((curve === 'P-384' || curve === 'P-521') && hashSel.value === 'sha256')
+    hashSel.value = 'sha384';
 }
 
 // ── Generate ──────────────────────────────────────────────────────────────────
@@ -770,7 +814,8 @@ function hideError() { document.getElementById('errorBox').classList.remove('sho
 async function generate() {
   hideError();
   var algo    = document.getElementById('algo').value;
-  var keySize = parseInt(document.getElementById('rsaSize').value);
+  var keySize = algo === 'dsa' ? parseInt(document.getElementById('dsaSize').value)
+                               : parseInt(document.getElementById('rsaSize').value);
   var curve   = document.getElementById('ecCurve').value;
   var hash    = document.getElementById('hashAlgo').value;
 
