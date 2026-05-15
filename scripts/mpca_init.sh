@@ -81,11 +81,11 @@ init_ca_db() {
   local dir="$1"
   mkdir -p "$dir"/{certs,crl,csr,private}
   chmod 700 "$dir/private"
-  [[ -f "$dir/index.txt" ]]      || touch "$dir/index.txt"
-  [[ -f "$dir/index.txt.attr" ]] || printf 'unique_subject = no\n' > "$dir/index.txt.attr"
-  [[ -f "$dir/serial" ]]         || openssl rand -hex 8 \
-                                      | tr '[:lower:]' '[:upper:]' > "$dir/serial"
-  [[ -f "$dir/crlnumber" ]]      || printf '01\n' > "$dir/crlnumber"
+  # Always reset — this function is only called when the user chose to reinitialise.
+  touch "$dir/index.txt"
+  printf 'unique_subject = no\n' > "$dir/index.txt.attr"
+  openssl rand -hex 8 | tr '[:lower:]' '[:upper:]' > "$dir/serial"
+  printf '01\n' > "$dir/crlnumber"
 }
 
 aia_value() {
