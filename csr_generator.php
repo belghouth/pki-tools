@@ -144,13 +144,7 @@ function generate_csr(array $p): array
     $san = $p['san'] ?? [];
     $hash = $p['hash'] ?? 'sha256';
 
-    $cnf  = "oid_section = oids\n\n";
-    $cnf .= "[oids]\n";
-    $cnf .= "jurisdictionC  = 1.3.6.1.4.1.311.60.2.1.3\n";
-    $cnf .= "jurisdictionST = 1.3.6.1.4.1.311.60.2.1.2\n";
-    $cnf .= "jurisdictionL  = 1.3.6.1.4.1.311.60.2.1.1\n\n";
-
-    $cnf .= "[req]\n";
+    $cnf  = "[req]\n";
     $cnf .= "prompt = no\n";
     $cnf .= "default_md = $hash\n";
     $cnf .= "distinguished_name = req_dn\n";
