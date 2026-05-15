@@ -154,10 +154,12 @@ function revoc_check_ocsp(string $ee_pem, string $issuer_pem): array {
         // Response signature
         'sig_algorithm' => null,
         // Freshness / compliance
-        'age_seconds'        => null,
-        'remaining_seconds'  => null,
-        'next_update_absent' => false,
-        'cabf_age_ok'        => null,  // CA/B Forum BR: max 10 days
+        'age_seconds'           => null,
+        'remaining_seconds'     => null,
+        'validity_window'       => null,  // nextUpdate − thisUpdate
+        'cabf_window_ok'        => null,  // BR §4.9.10: window ≤ 10 days
+        'next_update_absent'    => false,
+        'cabf_age_ok'           => null,  // CA/B Forum BR: max 10 days
         // Delegated responder
         'delegated'                  => false,
         'responder_cert_expiry'      => null,
@@ -261,6 +263,12 @@ function revoc_check_ocsp(string $ee_pem, string $issuer_pem): array {
             if ($ts !== false) $result['remaining_seconds'] = max(0, $ts - time());
         } else {
             $result['next_update_absent'] = true;
+        }
+        // Validity window = nextUpdate − thisUpdate = age + remaining.
+        // BR §4.9.10 requires the window to be no greater than 10 days.
+        if ($result['age_seconds'] !== null && $result['remaining_seconds'] !== null) {
+            $result['validity_window'] = $result['age_seconds'] + $result['remaining_seconds'];
+            $result['cabf_window_ok']  = $result['validity_window'] <= 864000;
         }
 
         // ── Delegated responder detection ────────────────────────────────────
@@ -813,6 +821,19 @@ function revoc_render_ocsp(array $r, string $lint_html): string {
             }
         }
         $out .= revoc_row('Remaining Validity', $rem_html);
+    }
+
+    if ($r['validity_window'] !== null) {
+        $w_html = '<code class="revoc-code">' . revoc_e(revoc_fmt_duration($r['validity_window'])) . '</code>';
+        if ($r['cabf_window_ok'] === false) {
+            $w_html .= ' <span class="revoc-bad">✗ Exceeds 10-day limit — BR §4.9.10</span>';
+        } elseif ($r['validity_window'] > 345600) {
+            // > 4 days: BR requires responses to be updated at least every 4 days
+            $w_html .= ' <span class="revoc-warn">⚠ &gt; 4 days — BR §4.9.10 recommends updating at least every 4 days</span>';
+        } else {
+            $w_html .= ' <span class="revoc-ok">✓ Within BR §4.9.10 limits</span>';
+        }
+        $out .= revoc_row('Validity Window', $w_html);
     }
 
     // ── HTTP transport ────────────────────────────────────────────────────────
