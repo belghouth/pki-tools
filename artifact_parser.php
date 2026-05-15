@@ -505,12 +505,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <script>
 (function () {
-  // ── Pre-fill from csr_generator.php via sessionStorage ───────────────────────
-  var stored = sessionStorage.getItem('meerkat_pem');
-  if (stored) {
+  // ── Pre-fill from sessionStorage ─────────────────────────────────────────────
+  // pki_prefill_cert (cert_factory Parse) takes priority over meerkat_pem (csr_generator Parse)
+  var cert = sessionStorage.getItem('pki_prefill_cert');
+  var csr  = sessionStorage.getItem('meerkat_pem');
+  sessionStorage.removeItem('pki_prefill_cert');
+  sessionStorage.removeItem('meerkat_pem');
+  var prefill = cert || csr;
+  if (prefill) {
     var ta = document.getElementById('apPem');
-    if (ta && !ta.value.trim()) ta.value = stored;
-    sessionStorage.removeItem('meerkat_pem');
+    if (ta && !ta.value.trim()) {
+      ta.value = prefill;
+      if (cert) document.getElementById('apForm').submit();
+    }
   }
 
   // ── Tab switching ────────────────────────────────────────────────────────────
@@ -581,19 +588,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       document.getElementById('tab-upload').click();
     }
   });
-
-  // ── Cert prefill from cert factory (Lint / Parse buttons) ────────────────────
-  (function () {
-    var cert = sessionStorage.getItem('pki_prefill_cert');
-    if (!cert) return;
-    sessionStorage.removeItem('pki_prefill_cert');
-    var ta = document.getElementById('apPem');
-    if (ta && !ta.value.trim()) {
-      ta.value = cert;
-      // Auto-submit so the result appears immediately
-      document.getElementById('apForm').submit();
-    }
-  }());
 
   // ── Issue Certificate from CSR ────────────────────────────────────────────────
   var btnIssueCert = document.getElementById('btnIssueCert');
