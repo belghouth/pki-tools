@@ -10,6 +10,54 @@ const ALLOWED_RSA_SIZES = [512, 1024, 2048, 3072, 4096];
 const ALLOWED_DSA_SIZES = [1024, 2048, 3072];
 const ALLOWED_EC_CURVES = ['P-192', 'P-224', 'P-256', 'P-384', 'P-521'];
 
+// ── Known-vulnerable key library (CA rejection testing) ───────────────────────
+// mode='generate': key created fresh with intentionally bad parameters.
+// mode='preloaded': key PEM embedded below; populate from the noted public source.
+
+// Source: openssl-blacklist Debian package — seed 0x0001, RSA-2048
+// (apt-get source openssl-blacklist; or https://github.com/govtwork/debian_weak_rsa)
+const DEBIAN_WEAK_RSA2048_PEM = '';
+
+// Source: https://github.com/crocs-muni/roca — roca_test_2048_pkcs8.pem
+const ROCA_RSA2048_PEM = '';
+
+const BAD_KEY_CATALOG = [
+    'rsa_e3' => [
+        'label' => 'RSA-2048, e=3',
+        'cve'   => null,
+        'ref'   => 'NIST SP 800-78-5 §3.1',
+        'desc'  => 'Public exponent e=3. Cube-root attacks apply to unpadded messages; many CA policies and linters require e ≥ 65537.',
+        'mode'  => 'generate',
+        'bits'  => 2048,
+        'exp'   => 3,
+    ],
+    'rsa_512' => [
+        'label' => 'RSA-512',
+        'cve'   => null,
+        'ref'   => 'BR §6.1.5',
+        'desc'  => '512-bit RSA moduli can be factored in hours with publicly available tools. All modern CAs reject keys below 2048 bits.',
+        'mode'  => 'generate',
+        'bits'  => 512,
+        'exp'   => 65537,
+    ],
+    'debian_rsa2048' => [
+        'label' => 'Debian Weak RSA-2048',
+        'cve'   => 'CVE-2008-0166',
+        'ref'   => null,
+        'desc'  => 'Debian OpenSSL (2006–2008) seeded its RNG only with the process PID, producing at most 32,767 distinct keys per type. Published in CA blacklists.',
+        'mode'  => 'preloaded',
+        'key'   => DEBIAN_WEAK_RSA2048_PEM,
+    ],
+    'roca_rsa2048' => [
+        'label' => 'ROCA RSA-2048',
+        'cve'   => 'CVE-2017-15361',
+        'ref'   => null,
+        'desc'  => 'Infineon TPM key with the ROCA-detectable modulus structure (Nemec et al., 2017). CAs and linters implementing the ROCA fingerprint check will reject this key.',
+        'mode'  => 'preloaded',
+        'key'   => ROCA_RSA2048_PEM,
+    ],
+];
+
 // Known DN attribute names → [oid, encoding, maxLen, deprecated]
 // encoding: utf8 | print | ia5
 const DN_ATTR_META = [
@@ -208,6 +256,77 @@ function generate_csr(array $p): array
     return ['key' => $key, 'csr' => $csr];
 }
 
+function generate_badkey_csr(string $keyId, array $p): array
+{
+    if (!array_key_exists($keyId, BAD_KEY_CATALOG))
+        return ['error' => "Unknown bad key type: $keyId"];
+
+    $entry   = BAD_KEY_CATALOG[$keyId];
+    $openssl = OPENSSL_BIN;
+    $tmp     = sys_get_temp_dir() . '/meerkat_badcsr_' . bin2hex(random_bytes(8));
+    mkdir($tmp, 0700);
+
+    register_shutdown_function(function () use ($tmp) {
+        foreach (glob("$tmp/*") as $f) @unlink($f);
+        @rmdir($tmp);
+    });
+
+    $keyFile = "$tmp/key.pem";
+    $csrFile = "$tmp/csr.pem";
+    $cnfFile = "$tmp/req.cnf";
+
+    if ($entry['mode'] === 'generate') {
+        $r = run_proc([$openssl, 'genpkey', '-algorithm', 'RSA',
+            '-pkeyopt', 'rsa_keygen_bits:' . $entry['bits'],
+            '-pkeyopt', 'rsa_keygen_pubexp:' . $entry['exp'],
+            '-out', $keyFile]);
+        if (!$r['ok']) return ['error' => 'Key generation failed: ' . trim($r['err'])];
+    } else {
+        $pem = trim($entry['key']);
+        if ($pem === '')
+            return ['error' => "Key for '$keyId' is not configured — populate the PEM constant in csr_generator.php (see source comment for where to obtain it)"];
+        file_put_contents($keyFile, $pem . "\n", LOCK_EX);
+    }
+
+    $dn  = $p['dn']  ?? [];
+    $san = $p['san'] ?? [];
+
+    $cnf  = "[req]\nprompt = no\ndefault_md = sha256\ndistinguished_name = req_dn\nstring_mask = utf8only\n";
+    if ($san) $cnf .= "req_extensions = v3_req\n";
+    $cnf .= "\n[req_dn]\n";
+    $attrIdx = [];
+    foreach ($dn as $field) {
+        $attr = $field['attr'];
+        $val  = str_replace(['\\', "\n", "\r"], ['\\\\', '', ''], $field['value']);
+        $n    = $attrIdx[$attr] ?? 0;
+        $k    = $n === 0 ? $attr : "$attr.$n";
+        $attrIdx[$attr] = $n + 1;
+        $cnf .= "$k = $val\n";
+    }
+    if ($san) {
+        $cnf .= "\n[v3_req]\nsubjectAltName = \@san_section\n\n[san_section]\n";
+        $typeIdx = [];
+        foreach ($san as $s) {
+            $t = $s['type']; $v = $s['value'];
+            $n = ($typeIdx[$t] ?? 0) + 1;
+            $typeIdx[$t] = $n;
+            $cnf .= "$t.$n = $v\n";
+        }
+    }
+    file_put_contents($cnfFile, $cnf);
+
+    $r = run_proc([$openssl, 'req', '-new', '-key', $keyFile, '-out', $csrFile,
+        '-config', $cnfFile, '-sha256']);
+    if (!$r['ok']) return ['error' => 'CSR generation failed: ' . trim($r['err'])];
+
+    return [
+        'key'         => trim((string) file_get_contents($keyFile)),
+        'csr'         => trim((string) file_get_contents($csrFile)),
+        'badKeyLabel' => $entry['label'],
+        'badKeyCve'   => $entry['cve'],
+    ];
+}
+
 function run_proc(array $cmd): array
 {
     $proc = proc_open($cmd, [1 => ['pipe','w'], 2 => ['pipe','w']], $pipes);
@@ -225,6 +344,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $body = json_decode(file_get_contents('php://input'), true);
     if (!is_array($body)) { echo json_encode(['error' => 'Invalid JSON']); exit; }
+
+    // ── Bad key CSR action ────────────────────────────────────────────────────
+    if (($body['action'] ?? '') === 'badkey') {
+        $keyId = $body['keyId'] ?? '';
+        if (!array_key_exists($keyId, BAD_KEY_CATALOG))
+            { echo json_encode(['error' => "Unknown bad key type: $keyId"]); exit; }
+        $dn  = $body['dn']  ?? [];
+        $san = $body['san'] ?? [];
+        if (!is_array($dn) || !is_array($san))
+            { echo json_encode(['error' => 'DN and SAN must be arrays']); exit; }
+        if (empty($dn))
+            { echo json_encode(['error' => 'At least one DN field is required']); exit; }
+        foreach ($dn as $i => $field) {
+            if (!isset($field['attr'], $field['value']))
+                { echo json_encode(['error' => "DN field $i missing attr or value"]); exit; }
+            $err = validate_dn_field((string)$field['attr'], (string)$field['value']);
+            if ($err) { echo json_encode(['error' => $err]); exit; }
+        }
+        foreach ($san as $i => $entry) {
+            if (!isset($entry['type'], $entry['value']))
+                { echo json_encode(['error' => "SAN $i missing type or value"]); exit; }
+            $err = validate_san((string)$entry['type'], (string)$entry['value']);
+            if ($err) { echo json_encode(['error' => $err]); exit; }
+        }
+        echo json_encode(generate_badkey_csr($keyId, compact('dn', 'san')));
+        exit;
+    }
 
     $algo    = $body['algo']    ?? '';
     $hash    = strtolower($body['hash'] ?? 'sha256');
@@ -415,6 +561,61 @@ require_once __DIR__ . '/recaptcha.php';
                  font-family: var(--mono); font-size: .75rem; margin-top: .8rem;
                  display: none; }
     .error-box.show { display: block; }
+
+    /* ── Bad key / CA rejection testing section ── */
+    .bad-key-section {
+      margin-top: 2rem;
+      border: 1px solid rgba(248,113,113,.25);
+      border-left: 3px solid var(--danger);
+      border-radius: 8px; overflow: hidden;
+    }
+    .bad-key-header {
+      background: rgba(248,113,113,.05);
+      padding: .85rem 1.2rem;
+      border-bottom: 1px solid rgba(248,113,113,.15);
+    }
+    .bad-key-header-title {
+      font-family: var(--mono); font-size: .78rem; font-weight: 600;
+      color: var(--danger); display: flex; align-items: center; gap: .4rem;
+    }
+    .bad-key-header-sub {
+      font-size: .72rem; color: var(--muted); margin-top: .25rem; line-height: 1.55;
+    }
+    .bad-key-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem; padding: 1.1rem 1.2rem;
+    }
+    .bad-key-card {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: .85rem 1rem;
+      display: flex; flex-direction: column; gap: .45rem;
+    }
+    .bad-key-card-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .bad-key-name { font-family: var(--mono); font-size: .76rem; color: var(--text); font-weight: 600; }
+    .bad-key-cve {
+      font-family: var(--mono); font-size: .58rem; font-weight: 700; letter-spacing: .06em;
+      color: #fff; background: rgba(248,113,113,.55); border-radius: 3px;
+      padding: .1em .5em; white-space: nowrap;
+    }
+    .bad-key-ref {
+      font-family: var(--mono); font-size: .58rem; color: var(--muted);
+      background: rgba(255,255,255,.05); border: 1px solid var(--border);
+      border-radius: 3px; padding: .1em .45em; white-space: nowrap;
+    }
+    .bad-key-desc { font-size: .71rem; color: var(--muted); line-height: 1.55; flex: 1; }
+    .btn-bad-key {
+      font-family: var(--mono); font-size: .68rem; text-transform: uppercase;
+      letter-spacing: .06em; background: none;
+      border: 1px solid rgba(248,113,113,.35); color: var(--danger);
+      border-radius: 4px; padding: .35em .9em; cursor: pointer; margin-top: .2rem;
+      align-self: flex-start; transition: background .15s;
+    }
+    .btn-bad-key:hover { background: rgba(248,113,113,.08); }
+    .btn-bad-key:disabled { opacity: .35; cursor: default; }
+    .bad-key-unavail {
+      font-family: var(--mono); font-size: .65rem; color: var(--muted);
+      margin-top: .2rem; align-self: flex-start;
+    }
   </style>
 </head>
 <body>
@@ -524,6 +725,21 @@ require_once __DIR__ . '/recaptcha.php';
     <div class="field-list" id="sanList"></div>
   </div>
 
+  <!-- Test Keys: CA Rejection Mechanisms -->
+  <div class="bad-key-section">
+    <div class="bad-key-header">
+      <div class="bad-key-header-title">⛔ Test Keys — CA Rejection Mechanisms</div>
+      <div class="bad-key-header-sub">
+        These keys are intentionally weak or blacklisted. Generate a CSR with one to verify
+        that a CA, linter, or ACME server correctly refuses it.
+        Your DN and SANs above are used as-is — only the key is the bad part.
+      </div>
+    </div>
+    <div class="bad-key-grid" id="badKeyGrid">
+      <!-- rendered by JS from BAD_KEY_JS_CATALOG -->
+    </div>
+  </div>
+
   <div style="margin-top:1.2rem">
     <button class="btn-primary" id="generateBtn" onclick="generate()">Generate CSR</button>
     <div class="error-box" id="errorBox"></div>
@@ -533,7 +749,7 @@ require_once __DIR__ . '/recaptcha.php';
   <div class="result-section" id="resultSection">
     <h2>Result</h2>
     <div class="card">
-      <div class="key-warning">⚠ Save your private key now — it is not stored on the server.</div>
+      <div class="key-warning" id="keyWarning">⚠ Save your private key now — it is not stored on the server.</div>
 
       <div class="pem-label">Private Key</div>
       <div class="pem-wrap">
@@ -872,6 +1088,7 @@ async function generate() {
 
     document.getElementById('keyPem').value = data.key;
     document.getElementById('csrPem').value = data.csr;
+    setKeyWarning(null);
     var rs = document.getElementById('resultSection');
     rs.classList.add('show');
     rs.scrollIntoView({behavior:'smooth', block:'start'});
@@ -907,6 +1124,114 @@ function issueIt() {
   var csr = document.getElementById('csrPem').value;
   sessionStorage.setItem('meerkat_csr', csr);
   window.open('cert_factory.php', '_blank');
+}
+
+// ── Key warning helper ────────────────────────────────────────────────────────
+function setKeyWarning(badKeyLabel, badKeyCve) {
+  var el = document.getElementById('keyWarning');
+  if (badKeyLabel) {
+    el.style.cssText = 'color:var(--danger);background:rgba(248,113,113,.07);border-color:rgba(248,113,113,.3)';
+    el.textContent = '⛔ BAD KEY — ' + badKeyLabel
+      + (badKeyCve ? ' (' + badKeyCve + ')' : '')
+      + ' — For CA rejection testing only. Never use in production.';
+  } else {
+    el.style.cssText = '';
+    el.textContent = '⚠ Save your private key now — it is not stored on the server.';
+  }
+}
+
+// ── Bad key catalog ───────────────────────────────────────────────────────────
+var BAD_KEY_JS_CATALOG = [
+  {
+    id:    'rsa_e3',
+    label: 'RSA-2048, e=3',
+    cve:   null,
+    ref:   'NIST SP 800-78-5',
+    desc:  'Public exponent e=3. Cube-root attacks apply to unpadded messages; many CA policies and linters require e ≥ 65537.',
+    avail: true,
+  },
+  {
+    id:    'rsa_512',
+    label: 'RSA-512',
+    cve:   null,
+    ref:   'BR §6.1.5',
+    desc:  '512-bit RSA moduli can be factored in hours with publicly available tools. All modern CAs reject keys below 2048 bits.',
+    avail: true,
+  },
+  {
+    id:    'debian_rsa2048',
+    label: 'Debian Weak RSA-2048',
+    cve:   'CVE-2008-0166',
+    ref:   null,
+    desc:  'Debian OpenSSL (2006–2008) seeded its RNG only with the PID, producing ≤ 32,767 distinct keys per type. Present in CA blacklists.',
+    avail: <?= DEBIAN_WEAK_RSA2048_PEM !== '' ? 'true' : 'false' ?>,
+  },
+  {
+    id:    'roca_rsa2048',
+    label: 'ROCA RSA-2048',
+    cve:   'CVE-2017-15361',
+    ref:   null,
+    desc:  'Infineon TPM key with the ROCA-detectable modulus structure (Nemec et al., 2017). CAs and linters with the ROCA check will reject this key.',
+    avail: <?= ROCA_RSA2048_PEM !== '' ? 'true' : 'false' ?>,
+  },
+];
+
+// Render bad key cards
+(function () {
+  var grid = document.getElementById('badKeyGrid');
+  BAD_KEY_JS_CATALOG.forEach(function (k) {
+    var card = document.createElement('div');
+    card.className = 'bad-key-card';
+    var badges = '';
+    if (k.cve) badges += '<span class="bad-key-cve">' + escHtml(k.cve) + '</span>';
+    if (k.ref) badges += '<span class="bad-key-ref">' + escHtml(k.ref) + '</span>';
+    var action = k.avail
+      ? '<button class="btn-bad-key" id="bkbtn_' + k.id + '" onclick="useBadKey(\'' + k.id + '\')">Generate CSR with this key</button>'
+      : '<span class="bad-key-unavail">Key not configured — see source comment in csr_generator.php</span>';
+    card.innerHTML =
+      '<div class="bad-key-card-head">' +
+        '<span class="bad-key-name">' + escHtml(k.label) + '</span>' + badges +
+      '</div>' +
+      '<div class="bad-key-desc">' + escHtml(k.desc) + '</div>' +
+      action;
+    grid.appendChild(card);
+  });
+}());
+
+async function useBadKey(keyId) {
+  hideError();
+  var dn  = collectDn();
+  var san = collectSan();
+  if (dn === null || san === null) { showError('Fix validation errors above before generating.'); return; }
+  if (dn.length === 0) { showError('Add at least one Subject DN field.'); return; }
+
+  var allBtns = document.querySelectorAll('.btn-bad-key');
+  allBtns.forEach(function (b) { b.disabled = true; });
+  var btn = document.getElementById('bkbtn_' + keyId);
+  var origText = btn ? btn.textContent : '';
+  if (btn) btn.textContent = 'Generating…';
+
+  try {
+    var resp = await fetch('csr_generator.php', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action: 'badkey', keyId: keyId, dn: dn, san: san})
+    });
+    var data = await resp.json();
+    if (data.error) { showError(data.error); return; }
+
+    document.getElementById('keyPem').value = data.key;
+    document.getElementById('csrPem').value = data.csr;
+    setKeyWarning(data.badKeyLabel, data.badKeyCve);
+    var rs = document.getElementById('resultSection');
+    rs.classList.add('show');
+    rs.scrollIntoView({behavior: 'smooth', block: 'start'});
+  } catch (e) {
+    showError('Request failed: ' + e.message);
+  } finally {
+    allBtns.forEach(function (b) { b.disabled = false; });
+    if (btn) btn.textContent = origText;
+  }
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────
