@@ -800,6 +800,8 @@ $noProfiles = empty($profiles);
 
     <div class="cert-info" id="certInfo"></div>
 
+    <textarea class="pem-output" id="pemOutput" readonly spellcheck="false"></textarea>
+
     <p class="chain-note" id="chainNote"></p>
 
     <div class="revoke-row">
@@ -1025,11 +1027,13 @@ $noProfiles = empty($profiles);
     dlText(pemOutput.value, 'mpca-cert.crt', 'application/x-x509-user-cert');
   });
   document.getElementById('btnLint').addEventListener('click', function () {
+    if (!pemOutput.value) return;
     sessionStorage.setItem('pki_prefill_cert',   pemOutput.value);
     sessionStorage.setItem('pki_prefill_issuer', issuedIssuerPem);
     window.open('/linters.php', '_blank');
   });
   document.getElementById('btnParse').addEventListener('click', function () {
+    if (!pemOutput.value) return;
     sessionStorage.setItem('pki_prefill_cert', pemOutput.value);
     window.open('/artifact_parser.php', '_blank');
   });
