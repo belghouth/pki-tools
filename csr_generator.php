@@ -1,6 +1,7 @@
 <?php
 // ── CSR Generator ─────────────────────────────────────────────────────────────
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/recaptcha.php';
 
 // ── Allowed values ────────────────────────────────────────────────────────────
 
@@ -482,7 +483,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // ── Page render ───────────────────────────────────────────────────────────────
 $navLabel = 'CSR Generator';
-require_once __DIR__ . '/recaptcha.php';
 ?><!DOCTYPE html>
 <html lang="en">
 <head>
