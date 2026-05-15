@@ -352,6 +352,7 @@ function process_mpca_csr(string $csrFile, array $profile, string $email): array
             'ok'          => true,
             'profile'     => $profile['label'],
             'certificate' => trim($certPem),
+            'issuer_pem'  => trim($issuerPem),
             'subject'     => $info['subject']    ?? '',
             'issuer'      => $info['issuer']     ?? '',
             'not_before'  => $info['not_before'] ?? '',
@@ -799,10 +800,6 @@ $noProfiles = empty($profiles);
 
     <div class="cert-info" id="certInfo"></div>
 
-    <div class="pem-wrap">
-      <textarea class="pem-output" id="pemOutput" readonly spellcheck="false"></textarea>
-    </div>
-
     <p class="chain-note" id="chainNote"></p>
 
     <div class="revoke-row">
@@ -948,6 +945,7 @@ $noProfiles = empty($profiles);
   var certInfo   = document.getElementById('certInfo');
   var pemOutput  = document.getElementById('pemOutput');
   var chainNote  = document.getElementById('chainNote');
+  var issuedIssuerPem = '';
 
   form.addEventListener('submit', function (e) { e.preventDefault(); doIssue(); });
 
@@ -1009,6 +1007,7 @@ $noProfiles = empty($profiles);
     }).join('');
 
     pemOutput.value = data.certificate;
+    issuedIssuerPem = data.issuer_pem || '';
     chainNote.innerHTML = 'Chain: <a href="' + esc(MPCA_BASE_URL) + '/' +
       ({ smime: 'smime_chain.pem', personal: 'personal_chain.pem', codesign: 'codesign_chain.pem' }[
         (PROFILES[profileSelect.value] || {}).sub_ca
@@ -1026,12 +1025,13 @@ $noProfiles = empty($profiles);
     dlText(pemOutput.value, 'mpca-cert.crt', 'application/x-x509-user-cert');
   });
   document.getElementById('btnLint').addEventListener('click', function () {
-    sessionStorage.setItem('meerkat_cert_pem', pemOutput.value);
+    sessionStorage.setItem('pki_prefill_cert',   pemOutput.value);
+    sessionStorage.setItem('pki_prefill_issuer', issuedIssuerPem);
     window.open('/linters.php', '_blank');
   });
   document.getElementById('btnParse').addEventListener('click', function () {
-    sessionStorage.setItem('meerkat_cert_pem', pemOutput.value);
-    window.open('/artifact_parser.php?cert=1', '_blank');
+    sessionStorage.setItem('pki_prefill_cert', pemOutput.value);
+    window.open('/artifact_parser.php', '_blank');
   });
 
   // ── Revoke ────────────────────────────────────────────────────────────────────
