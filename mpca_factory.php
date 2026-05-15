@@ -279,6 +279,16 @@ function process_mpca_csr(string $csrFile, array $profile, string $email): array
         return ['error' => "EC key {$keyBits} bits is not on an accepted curve — use P-256, P-384, or P-521"];
     }
 
+    // CN validation for Mailbox-Validated S/MIME
+    if ($profile['sub_ca'] === 'smime' && $email !== '') {
+        $csrCn = extract_cn($text);
+        if ($csrCn !== '' && strtolower($csrCn) !== strtolower($email)) {
+            return ['error' => "For Mailbox-Validated S/MIME the CN in your CSR must equal the email address or be absent.\n"
+                . "CSR CN: \"{$csrCn}\" — expected: \"{$email}\"\n"
+                . 'Please regenerate your CSR with CN=' . $email . ' or omit CN entirely.'];
+        }
+    }
+
     // CA routing
     $caMap = mpca_ca_map();
     $subCa = $profile['sub_ca'];
@@ -862,11 +872,12 @@ $noProfiles = empty($profiles);
   var MPCA_BASE_URL      = <?= json_encode(MPCA_BASE_URL) ?>;
 
   var PROFILES = <?= json_encode(array_map(fn($p) => [
-    'label'    => $p['label'],
-    'desc'     => $p['description'],
-    'san_type' => $p['san_type'],
-    'sub_ca'   => $p['sub_ca'],
-    'validity' => $p['validity_days'],
+    'label'     => $p['label'],
+    'desc'      => $p['description'],
+    'san_type'  => $p['san_type'],
+    'sub_ca'    => $p['sub_ca'],
+    'validity'  => $p['validity_days'],
+    'key_types' => $p['key_types'],
   ], $profiles), JSON_UNESCAPED_UNICODE) ?>;
 
   var CA_LABELS = { smime: 'S/MIME CA', personal: 'Personal CA', codesign: 'Code Signing CA' };
@@ -917,7 +928,8 @@ $noProfiles = empty($profiles);
     profileMeta.innerHTML =
       '<span class="profile-badge">' + (CA_LABELS[p.sub_ca] || p.sub_ca) + '</span>' +
       '<span class="profile-badge">Max ' + p.validity + ' days</span>' +
-      '<span class="profile-badge">SAN: ' + (p.san_type === 'none' ? 'none' : p.san_type) + '</span>';
+      '<span class="profile-badge">SAN: ' + (p.san_type === 'none' ? 'none' : p.san_type) + '</span>' +
+      '<span class="profile-badge">Keys: ' + p.key_types.toUpperCase() + '</span>';
 
     emailRow.hidden   = (p.san_type !== 'email');
     btnIssue.disabled = false;

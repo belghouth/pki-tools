@@ -710,8 +710,8 @@ ${tsa_sign_card}
       <tr><td>${OID_CS_CA_CP}</td><td>Code Signing CA CP</td></tr>
       <tr><td>${OID_TSA_CA_CP}</td><td>TSA CA CP</td></tr>
       <tr class="section"><td colspan="2">Leaf Certificate Policies</td></tr>
-      <tr><td>2.16.788.1.99.1.10</td><td>S/MIME MV — Multipurpose  &nbsp;+&nbsp; 2.23.140.1.5.1.1 (CA/B Forum)</td></tr>
-      <tr><td>2.16.788.1.99.1.11</td><td>S/MIME MV — Signing only  &nbsp;+&nbsp; 2.23.140.1.5.1.2 (CA/B Forum)</td></tr>
+      <tr><td>2.16.788.1.99.1.10</td><td>S/MIME MV — Multipurpose  &nbsp;+&nbsp; 2.23.140.1.5.1.2 (CA/B Forum)</td></tr>
+      <tr><td>2.16.788.1.99.1.11</td><td>S/MIME MV — Signing only  &nbsp;+&nbsp; 2.23.140.1.5.1.3 (CA/B Forum)</td></tr>
       <tr><td>2.16.788.1.99.1.20</td><td>Client Authentication</td></tr>
       <tr><td>2.16.788.1.99.1.21</td><td>Document Signing (AdES / RFC 9336)</td></tr>
       <tr><td>2.16.788.1.99.1.30</td><td>Code Signing OV  &nbsp;+&nbsp; 2.23.140.1.4.1 (CA/B Forum)</td></tr>

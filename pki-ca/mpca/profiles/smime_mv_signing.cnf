@@ -27,4 +27,4 @@ policyIdentifier = 2.16.788.1.99.1.11
 CPS.1            = https://pki.thameur.org/mpca/cps.html
 
 [cp_cabf]
-policyIdentifier = 2.23.140.1.5.1.2
+policyIdentifier = 2.23.140.1.5.1.3

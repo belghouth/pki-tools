@@ -11,7 +11,7 @@ description   = Mailbox-validated certificate for email signing and encryption (
 sub_ca        = smime
 san_type      = email
 validity_days = 1095
-key_types     = rsa,ec
+key_types     = rsa
 order         = 10
 
 [leaf_ext]
@@ -30,4 +30,4 @@ policyIdentifier = 2.16.788.1.99.1.10
 CPS.1            = https://pki.thameur.org/mpca/cps.html
 
 [cp_cabf]
-policyIdentifier = 2.23.140.1.5.1.1
+policyIdentifier = 2.23.140.1.5.1.2
