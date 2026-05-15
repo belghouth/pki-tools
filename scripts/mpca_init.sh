@@ -820,8 +820,10 @@ main() {
   if id "$WEB_USER" &>/dev/null; then
     chown -R "$WEB_USER": "$MPCA_DIR"
     ok "Ownership of $MPCA_DIR transferred to $WEB_USER"
+    chown -R "$WEB_USER": "$WEB_DIR"
+    ok "Ownership of $WEB_DIR transferred to $WEB_USER (needed for CRL updates)"
   else
-    warn "User '$WEB_USER' not found — run: chown -R <web-user>: $MPCA_DIR"
+    warn "User '$WEB_USER' not found — run: chown -R <web-user>: $MPCA_DIR $WEB_DIR"
   fi
 
   sep

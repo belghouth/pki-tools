@@ -211,14 +211,15 @@ function handle_mpca_revoke(): array
         prune_expired_revoked(dirname($ca['cnf']) . '/index.txt');
 
         // Regenerate CRL → DER → publish
-        $crlTmp = sys_get_temp_dir() . '/cf_crl_' . bin2hex(random_bytes(8)) . '.pem';
-        $crlDer = sys_get_temp_dir() . '/cf_crl_' . bin2hex(random_bytes(8)) . '.der';
+        $crlTmp       = sys_get_temp_dir() . '/cf_crl_' . bin2hex(random_bytes(8)) . '.pem';
+        $crlDer       = sys_get_temp_dir() . '/cf_crl_' . bin2hex(random_bytes(8)) . '.der';
+        $crlPublished = false;
         try {
             $r2 = run_cmd([OPENSSL_BIN, 'ca', '-config', $ca['cnf'], '-gencrl', '-out', $crlTmp, '-batch']);
             if ($r2['ok'] && file_exists($crlTmp)) {
                 $r3 = run_cmd([OPENSSL_BIN, 'crl', '-in', $crlTmp, '-outform', 'DER', '-out', $crlDer]);
                 if ($r3['ok'] && file_exists($crlDer)) {
-                    @copy($crlDer, $ca['crl']);
+                    $crlPublished = copy($crlDer, $ca['crl']);
                 }
             }
         } finally {
@@ -226,9 +227,12 @@ function handle_mpca_revoke(): array
             @unlink($crlDer);
         }
 
-        return ['ok' => true, 'message' => $alreadyRevoked
-            ? 'Certificate was already revoked. CRL refreshed.'
-            : 'Certificate revoked successfully. CRL has been refreshed.'];
+        $base = $alreadyRevoked ? 'Certificate was already revoked.' : 'Certificate revoked successfully.';
+        $crlNote = $crlPublished
+            ? ' CRL has been refreshed.'
+            : ' CRL update failed — check that the web directory is writable by the web server.';
+
+        return ['ok' => true, 'message' => $base . $crlNote];
 
     } finally {
         flock($lock, LOCK_UN);
