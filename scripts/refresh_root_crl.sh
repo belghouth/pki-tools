@@ -59,3 +59,8 @@ refresh_arl \
 refresh_arl \
     "/var/www/thameur.org/pki-ca/ecc-root-db/openssl.cnf" \
     "/var/www/pki.thameur.org/meerkat-ecc-root.crl"
+
+# MPCA Root ARL (365-day validity)
+refresh_arl \
+    "/var/www/thameur.org/pki-ca/mpca/root/openssl.cnf" \
+    "/var/www/pki.thameur.org/mpca/root.crl"

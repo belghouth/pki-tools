@@ -64,3 +64,27 @@ refresh_crl \
     "/var/www/thameur.org/pki-ca/ecc-issuing-db/openssl.cnf" \
     "/var/www/pki.thameur.org/meerkat-ecc-issuing.crl" \
     "/var/www/thameur.org/pki-ca/ecc-issuing-db"
+
+# MPCA S/MIME CA CRL
+refresh_crl \
+    "/var/www/thameur.org/pki-ca/mpca/smime/openssl.cnf" \
+    "/var/www/pki.thameur.org/mpca/smime_ca.crl" \
+    "/var/www/thameur.org/pki-ca/mpca/smime"
+
+# MPCA Personal CA CRL
+refresh_crl \
+    "/var/www/thameur.org/pki-ca/mpca/personal/openssl.cnf" \
+    "/var/www/pki.thameur.org/mpca/personal_ca.crl" \
+    "/var/www/thameur.org/pki-ca/mpca/personal"
+
+# MPCA Code Signing CA CRL
+refresh_crl \
+    "/var/www/thameur.org/pki-ca/mpca/codesign/openssl.cnf" \
+    "/var/www/pki.thameur.org/mpca/codesign_ca.crl" \
+    "/var/www/thameur.org/pki-ca/mpca/codesign"
+
+# MPCA TSA CA CRL
+refresh_crl \
+    "/var/www/thameur.org/pki-ca/mpca/tsa_ca/openssl.cnf" \
+    "/var/www/pki.thameur.org/mpca/tsa_ca.crl" \
+    "/var/www/thameur.org/pki-ca/mpca/tsa_ca"
