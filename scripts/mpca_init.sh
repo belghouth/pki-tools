@@ -124,6 +124,10 @@ default_crl_days  = 365
 preserve          = no
 copy_extensions   = none
 policy            = policy_match
+crl_extensions    = crl_ext
+
+[ crl_ext ]
+authorityKeyIdentifier = keyid:always
 
 [ policy_match ]
 countryName      = match
@@ -210,6 +214,10 @@ default_crl_days  = 7
 preserve          = no
 copy_extensions   = copy
 policy            = policy_loose
+crl_extensions    = crl_ext
+
+[ crl_ext ]
+authorityKeyIdentifier = keyid:always
 
 [ policy_loose ]
 countryName      = optional
