@@ -263,29 +263,70 @@ function revoc_check_ocsp(string $ee_pem, string $issuer_pem): array {
             $result['next_update_absent'] = true;
         }
 
-        // ── Delegated responder + embedded cert details ───────────────────────
-        // The embedded responder cert (if any) appears after the first
-        // "Certificate:" marker in -resp_text output.
+        // ── Delegated responder detection ────────────────────────────────────
+        //
+        // Definitive check: compare the Responder ID against the issuer's own
+        // identity. Two ID forms exist (RFC 6960 §4.2.2.3):
+        //
+        //   byName — the responder's subject DN. Delegated if != issuer subject.
+        //   byKey  — SHA-1(SubjectPublicKeyInfo). Delegated if != issuer SPKI hash.
+        //
+        // We compute the issuer's SPKI SHA-1 via openssl and compare against
+        // both forms. This is correct regardless of whether the response
+        // includes an embedded cert.
+        //
+        // Separately, if the response DOES include a Certificate: block we
+        // parse EKU, nocheck, and expiry from it.
+
+        // Compute issuer SPKI SHA-1 (hex) for byKey comparison.
+        $issuer_spki_hash = '';
+        $spki_lines = []; $spki_exit = null;
+        exec('openssl x509 -pubkey -noout -in ' . escapeshellarg($tmp_issuer)
+            . ' | openssl pkey -pubin -outform DER 2>/dev/null'
+            . ' | openssl dgst -sha1 -hex 2>/dev/null',
+            $spki_lines, $spki_exit);
+        if ($spki_exit === 0 && !empty($spki_lines)) {
+            // Output: "SHA1(stdin)= <hex>" or just "<hex>"
+            $spki_raw = trim(implode('', $spki_lines));
+            if (preg_match('/([0-9a-f]{40})/i', $spki_raw, $m)) {
+                $issuer_spki_hash = strtoupper($m[1]);
+            }
+        }
+
+        // Responder ID from openssl output.
+        $responder_id_raw = $result['responder_id'] ?? '';
+        $is_delegated = false;
+
+        if ($responder_id_raw !== '') {
+            if (preg_match('/^[0-9A-F:]{2}([0-9A-F:]{38,})$/i', $responder_id_raw)) {
+                // byKey form — hex, possibly colon-separated.
+                $rid_hex = strtoupper(str_replace(':', '', $responder_id_raw));
+                $is_delegated = ($issuer_spki_hash !== '' && $rid_hex !== $issuer_spki_hash);
+            } else {
+                // byName form — full DN string.
+                $issuer_data    = openssl_x509_parse($is_cert);
+                $issuer_subject = $issuer_data['name'] ?? '';
+                // Normalise separators and whitespace for comparison.
+                $norm = fn(string $s): string => strtolower(trim(preg_replace('/\s*[,\/]\s*/', ',', $s)));
+                $is_delegated = ($issuer_subject !== '' &&
+                    $norm($responder_id_raw) !== $norm($issuer_subject));
+            }
+        }
+
+        $result['delegated'] = $is_delegated;
+
+        // Parse embedded cert (if response includes one) regardless of
+        // delegation status — it gives us EKU / nocheck / expiry.
         $cert_pos = strpos($output, "\nCertificate:\n");
         if ($cert_pos !== false) {
-            $result['delegated']             = true;
-            $cert_section                    = substr($output, $cert_pos);
-            $result['responder_cert_has_eku']     = (bool) preg_match('/OCSP Signing/i',    $cert_section);
-            $result['responder_cert_has_nocheck'] = (bool) preg_match('/OCSP No Check/i',   $cert_section);
+            $cert_section = substr($output, $cert_pos);
+            $result['responder_cert_has_eku']     = (bool) preg_match('/OCSP Signing/i',  $cert_section);
+            $result['responder_cert_has_nocheck'] = (bool) preg_match('/OCSP No Check/i', $cert_section);
             if (preg_match('/Not After\s*:\s*(.+)/i', $cert_section, $m)) {
                 $expiry_str                      = trim($m[1]);
                 $result['responder_cert_expiry'] = $expiry_str;
                 $expiry_ts                       = strtotime($expiry_str);
                 $result['responder_cert_valid']  = ($expiry_ts !== false && $expiry_ts > time());
-            }
-        } else {
-            // Fallback: compare responder ID against issuer subject
-            if (preg_match('/Responder Id:\s*C\s*=/i', $output)) {
-                $issuer_data = openssl_x509_parse($is_cert);
-                $issuer_cn   = $issuer_data['subject']['CN'] ?? '';
-                if ($issuer_cn !== '' && !str_contains($output, $issuer_cn)) {
-                    $result['delegated'] = true;
-                }
             }
         }
 
