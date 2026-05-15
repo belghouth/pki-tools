@@ -425,6 +425,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       border: 1px solid var(--border);
       color: var(--muted);
     }
+    .tag--experimental {
+      background: rgba(245,158,11,0.12);
+      border-color: rgba(245,158,11,0.4);
+      color: #f59e0b;
+    }
 
     .tool-card-link {
       font-family: var(--mono);
@@ -645,21 +650,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
         </div>
 
         <div class="tool-card">
-          <div class="tool-card-bar tool-card-bar--purple"></div>
-          <div class="tool-card-body">
-            <div class="tool-card-icon">📋</div>
-            <div class="tool-card-name">CPS-to-BR Assessor</div>
-            <div class="tool-card-desc">Upload or link to a CP/CPS document and get an automated section-by-section coverage analysis against the CA/Browser Forum Baseline Requirements.</div>
-            <div class="tool-card-tags">
-              <span class="tag">CPS</span>
-              <span class="tag">BR</span>
-              <span class="tag">CABF</span>
-            </div>
-            <a href="/cps_to_br_assessor.php" class="tool-card-link">Open Tool →</a>
-          </div>
-        </div>
-
-        <div class="tool-card">
           <div class="tool-card-bar tool-card-bar--teal"></div>
           <div class="tool-card-body">
             <div class="tool-card-icon">⚡</div>
@@ -754,6 +744,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
               <span class="tag">Precertificate</span>
             </div>
             <a href="/ct_log_doc.php" class="tool-card-link">Open Tool →</a>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-bar tool-card-bar--purple"></div>
+          <div class="tool-card-body">
+            <div class="tool-card-icon">📋</div>
+            <div class="tool-card-name">CPS-to-BR Assessor</div>
+            <div class="tool-card-desc">Upload or link to a CP/CPS document and get an automated section-by-section coverage analysis against the CA/Browser Forum Baseline Requirements.</div>
+            <div class="tool-card-tags">
+              <span class="tag tag--experimental">Experimental</span>
+              <span class="tag">CPS</span>
+              <span class="tag">BR</span>
+              <span class="tag">CABF</span>
+            </div>
+            <a href="/cps_to_br_assessor.php" class="tool-card-link">Open Tool →</a>
           </div>
         </div>
 
