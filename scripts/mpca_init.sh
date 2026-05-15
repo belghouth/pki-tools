@@ -773,6 +773,16 @@ main() {
   publish_web
   print_summary
 
+  # Hand ownership of CA material to the web-server user so PHP can write
+  # lock files, issued certs, and read CA keys during signing.
+  WEB_USER="${WEB_USER:-www-data}"
+  if id "$WEB_USER" &>/dev/null; then
+    chown -R "$WEB_USER": "$MPCA_DIR"
+    ok "Ownership of $MPCA_DIR transferred to $WEB_USER"
+  else
+    warn "User '$WEB_USER' not found — run: chown -R <web-user>: $MPCA_DIR"
+  fi
+
   sep
   ok "Done. Next: add scripts/mpca_crl_refresh.sh to cron."
 }
