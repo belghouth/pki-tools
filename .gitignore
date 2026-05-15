@@ -4,4 +4,14 @@ debug_*.php
 includes/br_cache.json
 includes/feed_cache.json
 pki/
-pki-ca/
+# Exclude CA runtime dirs but track MPCA profiles
+pki-ca/root-db/
+pki-ca/issuing-db/
+pki-ca/ecc-root-db/
+pki-ca/ecc-issuing-db/
+pki-ca/private/
+pki-ca/mpca/smime/
+pki-ca/mpca/personal/
+pki-ca/mpca/codesign/
+pki-ca/mpca/tsa_ca/
+pki-ca/mpca/tsa_sign/

@@ -1,0 +1,28 @@
+; Document Signing (AdES / RFC 9336)
+; Non-repudiation certificate for PDF and document signing.
+; EKU: id-kp-documentSigning (1.3.6.1.5.5.7.3.36) per RFC 9336.
+; KU: nonRepudiation only — no digitalSignature per ETSI EN 319 411.
+
+[meta]
+label         = Document Signing (AdES)
+description   = Non-repudiation certificate for PDF and document signing — id-kp-documentSigning per RFC 9336
+sub_ca        = personal
+san_type      = email
+validity_days = 730
+key_types     = rsa,ec
+order         = 40
+
+[leaf_ext]
+basicConstraints       = critical,CA:false
+keyUsage               = critical,nonRepudiation
+extendedKeyUsage       = 1.3.6.1.5.5.7.3.36
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always
+crlDistributionPoints  = URI:https://pki.thameur.org/mpca/personal_ca.crl
+authorityInfoAccess    = caIssuers;URI:https://pki.thameur.org/mpca/personal_ca.crt
+certificatePolicies    = @cp_local
+subjectAltName         = {{SAN}}
+
+[cp_local]
+policyIdentifier = 2.16.788.1.99.1.21
+CPS.1            = https://pki.thameur.org/mpca/cps.html

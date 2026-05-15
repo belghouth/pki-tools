@@ -750,6 +750,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
         <div class="tool-card">
           <div class="tool-card-bar tool-card-bar--purple"></div>
           <div class="tool-card-body">
+            <div class="tool-card-icon">🏛️</div>
+            <div class="tool-card-name">Meerkat MPCA Factory</div>
+            <div class="tool-card-desc">Issue multi-purpose test certificates from the Meerkat private CA hierarchy. Supports S/MIME (MV Multipurpose &amp; Signing), Client Authentication, Document Signing (AdES/RFC 9336), and Code Signing OV. Profile-driven — extensions, policies, and validity are enforced per CA/B Forum requirements.</div>
+            <div class="tool-card-tags">
+              <span class="tag">S/MIME</span>
+              <span class="tag">Code Signing</span>
+              <span class="tag">Client Auth</span>
+              <span class="tag">AdES</span>
+            </div>
+            <a href="/mpca_factory.php" class="tool-card-link">Open Tool →</a>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-bar tool-card-bar--purple"></div>
+          <div class="tool-card-body">
             <div class="tool-card-icon">📋</div>
             <div class="tool-card-name">CPS-to-BR Assessor</div>
             <div class="tool-card-desc">Upload or link to a CP/CPS document and get an automated section-by-section coverage analysis against the CA/Browser Forum Baseline Requirements.</div>

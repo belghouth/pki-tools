@@ -1,0 +1,30 @@
+; S/MIME Mailbox-Validated — Signing only
+; Signing-only profile: no keyEncipherment — suitable for non-repudiation use.
+; Complies with CA/B Forum S/MIME BR (Mailbox-Validated, Strict).
+
+[meta]
+label         = S/MIME MV — Signing
+description   = Mailbox-validated certificate for digital signing and non-repudiation only (CA/B Forum S/MIME BR §7)
+sub_ca        = smime
+san_type      = email
+validity_days = 1095
+key_types     = rsa,ec
+order         = 20
+
+[leaf_ext]
+basicConstraints       = critical,CA:false
+keyUsage               = critical,digitalSignature,nonRepudiation
+extendedKeyUsage       = emailProtection
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always
+crlDistributionPoints  = URI:https://pki.thameur.org/mpca/smime_ca.crl
+authorityInfoAccess    = caIssuers;URI:https://pki.thameur.org/mpca/smime_ca.crt
+certificatePolicies    = @cp_local, @cp_cabf
+subjectAltName         = {{SAN}}
+
+[cp_local]
+policyIdentifier = 2.16.788.1.99.1.11
+CPS.1            = https://pki.thameur.org/mpca/cps.html
+
+[cp_cabf]
+policyIdentifier = 2.23.140.1.5.1.2

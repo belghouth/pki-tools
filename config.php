@@ -135,6 +135,13 @@ define('NOREPLY_EMAIL', 'no-reply@thameur.org');
 // ── External services ─────────────────────────────────────────────────────────
 define('PKIMETAL_URL',  'http://127.0.0.1:8080');
 
+// ── MPCA — Multi-Purpose CA ───────────────────────────────────────────────────
+define('MPCA_CA_DIR',       PKI_CA_DIR      . '/mpca');
+define('MPCA_PROFILES_DIR', MPCA_CA_DIR     . '/profiles');
+define('MPCA_WEB_DIR',      PKI_WEB_DIR     . '/mpca');
+define('MPCA_BASE_URL',     'https://' . PKI_DOMAIN . '/mpca');
+define('MPCA_TSA_URL',      'https://thameur.org/tsa');
+
 // ── CT log identities ─────────────────────────────────────────────────────────
 // Key = filename stem in PKI_CT_KEYS_DIR (e.g. "kablouti" → kablouti.pem / kablouti.id)
 // Value = [description, operator, mmd_seconds]

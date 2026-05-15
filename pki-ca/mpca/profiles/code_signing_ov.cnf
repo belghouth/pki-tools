@@ -1,0 +1,31 @@
+; Code Signing — Organization-Validated
+; Complies with CA/B Forum Code Signing Baseline Requirements.
+; No SAN — Code Signing OV leaf certs do not require a SAN extension.
+; Subject: O (organization) + CN (product/software name) come from the CSR.
+; Max validity: 39 months (1185 days) per CS BR §7.1.2.
+
+[meta]
+label         = Code Signing OV
+description   = Organization-validated code signing certificate (CA/B Forum CS Baseline Requirements)
+sub_ca        = codesign
+san_type      = none
+validity_days = 1185
+key_types     = rsa,ec
+order         = 50
+
+[leaf_ext]
+basicConstraints       = critical,CA:false
+keyUsage               = critical,digitalSignature
+extendedKeyUsage       = codeSigning
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always
+crlDistributionPoints  = URI:https://pki.thameur.org/mpca/codesign_ca.crl
+authorityInfoAccess    = caIssuers;URI:https://pki.thameur.org/mpca/codesign_ca.crt
+certificatePolicies    = @cp_local, @cp_cabf
+
+[cp_local]
+policyIdentifier = 2.16.788.1.99.1.30
+CPS.1            = https://pki.thameur.org/mpca/cps.html
+
+[cp_cabf]
+policyIdentifier = 2.23.140.1.4.1
