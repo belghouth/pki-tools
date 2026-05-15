@@ -622,60 +622,58 @@ require_once __DIR__ . '/recaptcha.php';
                  display: none; }
     .error-box.show { display: block; }
 
-    /* ── Bad key / CA rejection testing section ── */
+    /* ── Bad key / CA rejection testing accordion ── */
     .bad-key-section {
-      margin-top: 2rem;
-      border: 1px solid rgba(248,113,113,.25);
+      margin-top: .75rem;
+      border: 1px solid rgba(248,113,113,.2);
       border-left: 3px solid var(--danger);
       border-radius: 8px; overflow: hidden;
     }
-    .bad-key-header {
-      background: rgba(248,113,113,.05);
-      padding: .85rem 1.2rem;
-      border-bottom: 1px solid rgba(248,113,113,.15);
+    .bad-key-toggle {
+      width: 100%; display: flex; align-items: center; justify-content: space-between;
+      background: rgba(248,113,113,.04); border: none; padding: .72rem 1.1rem;
+      cursor: pointer; transition: background .15s; text-align: left;
     }
-    .bad-key-header-title {
-      font-family: var(--mono); font-size: .78rem; font-weight: 600;
-      color: var(--danger); display: flex; align-items: center; gap: .4rem;
+    .bad-key-toggle:hover { background: rgba(248,113,113,.09); }
+    .bad-key-toggle-label {
+      font-family: var(--mono); font-size: .74rem; font-weight: 600;
+      color: var(--danger); display: flex; align-items: center; gap: .45rem;
     }
-    .bad-key-header-sub {
-      font-size: .72rem; color: var(--muted); margin-top: .25rem; line-height: 1.55;
+    .bad-key-toggle-arrow {
+      font-size: .6rem; color: var(--muted); transition: transform .2s; flex-shrink: 0;
     }
+    .bad-key-toggle-arrow.open { transform: rotate(90deg); }
+    .bad-key-body { padding: .85rem 1.1rem 1.1rem; border-top: 1px solid rgba(248,113,113,.12); }
+    .bad-key-note { font-size: .71rem; color: var(--muted); line-height: 1.6; margin-bottom: .85rem; }
     .bad-key-grid {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 1rem; padding: 1.1rem 1.2rem;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: .7rem;
     }
     .bad-key-card {
       background: var(--surface2); border: 1px solid var(--border);
-      border-radius: 6px; padding: .85rem 1rem;
-      display: flex; flex-direction: column; gap: .45rem;
+      border-radius: 6px; padding: .8rem .95rem;
+      display: flex; flex-direction: column; gap: .4rem;
+      cursor: pointer; transition: border-color .15s;
+    }
+    .bad-key-card:hover { border-color: rgba(248,113,113,.35); }
+    .bad-key-card:has(input[type=radio]:checked) {
+      border-color: var(--danger); background: rgba(248,113,113,.06);
     }
     .bad-key-card-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
-    .bad-key-name { font-family: var(--mono); font-size: .76rem; color: var(--text); font-weight: 600; }
+    .bad-key-radio { accent-color: var(--danger); width: 13px; height: 13px; flex-shrink: 0; cursor: pointer; }
+    .bad-key-name { font-family: var(--mono); font-size: .75rem; color: var(--text); font-weight: 600; }
     .bad-key-cve {
       font-family: var(--mono); font-size: .58rem; font-weight: 700; letter-spacing: .06em;
-      color: #fff; background: rgba(248,113,113,.55); border-radius: 3px;
-      padding: .1em .5em; white-space: nowrap;
+      color: #fff; background: rgba(248,113,113,.55); border-radius: 3px; padding: .1em .5em; white-space: nowrap;
     }
     .bad-key-ref {
       font-family: var(--mono); font-size: .58rem; color: var(--muted);
       background: rgba(255,255,255,.05); border: 1px solid var(--border);
       border-radius: 3px; padding: .1em .45em; white-space: nowrap;
     }
-    .bad-key-desc { font-size: .71rem; color: var(--muted); line-height: 1.55; flex: 1; }
-    .btn-bad-key {
-      font-family: var(--mono); font-size: .68rem; text-transform: uppercase;
-      letter-spacing: .06em; background: none;
-      border: 1px solid rgba(248,113,113,.35); color: var(--danger);
-      border-radius: 4px; padding: .35em .9em; cursor: pointer; margin-top: .2rem;
-      align-self: flex-start; transition: background .15s;
-    }
-    .btn-bad-key:hover { background: rgba(248,113,113,.08); }
-    .btn-bad-key:disabled { opacity: .35; cursor: default; }
-    .bad-key-unavail {
-      font-family: var(--mono); font-size: .65rem; color: var(--muted);
-      margin-top: .2rem; align-self: flex-start;
-    }
+    .bad-key-desc { font-size: .71rem; color: var(--muted); line-height: 1.55; }
+    .bad-key-unavail-note { font-family: var(--mono); font-size: .62rem; color: rgba(107,122,144,.55); font-style: italic; }
+    /* Key params card dimmed while test-key accordion is open */
+    .card.params-disabled { opacity: .38; pointer-events: none; user-select: none; }
   </style>
 </head>
 <body>
@@ -690,7 +688,7 @@ require_once __DIR__ . '/recaptcha.php';
 
   <!-- 1. Key parameters -->
   <h2>Key Parameters</h2>
-  <div class="card">
+  <div class="card" id="keyParamsCard">
     <div class="params-row">
       <div class="param-group">
         <label>Algorithm</label>
@@ -760,6 +758,22 @@ require_once __DIR__ . '/recaptcha.php';
     </div>
   </div>
 
+  <!-- Test Keys accordion (exclusive with Key Parameters above) -->
+  <div class="bad-key-section" id="badKeySection">
+    <button type="button" class="bad-key-toggle" onclick="toggleBadKeys()">
+      <span class="bad-key-toggle-label">⛔ Test Keys — CA Rejection Mechanisms</span>
+      <span class="bad-key-toggle-arrow" id="badKeyArrow">&#9654;</span>
+    </button>
+    <div class="bad-key-body" id="badKeyBody" hidden>
+      <p class="bad-key-note">
+        These keys are intentionally weak or blacklisted. Use one to verify that a CA,
+        linter, or ACME server correctly refuses the CSR. Your DN and SANs are used as-is —
+        only the key is the bad part. Key Parameters above are disabled while this panel is open.
+      </p>
+      <div class="bad-key-grid" id="badKeyGrid"><!-- rendered by JS --></div>
+    </div>
+  </div>
+
   <!-- 2. Subject DN -->
   <h2>Subject Distinguished Name</h2>
   <div class="card">
@@ -783,21 +797,6 @@ require_once __DIR__ . '/recaptcha.php';
       <button class="btn-add" onclick="addSanField()">+ Add SAN</button>
     </div>
     <div class="field-list" id="sanList"></div>
-  </div>
-
-  <!-- Test Keys: CA Rejection Mechanisms -->
-  <div class="bad-key-section">
-    <div class="bad-key-header">
-      <div class="bad-key-header-title">⛔ Test Keys — CA Rejection Mechanisms</div>
-      <div class="bad-key-header-sub">
-        These keys are intentionally weak or blacklisted. Generate a CSR with one to verify
-        that a CA, linter, or ACME server correctly refuses it.
-        Your DN and SANs above are used as-is — only the key is the bad part.
-      </div>
-    </div>
-    <div class="bad-key-grid" id="badKeyGrid">
-      <!-- rendered by JS from BAD_KEY_JS_CATALOG -->
-    </div>
   </div>
 
   <div style="margin-top:1.2rem">
@@ -1123,6 +1122,15 @@ function hideError() { document.getElementById('errorBox').classList.remove('sho
 
 async function generate() {
   hideError();
+
+  // If the test-key accordion is open, use the selected radio instead of key params
+  if (!document.getElementById('badKeyBody').hidden) {
+    var sel = document.querySelector('input[name="badKey"]:checked');
+    if (!sel) { showError('Select a test key, or close the test-keys panel to use the key parameters.'); return; }
+    await _runBadKeyCsr(sel.value);
+    return;
+  }
+
   var algo    = document.getElementById('algo').value;
   var keySize = algo === 'dsa' ? parseInt(document.getElementById('dsaSize').value)
                                : parseInt(document.getElementById('rsaSize').value);
@@ -1153,6 +1161,37 @@ async function generate() {
     rs.classList.add('show');
     rs.scrollIntoView({behavior:'smooth', block:'start'});
   } catch(e) {
+    showError('Request failed: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Generate CSR';
+  }
+}
+
+async function _runBadKeyCsr(keyId) {
+  var dn  = collectDn();
+  var san = collectSan();
+  if (dn === null || san === null) { showError('Fix validation errors above before generating.'); return; }
+  if (dn.length === 0) { showError('Add at least one Subject DN field.'); return; }
+
+  var btn = document.getElementById('generateBtn');
+  btn.disabled = true; btn.textContent = 'Generating…';
+
+  try {
+    var resp = await fetch('csr_generator.php', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({action: 'badkey', keyId: keyId, dn: dn, san: san})
+    });
+    var data = await resp.json();
+    if (data.error) { showError(data.error); return; }
+
+    document.getElementById('keyPem').value = data.key;
+    document.getElementById('csrPem').value = data.csr;
+    setKeyWarning(data.badKeyLabel, data.badKeyCve);
+    var rs = document.getElementById('resultSection');
+    rs.classList.add('show');
+    rs.scrollIntoView({behavior: 'smooth', block: 'start'});
+  } catch (e) {
     showError('Request failed: ' + e.message);
   } finally {
     btn.disabled = false; btn.textContent = 'Generate CSR';
@@ -1236,61 +1275,42 @@ var BAD_KEY_JS_CATALOG = [
   },
 ];
 
-// Render bad key cards
+// Render bad key cards with radio buttons at the top
 (function () {
   var grid = document.getElementById('badKeyGrid');
   BAD_KEY_JS_CATALOG.forEach(function (k) {
-    var card = document.createElement('div');
+    var card = document.createElement('label');
     card.className = 'bad-key-card';
     var badges = '';
     if (k.cve) badges += '<span class="bad-key-cve">' + escHtml(k.cve) + '</span>';
     if (k.ref) badges += '<span class="bad-key-ref">' + escHtml(k.ref) + '</span>';
-    var action = k.avail
-      ? '<button class="btn-bad-key" id="bkbtn_' + k.id + '" onclick="useBadKey(\'' + k.id + '\')">Generate CSR with this key</button>'
-      : '<span class="bad-key-unavail">Key not configured — see source comment in csr_generator.php</span>';
+    var radioAttr = k.avail ? '' : ' disabled';
+    var unavailNote = k.avail ? '' : '<div class="bad-key-unavail-note">Key not configured — see source comment in csr_generator.php</div>';
     card.innerHTML =
       '<div class="bad-key-card-head">' +
-        '<span class="bad-key-name">' + escHtml(k.label) + '</span>' + badges +
+        '<input type="radio" class="bad-key-radio" name="badKey" value="' + escHtml(k.id) + '"' + radioAttr + '>' +
+        '<span class="bad-key-name">' + escHtml(k.label) + '</span>' +
+        badges +
       '</div>' +
       '<div class="bad-key-desc">' + escHtml(k.desc) + '</div>' +
-      action;
+      unavailNote;
     grid.appendChild(card);
   });
 }());
 
-async function useBadKey(keyId) {
-  hideError();
-  var dn  = collectDn();
-  var san = collectSan();
-  if (dn === null || san === null) { showError('Fix validation errors above before generating.'); return; }
-  if (dn.length === 0) { showError('Add at least one Subject DN field.'); return; }
+// ── Bad key accordion toggle ──────────────────────────────────────────────────
+function toggleBadKeys() {
+  var body    = document.getElementById('badKeyBody');
+  var arrow   = document.getElementById('badKeyArrow');
+  var params  = document.getElementById('keyParamsCard');
+  var opening = body.hidden;
 
-  var allBtns = document.querySelectorAll('.btn-bad-key');
-  allBtns.forEach(function (b) { b.disabled = true; });
-  var btn = document.getElementById('bkbtn_' + keyId);
-  var origText = btn ? btn.textContent : '';
-  if (btn) btn.textContent = 'Generating…';
+  body.hidden = !opening;
+  arrow.classList.toggle('open', opening);
+  params.classList.toggle('params-disabled', opening);
 
-  try {
-    var resp = await fetch('csr_generator.php', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({action: 'badkey', keyId: keyId, dn: dn, san: san})
-    });
-    var data = await resp.json();
-    if (data.error) { showError(data.error); return; }
-
-    document.getElementById('keyPem').value = data.key;
-    document.getElementById('csrPem').value = data.csr;
-    setKeyWarning(data.badKeyLabel, data.badKeyCve);
-    var rs = document.getElementById('resultSection');
-    rs.classList.add('show');
-    rs.scrollIntoView({behavior: 'smooth', block: 'start'});
-  } catch (e) {
-    showError('Request failed: ' + e.message);
-  } finally {
-    allBtns.forEach(function (b) { b.disabled = false; });
-    if (btn) btn.textContent = origText;
+  if (!opening) {  // closing: clear selection
+    document.querySelectorAll('input[name="badKey"]').forEach(function (r) { r.checked = false; });
   }
 }
 
