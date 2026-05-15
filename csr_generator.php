@@ -152,7 +152,18 @@ function generate_csr(array $p): array
     $san = $p['san'] ?? [];
     $hash = $p['hash'] ?? 'sha256';
 
-    $cnf  = "[req]\n";
+    // For MD5/SHA-1, activate the OpenSSL legacy provider via config (openssl_conf must
+    // appear before any section header to be picked up at library init time).
+    $needsLegacy = in_array($hash, ['md5', 'sha1'], true);
+    $cnf  = $needsLegacy
+        ? "openssl_conf = openssl_init\n\n"
+          . "[openssl_init]\nproviders = provider_sect\n\n"
+          . "[provider_sect]\ndefault = default_sect\nlegacy = legacy_sect\n\n"
+          . "[default_sect]\nactivate = 1\n\n"
+          . "[legacy_sect]\nactivate = 1\n\n"
+        : '';
+
+    $cnf .= "[req]\n";
     $cnf .= "prompt = no\n";
     $cnf .= "default_md = $hash\n";
     $cnf .= "distinguished_name = req_dn\n";
@@ -187,10 +198,6 @@ function generate_csr(array $p): array
     // Build openssl req command
     $cmd = [$openssl, 'req', '-new', '-key', $keyFile, '-out', $csrFile, '-config', $cnfFile];
     if ($algo !== 'ed25519') $cmd = array_merge($cmd, ["-$hash"]);
-    // Legacy security level needed for MD5 or SHA-1 on OpenSSL 3
-    if (in_array($hash, ['md5', 'sha1'], true)) {
-        $cmd = array_merge($cmd, ['-legacy']);
-    }
 
     $r = run_proc($cmd);
     if (!$r['ok']) return ['error' => 'CSR generation failed: ' . trim($r['err'])];
