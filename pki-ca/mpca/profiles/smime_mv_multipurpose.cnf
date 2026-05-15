@@ -10,7 +10,7 @@ label         = S/MIME MV — Multipurpose
 description   = Mailbox-validated certificate for email signing and encryption (CA/B Forum S/MIME BR §7)
 sub_ca        = smime
 san_type      = email
-validity_days = 1095
+validity_days = 365
 key_types     = rsa
 order         = 10
 

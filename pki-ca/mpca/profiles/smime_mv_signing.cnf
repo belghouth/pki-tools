@@ -7,7 +7,7 @@ label         = S/MIME MV — Signing
 description   = Mailbox-validated certificate for digital signing and non-repudiation only (CA/B Forum S/MIME BR §7)
 sub_ca        = smime
 san_type      = email
-validity_days = 1095
+validity_days = 365
 key_types     = rsa,ec
 order         = 20
 
