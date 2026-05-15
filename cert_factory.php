@@ -769,10 +769,13 @@ function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = fal
                 return ['error' => 'Precert issuance failed: ' . trim($rPre['err'] ?: $rPre['out'])];
             }
 
-            // Step 1b: zlint validation — errors and above block issuance
-            $zlintErr = run_zlint_check($preCertFile);
-            if ($zlintErr !== null) {
-                return ['error' => "Certificate blocked by zlint:\n" . $zlintErr];
+            // Step 1b: pkimetal validation — error/fatal block; specific warnings also block
+            $pkimetalErr = run_pkimetal_check(
+                (string) file_get_contents($preCertFile),
+                (string) file_get_contents($issuingCrt)
+            );
+            if ($pkimetalErr !== null) {
+                return ['error' => "Certificate blocked by pkimetal:\n" . $pkimetalErr];
             }
 
             // Step 2: submit precert chain to CT log(s) and collect SCTs
@@ -847,43 +850,83 @@ function process_csr(string $csrFile, bool $precert = false, bool $omit_cn = fal
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Run zlint on a PEM cert file and return error-level findings as a string,
- * or null if there are no errors/fatals (or zlint is not installed).
+ * Run pkimetal on the issued precert and return a blocking message string,
+ * or null if issuance should proceed.
+ *
+ * Blocks on:  severity error | fatal (all findings)
+ * Also blocks on:  severity warning whose code or text matches known bad-key
+ *   patterns — specifically RSA low-exponent warnings that PKI Metal reports
+ *   as WARNING rather than ERROR (e.g. e=3, cabf.rsa_exponent_not_in_recommended_range).
+ *
+ * Falls back to null (silent pass) if pkimetal is not reachable, so a missing
+ * instance does not permanently break certificate issuance.
  */
-function run_zlint_check(string $certFile): ?string
+function run_pkimetal_check(string $certPem, string $issuerPem): ?string
 {
-    $envBin = getenv('ZLINT_BIN');
-    $bin    = ($envBin !== false && $envBin !== '') ? $envBin
-            : trim(shell_exec('command -v zlint 2>/dev/null') ?? '');
+    if (!function_exists('curl_init')) return null;
 
-    if ($bin === '' || !is_executable($bin)) {
-        return null; // zlint not available — skip silently
-    }
+    $env  = getenv('PKIMETAL_URL');
+    $base = rtrim(($env !== false && $env !== '') ? $env : PKIMETAL_URL, '/');
+    if ($base === '') return null;
 
-    $lines     = [];
-    $exit_code = null;
-    exec(escapeshellarg($bin) . ' ' . escapeshellarg($certFile) . ' 2>&1', $lines, $exit_code);
-    $output = implode("\n", $lines);
+    // Normalise through OpenSSL so pkimetal gets a clean PEM.
+    $cert = openssl_x509_read($certPem);
+    if ($cert === false) return null;
+    openssl_x509_export($cert, $certClean);
 
-    // If zlint couldn't parse the cert at all, skip blocking.
-    if ($output === '' || str_contains($output, 'level=fatal')) {
-        return null;
-    }
+    $issuerClean = '';
+    $issuer = openssl_x509_read($issuerPem);
+    if ($issuer !== false) openssl_x509_export($issuer, $issuerClean);
+
+    $ch = curl_init($base . '/lintcert');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => http_build_query([
+            'b64cert'   => $certClean,
+            'b64issuer' => $issuerClean,
+            'format'    => 'json',
+        ]),
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/x-www-form-urlencoded'],
+        CURLOPT_TIMEOUT        => 30,
+        CURLOPT_CONNECTTIMEOUT => 5,
+    ]);
+    $response  = curl_exec($ch);
+    $httpCode  = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($response === false || $httpCode !== 200) return null; // unreachable — skip silently
+
+    $findings = json_decode((string)$response, true);
+    if (!is_array($findings)) return null;
+
+    // Warnings whose code OR finding text match these substrings (case-insensitive)
+    // block issuance exactly like errors do.
+    $blockedWarningPatterns = [
+        'rsa_exponent',           // cabf.rsa_exponent_not_in_recommended_range
+        'public exponent',        // covers all linter phrasings of the same check
+    ];
 
     $errors = [];
-    foreach (explode("\n", $output) as $line) {
-        $line = trim($line);
-        if ($line === '') continue;
-        $decoded = json_decode($line, true);
-        if (!is_array($decoded)) continue;
-        foreach ($decoded as $lintName => $result) {
-            $sev = strtolower($result['result'] ?? '');
-            if ($sev === 'error' || $sev === 'fatal') {
-                $msg = $lintName;
-                if (!empty($result['details'])) {
-                    $msg .= ': ' . $result['details'];
+    foreach ($findings as $f) {
+        $severity = strtolower(trim($f['Severity'] ?? $f['severity'] ?? ''));
+        $finding  = trim($f['Finding']  ?? $f['finding']  ?? '');
+        $code     = trim($f['Code']     ?? $f['code']     ?? '');
+        $linter   = trim($f['Linter']   ?? $f['linter']   ?? '');
+
+        if ($finding === '[EndOfResults]' || $severity === 'meta') continue;
+
+        $label = '[' . $linter . '] ' . ($code !== '' ? $code . ': ' : '') . $finding;
+
+        if ($severity === 'error' || $severity === 'fatal') {
+            $errors[] = $label;
+        } elseif ($severity === 'warning') {
+            $haystack = strtolower($code . ' ' . $finding);
+            foreach ($blockedWarningPatterns as $pattern) {
+                if (str_contains($haystack, $pattern)) {
+                    $errors[] = 'WARNING (blocked): ' . $label;
+                    break;
                 }
-                $errors[] = $msg;
             }
         }
     }
