@@ -141,7 +141,7 @@ prompt             = no
 [ req_dn ]
 C  = $DN_C
 O  = $DN_O
-CN = $DN_O Root CA
+CN = Root CA
 
 [ v3_root ]
 subjectKeyIdentifier   = hash
@@ -304,7 +304,7 @@ init_smime_ca() {
   ask_skip "S/MIME CA" "$SMIME_DIR/private/smime_ca.key" || return 0
 
   init_ca_db "$SMIME_DIR"
-  write_subca_cnf "$SMIME_DIR" smime_ca.key smime_ca.crt "$DN_O S/MIME CA" 3072
+  write_subca_cnf "$SMIME_DIR" smime_ca.key smime_ca.crt "S/MIME CA" 3072
 
   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 \
     -out "$SMIME_DIR/private/smime_ca.key" 2>/dev/null
@@ -327,7 +327,7 @@ init_personal_ca() {
   ask_skip "Personal CA" "$PERSONAL_DIR/private/personal_ca.key" || return 0
 
   init_ca_db "$PERSONAL_DIR"
-  write_subca_cnf "$PERSONAL_DIR" personal_ca.key personal_ca.crt "$DN_O Personal CA"
+  write_subca_cnf "$PERSONAL_DIR" personal_ca.key personal_ca.crt "Personal CA"
 
   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-384 \
     -out "$PERSONAL_DIR/private/personal_ca.key" 2>/dev/null
@@ -351,7 +351,7 @@ init_cs_ca() {
   ask_skip "Code Signing CA" "$CS_DIR/private/codesign_ca.key" || return 0
 
   init_ca_db "$CS_DIR"
-  write_subca_cnf "$CS_DIR" codesign_ca.key codesign_ca.crt "$DN_O Code Signing CA" 4096
+  write_subca_cnf "$CS_DIR" codesign_ca.key codesign_ca.crt "Code Signing CA" 4096
 
   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 \
     -out "$CS_DIR/private/codesign_ca.key" 2>/dev/null
@@ -375,7 +375,7 @@ init_tsa_ca() {
   ask_skip "TSA CA" "$TSA_CA_DIR/private/tsa_ca.key" || return 0
 
   init_ca_db "$TSA_CA_DIR"
-  write_subca_cnf "$TSA_CA_DIR" tsa_ca.key tsa_ca.crt "$DN_O TSA CA"
+  write_subca_cnf "$TSA_CA_DIR" tsa_ca.key tsa_ca.crt "TSA CA"
 
   openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-384 \
     -out "$TSA_CA_DIR/private/tsa_ca.key" 2>/dev/null
@@ -432,7 +432,7 @@ init_tsa_signing() {
   openssl req -new \
     -key "$TSA_SIGN_DIR/tsa_signing.key" \
     -out "$TSA_SIGN_DIR/tsa_signing.csr" \
-    -subj "/C=${DN_C}/O=${DN_O}/CN=${DN_O} TSA"
+    -subj "/C=${DN_C}/O=${DN_O}/CN=TSA"
 
   # EKU timeStamping must be critical and appear alone — RFC 3161 §2.3
   local aia; aia=$(aia_value "$REPO_URL_HTTP/tsa_ca.crt")
