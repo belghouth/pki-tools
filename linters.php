@@ -1260,7 +1260,7 @@ MIIFVzCCAz+gAwIBAgINAgPlk28xsBNJiGuiFzANBgkqhkiG9w0BAQwFADCBjjEL
 <?php endif; ?>
 
 <?php if ($result_output !== null): ?>
-  <div class="result-card">
+  <div class="result-card" id="result">
     <div class="result-header">
       <div class="result-header-left">
         <div class="dot-result"></div>
@@ -1279,7 +1279,7 @@ MIIFVzCCAz+gAwIBAgINAgPlk28xsBNJiGuiFzANBgkqhkiG9w0BAQwFADCBjjEL
 <?php endif; ?>
 
 <?php if ($revoc_output !== null): ?>
-  <div class="result-card">
+  <div class="result-card" id="<?= $result_output === null ? 'result' : 'revoc-result' ?>">
     <div class="result-header">
       <div class="result-header-left">
         <div class="dot-result" style="background:var(--warn);box-shadow:0 0 6px var(--warn);"></div>
@@ -1315,6 +1315,13 @@ if ($parse_pem !== '' && parse_pem($parse_pem) !== null):
     </div>
   </div>
 <?php endif; ?>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var el = document.getElementById('result');
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+</script>
 
 </main>
 
