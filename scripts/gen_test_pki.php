@@ -908,7 +908,7 @@ $html = <<<HTML
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Meerkat Test PKI — {$pki_domain}</title>
+  <title>Meerkat Test CA — {$pki_domain}</title>
   <style>
     :root {
       --bg: #0e1014; --surface: #13171e; --border: #2a3040;
@@ -987,7 +987,7 @@ $html = <<<HTML
 <body>
 <div class="wrap">
 
-  <h1>Meerkat Test PKI</h1>
+  <h1>Meerkat Test CA</h1>
   <p class="sub">{$pki_domain} &nbsp;·&nbsp; Generated {$generated}</p>
 
   <div class="warning">
