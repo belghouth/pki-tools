@@ -579,7 +579,7 @@ DN_FIELDS.forEach(function(f){ dnFieldMap[f.a] = f; });
     fields.forEach(function(f){
       var o = document.createElement('option');
       o.value = f.a;
-      o.textContent = f.a + ' — ' + f.n;
+      o.textContent = f.a === f.n ? f.a : f.a + ' — ' + f.n;
       if (f.dep) o.className = 'deprecated';
       og.appendChild(o);
     });
