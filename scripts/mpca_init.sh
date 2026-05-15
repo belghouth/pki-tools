@@ -151,17 +151,22 @@ keyUsage               = critical,keyCertSign,cRLSign
 CONF
 }
 
-# write_subca_ext FILE POLICY_OID CDP_URL ISSUERS_URL
-# CDP and ISSUERS_URL must be http:// — HTTPS creates circular dependency for CRL/cert retrieval
+# write_subca_ext FILE POLICY_OID CDP_URL ISSUERS_URL EKU
+# EKU constrains what leaf certs this CA may issue (principle of least privilege,
+# required by CA/B Forum S/MIME BR and CS BR for sub-CAs).
+# CDP and ISSUERS_URL must be http:// — HTTPS creates circular dependency.
 write_subca_ext() {
-  local file="$1" policy_oid="$2" cdp="$3" issuers="$4"
+  local file="$1" policy_oid="$2" cdp="$3" issuers="$4" eku="${5:-}"
   local aia; aia=$(aia_value "$issuers")
+  local eku_line=""
+  [[ -n "$eku" ]] && eku_line="extendedKeyUsage       = $eku"
   cat > "$file" <<EXT
 [ subca_ext ]
 subjectKeyIdentifier   = hash
 authorityKeyIdentifier = keyid:always,issuer
 basicConstraints       = critical,CA:true,pathlen:0
 keyUsage               = critical,keyCertSign,cRLSign
+${eku_line}
 crlDistributionPoints  = URI:$cdp
 authorityInfoAccess    = $aia
 certificatePolicies    = @cp_subca
@@ -309,7 +314,7 @@ init_smime_ca() {
     -key "$SMIME_DIR/private/smime_ca.key" -out "$SMIME_DIR/csr/smime_ca.csr"
 
   local ext="$SMIME_DIR/csr/smime_ca_ext.cnf"
-  write_subca_ext "$ext" "$OID_SMIME_CA_CP" "$REPO_URL_HTTP/root.crl" "$REPO_URL_HTTP/root.crt"
+  write_subca_ext "$ext" "$OID_SMIME_CA_CP" "$REPO_URL_HTTP/root.crl" "$REPO_URL_HTTP/root.crt" "emailProtection"
   sign_subca "S/MIME CA" "$SMIME_DIR/csr/smime_ca.csr" "$SMIME_DIR/smime_ca.crt" "$ext"
 
   openssl ca -gencrl -config "$SMIME_DIR/openssl.cnf" \
@@ -332,7 +337,7 @@ init_personal_ca() {
     -key "$PERSONAL_DIR/private/personal_ca.key" -out "$PERSONAL_DIR/csr/personal_ca.csr"
 
   local ext="$PERSONAL_DIR/csr/personal_ca_ext.cnf"
-  write_subca_ext "$ext" "$OID_PERSONAL_CA_CP" "$REPO_URL_HTTP/root.crl" "$REPO_URL_HTTP/root.crt"
+  write_subca_ext "$ext" "$OID_PERSONAL_CA_CP" "$REPO_URL_HTTP/root.crl" "$REPO_URL_HTTP/root.crt" "clientAuth,1.3.6.1.5.5.7.3.36"
   sign_subca "Personal CA" "$PERSONAL_DIR/csr/personal_ca.csr" \
     "$PERSONAL_DIR/personal_ca.crt" "$ext"
 
@@ -356,7 +361,7 @@ init_cs_ca() {
     -key "$CS_DIR/private/codesign_ca.key" -out "$CS_DIR/csr/codesign_ca.csr"
 
   local ext="$CS_DIR/csr/codesign_ca_ext.cnf"
-  write_subca_ext "$ext" "$OID_CS_CA_CP" "$REPO_URL_HTTP/root.crl" "$REPO_URL_HTTP/root.crt"
+  write_subca_ext "$ext" "$OID_CS_CA_CP" "$REPO_URL_HTTP/root.crl" "$REPO_URL_HTTP/root.crt" "codeSigning"
   sign_subca "Code Signing CA" "$CS_DIR/csr/codesign_ca.csr" \
     "$CS_DIR/codesign_ca.crt" "$ext"
 
@@ -390,6 +395,7 @@ subjectKeyIdentifier   = hash
 authorityKeyIdentifier = keyid:always,issuer
 basicConstraints       = critical,CA:true,pathlen:0
 keyUsage               = critical,keyCertSign,cRLSign
+extendedKeyUsage       = timeStamping
 crlDistributionPoints  = URI:${REPO_URL_HTTP}/root.crl
 authorityInfoAccess    = $aia
 certificatePolicies    = @cp_tsa_ca, @cp_tsa_policy
