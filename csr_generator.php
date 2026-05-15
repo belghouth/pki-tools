@@ -14,12 +14,72 @@ const ALLOWED_EC_CURVES = ['P-192', 'P-224', 'P-256', 'P-384', 'P-521'];
 // mode='generate': key created fresh with intentionally bad parameters.
 // mode='preloaded': key PEM embedded below; populate from the noted public source.
 
-// Source: openssl-blacklist Debian package — seed 0x0001, RSA-2048
-// (apt-get source openssl-blacklist; or https://github.com/govtwork/debian_weak_rsa)
-const DEBIAN_WEAK_RSA2048_PEM = '';
+// Source: https://github.com/g0tmi1k/debian-ssh — common_keys/debian_ssh_rsa_2048_x86.tar.bz2
+// Entry: rsa/2048/0bdcea11b2c628c7fd8bc4b04ca43668-12474 (PID=12474 used as RNG seed)
+// Converted from PKCS#1 to PKCS#8 with: openssl pkcs8 -topk8 -nocrypt
+const DEBIAN_WEAK_RSA2048_PEM = <<<'PEM'
+-----BEGIN PRIVATE KEY-----
+MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQD6PYD5IJYUsN4x
+Pa4UMF4hHoedfZgvRpYQpABLX6LYIrzfq5DqzQKxI8khu55Ubebt+iQ7u8G5/4jp
+QCB9XsyINrDBWZ8/S4fPL4VSwTgWVW3MnKcnd0EtUoUf9OsvAPAxRIFSoZEVOut4
+yCPBvNXPg0rp43xb1WTPsmXAJ2vqyNzNPe6YWbT6TZwG32rJ0N5E5GhKVvBRP91z
+0bTRn20FE685ZsQy+Ad8YH6UXD5VfwBUQ8jF8XNqu2nONHSckZ/tDr9HPNuDUPRz
+Vw+dpSkc5R9KVYFae/9b5ZkXCkB/ASw577y4NV7/qDCDKxcEGNgREiG57MHvP+Ih
+GGlyY9AJAgEjAoIBAQDPV4ge4HxaSWelJHpLPgTZnPQGJjxEba+KIXyWOUxp8OWj
+YkTfzm/x29KJqhV5J9yZS5pdYQ47Bu3IlDgtXS0gZ9RIbtRnpPt/yEnle4Y+ZAqE
+9tOkW38ljYQ/DMLdzZPRDOAuhd6cj+etOB2ghoVFigrfDPIC8qP8jIAxf7/RKHKb
+PePpwnn6F9nyFsZES5EUsEC0SgbnRzoqPNjcKyNUggV00sAXCQ0Ry8OkXW1Fid4V
+bVlsOOnFuxirDvEbpP12xXz9vxNocqYBvKNrnn1e2A5dEQ0mtGnahLF54wvi20eY
+2Eug+G98JodGCM3Y4QahrL1okrx7ye3rdd83Bb93AoGBAP1gyWw02hV7ydiFN/H1
+0iYsmrz4zxHSgZEa75yiVv9qUC/MdA3uprvYEIdGcL/a7Iv4FWiK+lFh7um1veMO
+jtGRLCzckxPqZgsD2vVVqr7IFamEjhwjO62Uha1R4H9TLI81ZiNwpxNhnRNlyNZm
+n+kB/6pQJO0dpT9zlM44QviXAoGBAPzUZ5t1g0E/Bd/HaKzZ2HvBhpsFLoa3EA75
+xMvWHTFPQQ7oyDhde1ZZ3nUdngxBIQc5fkPBLgflMVCrHeomBrbv2b3FqLAsg9p2
+N1UMtriKEVLINzrcZpQ7O1wyDufKlv/8nwkJsehge4KuYHRRGecOJ4EpXVtFCAfy
+cO7u5OBfAoGAQSeEQGVcpnBJ2JdI5nJpPQQnyjFZ0WIED16ypJ7F6egjP323cUv+
+/RpNZJ0Vra1SxOgFgUhO/vvs+kStK8HqNeOAY06peiZUwQD9yg624JnZrz9Xvhew
+QpPn3BxeTKBb6k+PSvEVBPvX7wuLalTnSot8QbzWS5noqeqFWZlwTo0CgYEArV5y
+7kHzmnRbzKX+oml+gL83usG5gPKOqy7tWJLSMHDcJ3sM83NNQobEbZCm49TjcqsU
+wL76/hmA5tu8vdDuqVQDBclduqIuhyx9tqmh3aCA6E7GyUasvWpx2NHeVcy/UHK2
+MhVGyzrYWZwk4gu5/YYMddM4s50M0j/YaVNbKHsCgYACvVji5Oh3l6fulzJ+GdTB
+Cpt0OwNXp7iNmIm15bpp/6oPr4qKWor+RQsVGH5Ok7VjPE+xPv1/R+jnXyTNe3vE
+TtmLq3tpqsx8QEMCJDRppPSOHwW1xkDST26cWCVhAn8CAGF1C4KUJLK4oHHf+sWr
+UdK9Z0zMvDR7lXTh8rOeOQ==
+-----END PRIVATE KEY-----
+PEM;
 
-// Source: https://github.com/crocs-muni/roca — roca_test_2048_pkcs8.pem
-const ROCA_RSA2048_PEM = '';
+// Source: https://github.com/crocs-muni/roca — roca/tests/data/privkey03.pem
+// RSA-2048 key with ROCA-detectable Infineon TPM modulus structure (Nemec et al., 2017)
+const ROCA_RSA2048_PEM = <<<'PEM'
+-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC6aPxfu2BsTUKK
+uYs1XWYhTbT35HW19//dw0nHP31lmWUSGrFqQBTmxGXBEdhQIFhT0RP3EhJ+SiMK
+qX9IHu1kEPbDRfSOJfuBxC7GgV3DXN2Dng3pH7K+yEjQkQ+nfiwx+Z7JvMftFngS
+vXJDGLCt9JLWtHxc4FAYTod+pkBF+VAb9wVpz/0QLbcpn0npwAIir5EV0Kraln3+
+dZt+RXboXDpP9ZQDkjG5C0SLkMMjYIO8+Bm8MY1TogGOybQB8QK6nuE93lkqQrAy
+3xNmidnFYZ21XVGYU6Qi0xAGJNLZ5Hghg3X0YMJpMO2ozQ2Uflj/6be+JEU1bert
+mIIj4+0dAgMBAAECggEASUje9y/uP4W8RFefn/JBJZSsMczSbiC6qc+N4NRYEypU
+LuLpnvDkhrjtnBLM7OtablFDPR4QwS+aSSXL0Wm/QFje+nQ1KfFKyIB9NzNCznxi
+5cysgVsh5ZlN7xkog1u6Okd9oqgiHVZ5DD0If9JkG2+MjvZT8huJwZSV9jecCyXG
+EdNOeFtWFAIltpy4EyPeZB0bq1ZwWbbERRsYDCin5HOpZ7AF7qPB8rl7OsK8aN0K
+sqrG56fquAx3IkR4CRZXyXepeke/oRa4At+OVGa1aSfu1pQd66iwuPb0MFdBkN9T
+XnA5w/e1U4pSSk4TLY0E+mOE+eKKHiUs3sz6/Cw9oQKBgQDa5sERRX8Nd4iveHNe
+vIGuDuMcKhdwHJSCONQgDqBg/0+xoB/GySXWVEvdVh7281Tj3flvbxQwhIZ6BxmG
+ceU7eaw+u4O4Y31wUwwyGTBGJMezKuncfhionvzG0Tbe8FoE8qwyQSkKBC3Lv2Pd
++VzshxxWxygMLmN4FpTtCD39KQKBgQDaAJD5XJDHszD4isjexKNkSHbXOQY02ULL
+wLV4x9v4qGZtDS3jQnRhIbmwwJkVK9kTHwRzxLSnVsf++Q0vfBdBcCYpybEkLl6K
+XkXoG9QmBm500w2yxGrZowTxlqpFG488llPy45TJmeekL5MzSTdvwbKMTSolkOtR
+rxAfru061QKBgQDSqwFj/d4ot8F0HhfqNMEZInqvwFKOMvM54DdGIs12jD/GUrRC
+O5OOkdHxUdC7GbO5GQfVlrF3gBNrnSmTmkli09ZRCWXbLuSqFULHdDZhS0RlygcH
+jNNudJQRQ4frRqVb3bCbLNqyKRNp4ufZ2QL1H5LGcSS5lGtmR1VMSYJfAQKBgCUt
+3Yu5nrOAOwTYXoOnk5ohxarU/dr7hqnLNuffZgOVbMqCaeYNSl3aa5nabwEuVjot
+mwvHa2vyn+87OGV1y12Mq+WKkVxzUApXI6L/RAIsLKBd8kMfvn1ZkRlGsclRdu9F
+UBHngFOVnOzidD9V6E92AGZvLpXzjj6DFcPhiHH1AoGAH7uKnGvX5eykLyWhgyEE
+kleQI48ykVm4k9vUwy0O3kdX5TNXdlj9D4nfqg+/hbnRMlfMxzF6+KugP98pvNz2
+BnywtcDU/CAw1rjyVH8JBd9e/gq9QR2rqZHKIOUAHRVmeO/G7z0J8WgnPA8X9MyC
+R7DpDlcIpIJDWGxQSPpHH8g=
+-----END PRIVATE KEY-----
+PEM;
 
 const BAD_KEY_CATALOG = [
     'rsa_e3' => [
