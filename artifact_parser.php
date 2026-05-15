@@ -505,6 +505,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <script>
 (function () {
+  // ── Pre-fill from csr_generator.php via sessionStorage ───────────────────────
+  var stored = sessionStorage.getItem('meerkat_pem');
+  if (stored) {
+    var ta = document.getElementById('apPem');
+    if (ta && !ta.value.trim()) ta.value = stored;
+    sessionStorage.removeItem('meerkat_pem');
+  }
+
   // ── Tab switching ────────────────────────────────────────────────────────────
   var tabs = document.querySelectorAll('.ap-tab');
   tabs.forEach(function (tab) {

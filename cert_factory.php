@@ -1808,6 +1808,16 @@ $navLabel = 'Test CA';
     });
   }
 
+  // ── Pre-fill CSR from csr_generator.php via sessionStorage ──────────────────
+  (function(){
+    var stored = sessionStorage.getItem('meerkat_csr');
+    if (stored) {
+      var ta = document.getElementById('csrText');
+      if (ta && !ta.value.trim()) ta.value = stored;
+      sessionStorage.removeItem('meerkat_csr');
+    }
+  })();
+
   // ── Tab switching ────────────────────────────────────────────────────────────
   var tabs  = document.querySelectorAll('.input-tab');
   var panes = document.querySelectorAll('.tab-pane');
