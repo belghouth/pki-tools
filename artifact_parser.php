@@ -6,6 +6,7 @@ $x509parse_invoked = true;
 require_once __DIR__ . '/x509parse.php';
 require_once __DIR__ . '/modules/_base.php';
 foreach (glob(__DIR__ . '/modules/mod_*.php') as $_mod) require_once $_mod;
+require_once __DIR__ . '/recaptcha.php';
 
 $navLabel = 'Meerkat — Artifact Parser';
 
@@ -33,11 +34,18 @@ $privkey_warn = false;
 $posted_pem   = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (recaptcha_configured()) {
+        $token = trim($_POST['g_recaptcha_token'] ?? '');
+        if (!recaptcha_verify($token, 'parse_artifact')) {
+            $error = 'reCAPTCHA verification failed. Please try again.';
+        }
+    }
+
     $raw  = null;
     $fname = null;
     $ext  = 'pem';
 
-    if (!empty($_FILES['ap_file']['tmp_name']) && $_FILES['ap_file']['error'] !== UPLOAD_ERR_NO_FILE) {
+    if ($error === null && !empty($_FILES['ap_file']['tmp_name']) && $_FILES['ap_file']['error'] !== UPLOAD_ERR_NO_FILE) {
         $up = $_FILES['ap_file'];
         if ($up['error'] !== UPLOAD_ERR_OK) {
             $error = 'Upload error (code ' . $up['error'] . ').';
@@ -60,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 @unlink($up['tmp_name']);
             }
         }
-    } elseif (!empty($_POST['ap_pem'])) {
+    } elseif ($error === null && !empty($_POST['ap_pem'])) {
         $raw        = trim($_POST['ap_pem']);
         $posted_pem = $raw;
         $ext        = 'pem';
@@ -141,6 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap" rel="stylesheet">
   <?php require __DIR__ . '/includes/adsense_head.php'; ?>
+  <?= recaptcha_head() ?>
   <style>
     :root {
       --bg: #0e1014; --surface: #13171e; --border: #2a3040;
@@ -435,9 +444,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
     </div>
 
+    <input type="hidden" name="g_recaptcha_token" id="ap_recaptcha_token">
     <div class="ap-submit">
       <button type="reset" class="ap-btn-clear" id="apClear">Clear</button>
-      <button type="submit" class="ap-btn">Analyse</button>
+      <button type="button" class="ap-btn" onclick="doAnalyse()">Analyse</button>
     </div>
 
   </form>
@@ -504,6 +514,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <?php require __DIR__ . '/includes/cookie_banner.php'; ?>
 
 <script>
+var RECAPTCHA_SITE_KEY = <?= json_encode(RECAPTCHA_SITE_KEY) ?>;
+
+function getRecaptchaToken(action) {
+  return new Promise(function(resolve) {
+    if (!RECAPTCHA_SITE_KEY) { resolve(''); return; }
+    grecaptcha.ready(function() {
+      grecaptcha.execute(RECAPTCHA_SITE_KEY, {action: action}).then(resolve);
+    });
+  });
+}
+
+async function doAnalyse() {
+  var pem = document.getElementById('apPem').value.trim();
+  var inp = document.getElementById('apFile');
+  // ensure upload tab is active when submitting a file so the input is included
+  if (!pem && inp && inp.files.length) {
+    document.getElementById('tab-upload').click();
+  }
+  var token = await getRecaptchaToken('parse_artifact');
+  document.getElementById('ap_recaptcha_token').value = token;
+  document.getElementById('apForm').submit();
+}
+
 (function () {
   // ── Pre-fill from sessionStorage ─────────────────────────────────────────────
   // pki_prefill_cert (cert_factory Parse) takes priority over meerkat_pem (csr_generator Parse)
@@ -516,7 +549,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     var ta = document.getElementById('apPem');
     if (ta && !ta.value.trim()) {
       ta.value = prefill;
-      if (cert) document.getElementById('apForm').submit();
+      if (cert) doAnalyse();
     }
   }
 
@@ -578,15 +611,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     document.getElementById('apPem').value = '';
     sel.hidden = true;
     dz.querySelector('p').hidden = false;
-  });
-
-  // ── If file is selected, auto-switch to upload tab on submit ─────────────────
-  document.getElementById('apForm').addEventListener('submit', function () {
-    var pem = document.getElementById('apPem').value.trim();
-    if (!pem && inp.files.length) {
-      // ensure upload panel is active so the file input is submitted
-      document.getElementById('tab-upload').click();
-    }
   });
 
   // ── Issue Certificate from CSR ────────────────────────────────────────────────

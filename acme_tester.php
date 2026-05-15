@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/recaptcha.php';
 
 // ── POST / API ────────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -7,6 +8,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Content-Type: application/json; charset=utf-8');
     set_time_limit(120);
     $action = $_POST['action'] ?? '';
+
+    if ($action === 'init' && recaptcha_configured()) {
+        $token = trim($_POST['g_recaptcha_token'] ?? '');
+        if (!recaptcha_verify($token, 'acme_test')) {
+            echo json_encode(['error' => 'reCAPTCHA verification failed. Please try again.']);
+            exit;
+        }
+    }
+
     $result = match ($action) {
         'init'     => acme_action_init(),
         'order'    => acme_action_order(),
@@ -936,6 +946,7 @@ $navLabel = 'ACME Tester';
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap" rel="stylesheet">
+  <?= recaptcha_head() ?>
   <style>
     :root {
       --bg: #0e1014; --surface: #13171e; --surface2: #181d26; --border: #2a3040;
@@ -1316,6 +1327,17 @@ $navLabel = 'ACME Tester';
 <?php require __DIR__ . '/includes/cookie_banner.php'; ?>
 
 <script>
+var RECAPTCHA_SITE_KEY = <?= json_encode(RECAPTCHA_SITE_KEY) ?>;
+
+function getRecaptchaToken(action) {
+  return new Promise(function(resolve) {
+    if (!RECAPTCHA_SITE_KEY) { resolve(''); return; }
+    grecaptcha.ready(function() {
+      grecaptcha.execute(RECAPTCHA_SITE_KEY, {action: action}).then(resolve);
+    });
+  });
+}
+
 (function () {
   'use strict';
 
@@ -1419,10 +1441,12 @@ $navLabel = 'ACME Tester';
     setLoading(true, 'Fetching directory…');
 
     // ── Step A: init (directory + account) ──
+    var initToken = await getRecaptchaToken('acme_test');
     var fd = new FormData();
-    fd.append('action',   'init');
-    fd.append('endpoint', endpoint);
-    fd.append('email',    email);
+    fd.append('action',            'init');
+    fd.append('endpoint',          endpoint);
+    fd.append('email',             email);
+    fd.append('g_recaptcha_token', initToken);
     if (skipTls) fd.append('skip_tls', '1');
     if (eabKid)  fd.append('eab_kid', eabKid);
     if (eabMac)  fd.append('eab_mac', eabMac);

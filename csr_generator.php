@@ -405,6 +405,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $body = json_decode(file_get_contents('php://input'), true);
     if (!is_array($body)) { echo json_encode(['error' => 'Invalid JSON']); exit; }
 
+    if (recaptcha_configured()) {
+        $token = trim($body['g_recaptcha_token'] ?? '');
+        if (!recaptcha_verify($token, 'generate_csr'))
+            { echo json_encode(['error' => 'reCAPTCHA verification failed. Please try again.']); exit; }
+    }
+
     // ── Bad key CSR action ────────────────────────────────────────────────────
     if (($body['action'] ?? '') === 'badkey') {
         $keyId = $body['keyId'] ?? '';
@@ -494,6 +500,7 @@ require_once __DIR__ . '/recaptcha.php';
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap" rel="stylesheet">
+  <?= recaptcha_head() ?>
   <style>
     :root {
       --bg: #0e1014; --surface: #13171e; --surface2: #191e28;
@@ -835,6 +842,17 @@ require_once __DIR__ . '/recaptcha.php';
 </div>
 
 <script>
+var RECAPTCHA_SITE_KEY = <?= json_encode(RECAPTCHA_SITE_KEY) ?>;
+
+function getRecaptchaToken(action) {
+  return new Promise(function(resolve) {
+    if (!RECAPTCHA_SITE_KEY) { resolve(''); return; }
+    grecaptcha.ready(function() {
+      grecaptcha.execute(RECAPTCHA_SITE_KEY, {action: action}).then(resolve);
+    });
+  });
+}
+
 // ── DN field definitions ──────────────────────────────────────────────────────
 var DN_FIELDS = [
   // attr, oid, fullName, enc, maxLen, deprecated, note
@@ -1145,11 +1163,13 @@ async function generate() {
   var btn = document.getElementById('generateBtn');
   btn.disabled = true; btn.textContent = 'Generating…';
 
+  var token = await getRecaptchaToken('generate_csr');
+
   try {
     var resp = await fetch('csr_generator.php', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({algo, keySize, curve, hash, dn, san})
+      body: JSON.stringify({algo, keySize, curve, hash, dn, san, g_recaptcha_token: token})
     });
     var data = await resp.json();
     if (data.error) { showError(data.error); return; }
@@ -1176,11 +1196,13 @@ async function _runBadKeyCsr(keyId) {
   var btn = document.getElementById('generateBtn');
   btn.disabled = true; btn.textContent = 'Generating…';
 
+  var token = await getRecaptchaToken('generate_csr');
+
   try {
     var resp = await fetch('csr_generator.php', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({action: 'badkey', keyId: keyId, dn: dn, san: san})
+      body: JSON.stringify({action: 'badkey', keyId: keyId, dn: dn, san: san, g_recaptcha_token: token})
     });
     var data = await resp.json();
     if (data.error) { showError(data.error); return; }
