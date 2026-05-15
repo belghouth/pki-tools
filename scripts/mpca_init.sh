@@ -379,8 +379,29 @@ init_tsa_ca() {
   openssl req -new -config "$TSA_CA_DIR/openssl.cnf" \
     -key "$TSA_CA_DIR/private/tsa_ca.key" -out "$TSA_CA_DIR/csr/tsa_ca.csr"
 
+  # TSA CA ext: must include OID_TSA_POLICY so the policy flows to signing certs
+  # (IssuerSubjectPolicyChainValidator requires every policy OID in the leaf to
+  #  also appear in the issuer — a CA-only OID alone would break the chain)
   local ext="$TSA_CA_DIR/csr/tsa_ca_ext.cnf"
-  write_subca_ext "$ext" "$OID_TSA_CA_CP" "$REPO_URL_HTTP/root.crl" "$REPO_URL_HTTP/root.crt"
+  local aia; aia=$(aia_value "$REPO_URL_HTTP/root.crt")
+  cat > "$ext" <<EXT
+[ subca_ext ]
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always,issuer
+basicConstraints       = critical,CA:true,pathlen:0
+keyUsage               = critical,keyCertSign,cRLSign
+crlDistributionPoints  = URI:${REPO_URL_HTTP}/root.crl
+authorityInfoAccess    = $aia
+certificatePolicies    = @cp_tsa_ca, @cp_tsa_policy
+
+[ cp_tsa_ca ]
+policyIdentifier = $OID_TSA_CA_CP
+CPS.1            = $REPO_URL/cps.html
+
+[ cp_tsa_policy ]
+policyIdentifier = $OID_TSA_POLICY
+CPS.1            = $REPO_URL/cps.html
+EXT
   sign_subca "TSA CA" "$TSA_CA_DIR/csr/tsa_ca.csr" "$TSA_CA_DIR/tsa_ca.crt" "$ext"
 
   openssl ca -gencrl -config "$TSA_CA_DIR/openssl.cnf" \
