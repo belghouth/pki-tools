@@ -34,6 +34,7 @@ TSA_CA_DIR="$MPCA_DIR/tsa_ca"
 TSA_SIGN_DIR="$MPCA_DIR/tsa_sign"
 
 REPO_URL="https://pki.thameur.org/mpca"
+REPO_URL_HTTP="http://pki.thameur.org/mpca"   # used in AIA/CDP (HTTPS creates circular dependency)
 TSA_URL="https://thameur.org/tsa"
 SITE_URL="https://thameur.org"
 # Set to live OCSP responder URL once deployed; leave empty to omit AIA OCSP entry
@@ -51,7 +52,7 @@ SUBCA_DAYS=3652     # 10 yr
 TSA_SIGN_DAYS=1095  # 3 yr
 
 DN_C="TN"
-DN_O="thameur.org MPCA"
+DN_O="Meerkat MPCA by Thameur Belghith"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -147,15 +148,11 @@ subjectKeyIdentifier   = hash
 authorityKeyIdentifier = keyid:always,issuer
 basicConstraints       = critical,CA:true,pathlen:1
 keyUsage               = critical,keyCertSign,cRLSign
-certificatePolicies    = @cp_root
-
-[ cp_root ]
-policyIdentifier = $OID_ROOT_CP
-CPS.1            = $REPO_URL/cps.html
 CONF
 }
 
 # write_subca_ext FILE POLICY_OID CDP_URL ISSUERS_URL
+# CDP and ISSUERS_URL must be http:// — HTTPS creates circular dependency for CRL/cert retrieval
 write_subca_ext() {
   local file="$1" policy_oid="$2" cdp="$3" issuers="$4"
   local aia; aia=$(aia_value "$issuers")
@@ -177,9 +174,14 @@ EXT
 
 write_subca_cnf() {
   local dir="$1" key_name="$2" cert_name="$3" cn="$4" bits="${5:-}"
-  local key_section
-  [[ -n "$bits" ]] && key_section="default_bits = $bits" \
-                   || key_section="# EC key — no default_bits"
+  local key_section md
+  if [[ -n "$bits" ]]; then
+    key_section="default_bits = $bits"
+    md="sha256"
+  else
+    key_section="# EC key — no default_bits"
+    md="sha384"   # P-384 CAs sign with SHA-384 to match security level
+  fi
   cat > "$dir/openssl.cnf" <<CONF
 [ ca ]
 default_ca = CA_default
@@ -196,7 +198,7 @@ certificate       = \$dir/$cert_name
 crl_dir           = \$dir/crl
 crlnumber         = \$dir/crlnumber
 crl               = \$dir/crl/${cert_name%.crt}.crl
-default_md        = sha256
+default_md        = $md
 name_opt          = ca_default
 cert_opt          = ca_default
 default_crl_days  = 7
@@ -214,7 +216,7 @@ emailAddress     = optional
 $key_section
 distinguished_name = req_dn
 string_mask        = utf8only
-default_md         = sha256
+default_md         = $md
 prompt             = no
 
 [ req_dn ]
@@ -307,7 +309,7 @@ init_smime_ca() {
     -key "$SMIME_DIR/private/smime_ca.key" -out "$SMIME_DIR/csr/smime_ca.csr"
 
   local ext="$SMIME_DIR/csr/smime_ca_ext.cnf"
-  write_subca_ext "$ext" "$OID_SMIME_CA_CP" "$REPO_URL/root.crl" "$REPO_URL/root.crt"
+  write_subca_ext "$ext" "$OID_SMIME_CA_CP" "$REPO_URL_HTTP/root.crl" "$REPO_URL_HTTP/root.crt"
   sign_subca "S/MIME CA" "$SMIME_DIR/csr/smime_ca.csr" "$SMIME_DIR/smime_ca.crt" "$ext"
 
   openssl ca -gencrl -config "$SMIME_DIR/openssl.cnf" \
@@ -330,7 +332,7 @@ init_personal_ca() {
     -key "$PERSONAL_DIR/private/personal_ca.key" -out "$PERSONAL_DIR/csr/personal_ca.csr"
 
   local ext="$PERSONAL_DIR/csr/personal_ca_ext.cnf"
-  write_subca_ext "$ext" "$OID_PERSONAL_CA_CP" "$REPO_URL/root.crl" "$REPO_URL/root.crt"
+  write_subca_ext "$ext" "$OID_PERSONAL_CA_CP" "$REPO_URL_HTTP/root.crl" "$REPO_URL_HTTP/root.crt"
   sign_subca "Personal CA" "$PERSONAL_DIR/csr/personal_ca.csr" \
     "$PERSONAL_DIR/personal_ca.crt" "$ext"
 
@@ -354,7 +356,7 @@ init_cs_ca() {
     -key "$CS_DIR/private/codesign_ca.key" -out "$CS_DIR/csr/codesign_ca.csr"
 
   local ext="$CS_DIR/csr/codesign_ca_ext.cnf"
-  write_subca_ext "$ext" "$OID_CS_CA_CP" "$REPO_URL/root.crl" "$REPO_URL/root.crt"
+  write_subca_ext "$ext" "$OID_CS_CA_CP" "$REPO_URL_HTTP/root.crl" "$REPO_URL_HTTP/root.crt"
   sign_subca "Code Signing CA" "$CS_DIR/csr/codesign_ca.csr" \
     "$CS_DIR/codesign_ca.crt" "$ext"
 
@@ -378,7 +380,7 @@ init_tsa_ca() {
     -key "$TSA_CA_DIR/private/tsa_ca.key" -out "$TSA_CA_DIR/csr/tsa_ca.csr"
 
   local ext="$TSA_CA_DIR/csr/tsa_ca_ext.cnf"
-  write_subca_ext "$ext" "$OID_TSA_CA_CP" "$REPO_URL/root.crl" "$REPO_URL/root.crt"
+  write_subca_ext "$ext" "$OID_TSA_CA_CP" "$REPO_URL_HTTP/root.crl" "$REPO_URL_HTTP/root.crt"
   sign_subca "TSA CA" "$TSA_CA_DIR/csr/tsa_ca.csr" "$TSA_CA_DIR/tsa_ca.crt" "$ext"
 
   openssl ca -gencrl -config "$TSA_CA_DIR/openssl.cnf" \
@@ -406,7 +408,7 @@ init_tsa_signing() {
     -subj "/C=${DN_C}/O=${DN_O}/CN=${DN_O} TSA"
 
   # EKU timeStamping must be critical and appear alone — RFC 3161 §2.3
-  local aia; aia=$(aia_value "$REPO_URL/tsa_ca.crt")
+  local aia; aia=$(aia_value "$REPO_URL_HTTP/tsa_ca.crt")
   cat > "$TSA_SIGN_DIR/tsa_signing_ext.cnf" <<EXT
 [ tsa_sign_ext ]
 subjectKeyIdentifier   = hash
@@ -414,7 +416,7 @@ authorityKeyIdentifier = keyid:always,issuer
 basicConstraints       = critical,CA:false
 keyUsage               = critical,digitalSignature
 extendedKeyUsage       = critical,timeStamping
-crlDistributionPoints  = URI:${REPO_URL}/tsa_ca.crl
+crlDistributionPoints  = URI:${REPO_URL_HTTP}/tsa_ca.crl
 authorityInfoAccess    = $aia
 certificatePolicies    = @cp_tsa_sign
 
@@ -481,9 +483,11 @@ publish_web() {
 # ── HTML repository page ──────────────────────────────────────────────────────
 
 # cert_card TITLE CERT_FILE CRL_FILENAME CERT_FILENAME [CHAIN_FILENAME]
+# CERT_FILENAME is the PEM .crt; a matching .der file is linked if present in WEB_DIR.
 # Echoes the HTML card for one CA. Called in a subshell via $(...).
 cert_card() {
   local title="$1" cert="$2" crl_name="$3" cert_name="$4" chain_name="${5:-}"
+  local der_name="${cert_name%.crt}.der"
 
   if [[ ! -f "$cert" ]]; then
     printf '<div class="card"><div class="card-title">%s</div><p class="chain-pending">Not yet initialized.</p></div>\n' \
@@ -502,9 +506,11 @@ cert_card() {
   pem=$(openssl x509 -in "$cert" 2>/dev/null)
   uid="pem_$(basename "$cert" .crt | tr '-' '_')"
 
-  local chain_btn=""
+  local chain_btn="" der_btn=""
   [[ -n "$chain_name" ]] && \
     chain_btn="<a class=\"dl-btn\" href=\"${REPO_URL}/${chain_name}\">Chain PEM</a>"
+  [[ -f "${WEB_DIR}/${der_name}" ]] && \
+    der_btn="<a class=\"dl-btn\" href=\"${REPO_URL}/${der_name}\">DER</a>"
 
   cat <<CARD
   <div class="card">
@@ -518,11 +524,11 @@ cert_card() {
     <div class="pem-wrap">
       <textarea class="pem-field" id="${uid}" rows="5" readonly spellcheck="false">${pem}</textarea>
       <div class="pem-actions">
-        <a class="dl-btn" href="${REPO_URL}/${cert_name}">CRT</a>
+        <a class="dl-btn" href="${REPO_URL}/${cert_name}">PEM</a>
+        ${der_btn}
         <a class="dl-btn" href="${REPO_URL}/${crl_name}">CRL</a>
         ${chain_btn}
         <button class="pem-btn" onclick="copyPem('${uid}',this)">Copy PEM</button>
-        <button class="pem-btn" onclick="dlPem('${uid}','${cert_name}')">Save PEM</button>
       </div>
     </div>
   </div>

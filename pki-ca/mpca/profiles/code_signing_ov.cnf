@@ -19,8 +19,8 @@ keyUsage               = critical,digitalSignature
 extendedKeyUsage       = codeSigning
 subjectKeyIdentifier   = hash
 authorityKeyIdentifier = keyid:always
-crlDistributionPoints  = URI:https://pki.thameur.org/mpca/codesign_ca.crl
-authorityInfoAccess    = caIssuers;URI:https://pki.thameur.org/mpca/codesign_ca.crt
+crlDistributionPoints  = URI:http://pki.thameur.org/mpca/codesign_ca.crl
+authorityInfoAccess    = caIssuers;URI:http://pki.thameur.org/mpca/codesign_ca.crt
 certificatePolicies    = @cp_local, @cp_cabf
 
 [cp_local]

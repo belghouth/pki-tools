@@ -17,8 +17,8 @@ keyUsage               = critical,digitalSignature,nonRepudiation
 extendedKeyUsage       = emailProtection
 subjectKeyIdentifier   = hash
 authorityKeyIdentifier = keyid:always
-crlDistributionPoints  = URI:https://pki.thameur.org/mpca/smime_ca.crl
-authorityInfoAccess    = caIssuers;URI:https://pki.thameur.org/mpca/smime_ca.crt
+crlDistributionPoints  = URI:http://pki.thameur.org/mpca/smime_ca.crl
+authorityInfoAccess    = caIssuers;URI:http://pki.thameur.org/mpca/smime_ca.crt
 certificatePolicies    = @cp_local, @cp_cabf
 subjectAltName         = {{SAN}}
 
