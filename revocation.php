@@ -132,8 +132,16 @@ function revoc_http_fetch(string $url, string $method = 'GET', ?string $body = n
 
 // ── OCSP checker ─────────────────────────────────────────────────────────────
 
+function revoc_fmt_duration(int $seconds): string {
+    if ($seconds < 60)    return $seconds . 's';
+    if ($seconds < 3600)  return floor($seconds / 60) . 'm ' . ($seconds % 60) . 's';
+    if ($seconds < 86400) return floor($seconds / 3600) . 'h ' . floor(($seconds % 3600) / 60) . 'm';
+    return floor($seconds / 86400) . 'd ' . floor(($seconds % 86400) / 3600) . 'h';
+}
+
 function revoc_check_ocsp(string $ee_pem, string $issuer_pem): array {
     $result = [
+        // Core
         'status'        => 'unknown',
         'reason'        => null,
         'revoked_at'    => null,
@@ -141,10 +149,38 @@ function revoc_check_ocsp(string $ee_pem, string $issuer_pem): array {
         'next_update'   => null,
         'responder_url' => null,
         'responder_id'  => null,
-        'nonce_used'    => false,
-        'delegated'     => false,
         'raw_response'  => null,
         'error'         => null,
+        // Response signature
+        'sig_algorithm' => null,
+        // Freshness / compliance
+        'age_seconds'        => null,
+        'remaining_seconds'  => null,
+        'next_update_absent' => false,
+        'cabf_age_ok'        => null,  // CA/B Forum BR: max 10 days
+        // Delegated responder
+        'delegated'                  => false,
+        'responder_cert_expiry'      => null,
+        'responder_cert_valid'       => null,
+        'responder_cert_has_eku'     => null,  // id-kp-OCSPSigning
+        'responder_cert_has_nocheck' => null,  // id-pkix-ocsp-nocheck
+        // HTTP transport
+        'http_status'         => null,
+        'http_content_type'   => null,
+        'http_cache_control'  => null,
+        'http_max_age'        => null,
+        'http_etag'           => null,
+        'http_latency_ms'     => null,
+        'http_response_bytes' => null,
+        'stapling_size_ok'    => null,
+        'http_get_supported'  => null,
+        // Nonce
+        'nonce_echoed' => null,
+        // TLS (HTTPS endpoints only)
+        'tls_version'    => null,
+        'tls_cipher'     => null,
+        'tls_cert_valid' => null,
+        'tls_cert_error' => null,
     ];
 
     $urls = revoc_extract_urls($ee_pem);
@@ -153,16 +189,15 @@ function revoc_check_ocsp(string $ee_pem, string $issuer_pem): array {
         return $result;
     }
 
-    $responder_url          = $urls['ocsp_urls'][0];
+    $responder_url           = $urls['ocsp_urls'][0];
     $result['responder_url'] = $responder_url;
 
-    // Write EE and issuer to temp files for openssl ocsp command.
     $tmp_ee     = tempnam(sys_get_temp_dir(), 'revoc_ee_');
     $tmp_issuer = tempnam(sys_get_temp_dir(), 'revoc_is_');
     $tmp_resp   = tempnam(sys_get_temp_dir(), 'revoc_rsp_');
+    $tmp_req    = tempnam(sys_get_temp_dir(), 'revoc_rq_');
 
     try {
-        // Re-export both certs via OpenSSL for clean normalised PEM.
         $ee_cert = openssl_x509_read($ee_pem);
         openssl_x509_export($ee_cert, $ee_clean);
         file_put_contents($tmp_ee, $ee_clean);
@@ -171,15 +206,15 @@ function revoc_check_ocsp(string $ee_pem, string $issuer_pem): array {
         openssl_x509_export($is_cert, $is_clean);
         file_put_contents($tmp_issuer, $is_clean);
 
-        // Use openssl ocsp to build, send, and parse the OCSP request.
-        // -noverify: don't verify the OCSP response signature chain
-        //   (we verify manually below; avoids needing the full root chain)
-        // -resp_text: verbose output we can parse
+        // ── Main OCSP request ─────────────────────────────────────────────────
+        // -reqout: save the DER request so we can reuse it for cURL/GET probes.
+        // -noverify: skip chain verification (we parse manually below).
         $cmd = 'openssl ocsp'
-             . ' -issuer '    . escapeshellarg($tmp_issuer)
-             . ' -cert '      . escapeshellarg($tmp_ee)
-             . ' -url '       . escapeshellarg($responder_url)
-             . ' -respout '   . escapeshellarg($tmp_resp)
+             . ' -issuer '  . escapeshellarg($tmp_issuer)
+             . ' -cert '    . escapeshellarg($tmp_ee)
+             . ' -url '     . escapeshellarg($responder_url)
+             . ' -reqout '  . escapeshellarg($tmp_req)
+             . ' -respout ' . escapeshellarg($tmp_resp)
              . ' -noverify'
              . ' -resp_text'
              . ' 2>&1';
@@ -189,7 +224,6 @@ function revoc_check_ocsp(string $ee_pem, string $issuer_pem): array {
         exec($cmd, $lines, $exit_code);
         $output = implode("\n", $lines);
 
-        // Read raw response for pkilint linting.
         if (file_exists($tmp_resp) && filesize($tmp_resp) > 0) {
             $result['raw_response'] = file_get_contents($tmp_resp);
         }
@@ -199,40 +233,163 @@ function revoc_check_ocsp(string $ee_pem, string $issuer_pem): array {
             return $result;
         }
 
-        // Parse status from output.
-        // Format: "<cert_file>: good|revoked|unknown"
+        // ── Parse core fields ─────────────────────────────────────────────────
         if (preg_match('/:\s*(good|revoked|unknown)/i', $output, $m)) {
             $result['status'] = strtolower($m[1]);
         }
+        if (preg_match('/Reason:\s*(.+)/i', $output, $m))          $result['reason']       = trim($m[1]);
+        if (preg_match('/Revocation Time:\s*(.+)/i', $output, $m)) $result['revoked_at']   = trim($m[1]);
+        if (preg_match('/This Update:\s*(.+)/i', $output, $m))     $result['this_update']  = trim($m[1]);
+        if (preg_match('/Next Update:\s*(.+)/i', $output, $m))     $result['next_update']  = trim($m[1]);
+        if (preg_match('/Responder Id:\s*(.+)/i', $output, $m))    $result['responder_id'] = trim($m[1]);
 
-        // Revocation reason and time
-        if (preg_match('/Reason:\s*(.+)/i', $output, $m)) {
-            $result['reason'] = trim($m[1]);
-        }
-        if (preg_match('/Revocation Time:\s*(.+)/i', $output, $m)) {
-            $result['revoked_at'] = trim($m[1]);
-        }
-
-        // Response timestamps
-        if (preg_match('/This Update:\s*(.+)/i', $output, $m)) {
-            $result['this_update'] = trim($m[1]);
-        }
-        if (preg_match('/Next Update:\s*(.+)/i', $output, $m)) {
-            $result['next_update'] = trim($m[1]);
+        // First Signature Algorithm line belongs to the OCSP response itself.
+        if (preg_match('/Signature Algorithm:\s*(.+)/i', $output, $m)) {
+            $result['sig_algorithm'] = trim($m[1]);
         }
 
-        // Responder ID
-        if (preg_match('/Responder Id:\s*(.+)/i', $output, $m)) {
-            $result['responder_id'] = trim($m[1]);
+        // ── Freshness ─────────────────────────────────────────────────────────
+        if ($result['this_update'] !== null) {
+            $ts = strtotime($result['this_update']);
+            if ($ts !== false) {
+                $result['age_seconds'] = max(0, time() - $ts);
+                $result['cabf_age_ok'] = $result['age_seconds'] <= 864000; // 10 days
+            }
+        }
+        if ($result['next_update'] !== null) {
+            $ts = strtotime($result['next_update']);
+            if ($ts !== false) $result['remaining_seconds'] = max(0, $ts - time());
+        } else {
+            $result['next_update_absent'] = true;
         }
 
-        // Delegated responder detection — if responder cert is not the issuer
-        if (preg_match('/Responder Id:\s*C\s*=/i', $output)) {
-            // Check if responder != issuer subject
-            $issuer_data = openssl_x509_parse($is_cert);
-            $issuer_cn   = $issuer_data['subject']['CN'] ?? '';
-            if ($issuer_cn !== '' && !str_contains($output, $issuer_cn)) {
-                $result['delegated'] = true;
+        // ── Delegated responder + embedded cert details ───────────────────────
+        // The embedded responder cert (if any) appears after the first
+        // "Certificate:" marker in -resp_text output.
+        $cert_pos = strpos($output, "\nCertificate:\n");
+        if ($cert_pos !== false) {
+            $result['delegated']             = true;
+            $cert_section                    = substr($output, $cert_pos);
+            $result['responder_cert_has_eku']     = (bool) preg_match('/OCSP Signing/i',    $cert_section);
+            $result['responder_cert_has_nocheck'] = (bool) preg_match('/OCSP No Check/i',   $cert_section);
+            if (preg_match('/Not After\s*:\s*(.+)/i', $cert_section, $m)) {
+                $expiry_str                      = trim($m[1]);
+                $result['responder_cert_expiry'] = $expiry_str;
+                $expiry_ts                       = strtotime($expiry_str);
+                $result['responder_cert_valid']  = ($expiry_ts !== false && $expiry_ts > time());
+            }
+        } else {
+            // Fallback: compare responder ID against issuer subject
+            if (preg_match('/Responder Id:\s*C\s*=/i', $output)) {
+                $issuer_data = openssl_x509_parse($is_cert);
+                $issuer_cn   = $issuer_data['subject']['CN'] ?? '';
+                if ($issuer_cn !== '' && !str_contains($output, $issuer_cn)) {
+                    $result['delegated'] = true;
+                }
+            }
+        }
+
+        // ── HTTP probe via cURL (headers, latency, size, GET support) ─────────
+        $request_der = (file_exists($tmp_req) && filesize($tmp_req) > 0)
+            ? file_get_contents($tmp_req) : null;
+
+        if ($request_der !== null && function_exists('curl_init')) {
+            // POST with header capture
+            $ch = curl_init($responder_url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HEADER         => true,
+                CURLOPT_POST           => true,
+                CURLOPT_POSTFIELDS     => $request_der,
+                CURLOPT_HTTPHEADER     => ['Content-Type: application/ocsp-request'],
+                CURLOPT_TIMEOUT        => 10,
+                CURLOPT_CONNECTTIMEOUT => 5,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_USERAGENT      => 'PKI-Linters/1.0',
+            ]);
+            $full_resp  = curl_exec($ch);
+            $hdr_size   = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+            $latency_ms = (int) round(curl_getinfo($ch, CURLINFO_TOTAL_TIME) * 1000);
+            $http_code  = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($full_resp !== false && $http_code > 0) {
+                $headers_raw   = substr($full_resp, 0, $hdr_size);
+                $response_body = substr($full_resp, $hdr_size);
+
+                $result['http_status']         = $http_code;
+                $result['http_latency_ms']     = $latency_ms;
+                $result['http_response_bytes'] = strlen($response_body);
+                $result['stapling_size_ok']    = strlen($response_body) < 65535;
+
+                if (preg_match('/^Content-Type:\s*(.+)$/im', $headers_raw, $m)) {
+                    $result['http_content_type'] = trim($m[1]);
+                }
+                if (preg_match('/^Cache-Control:\s*(.+)$/im', $headers_raw, $m)) {
+                    $result['http_cache_control'] = trim($m[1]);
+                    if (preg_match('/max-age=(\d+)/i', $result['http_cache_control'], $m2)) {
+                        $result['http_max_age'] = (int) $m2[1];
+                    }
+                }
+                if (preg_match('/^ETag:\s*(.+)$/im', $headers_raw, $m)) {
+                    $result['http_etag'] = trim(trim($m[1]), '"');
+                }
+            }
+
+            // GET support (RFC 5019): base64url-encode the request DER and append to URL
+            $b64req  = rtrim(strtr(base64_encode($request_der), '+/', '-_'), '=');
+            $get_url = rtrim($responder_url, '/') . '/' . $b64req;
+            $ch2 = curl_init($get_url);
+            curl_setopt_array($ch2, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_HTTPGET        => true,
+                CURLOPT_TIMEOUT        => 8,
+                CURLOPT_CONNECTTIMEOUT => 4,
+                CURLOPT_SSL_VERIFYPEER => true,
+                CURLOPT_USERAGENT      => 'PKI-Linters/1.0',
+            ]);
+            $get_resp = curl_exec($ch2);
+            $get_code = (int) curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+            curl_close($ch2);
+            // Accepted if server returns 200 with a non-trivial body
+            $result['http_get_supported'] = ($get_code === 200 && $get_resp !== false && strlen((string)$get_resp) > 10);
+        }
+
+        // ── Nonce test (separate request with -nonce) ─────────────────────────
+        // Tests whether the responder echoes nonces (replay protection).
+        // A cached/CDN response typically ignores nonces.
+        $nonce_lines = []; $nonce_exit = null;
+        exec('openssl ocsp'
+            . ' -issuer '  . escapeshellarg($tmp_issuer)
+            . ' -cert '    . escapeshellarg($tmp_ee)
+            . ' -url '     . escapeshellarg($responder_url)
+            . ' -nonce -noverify -resp_text 2>&1',
+            $nonce_lines, $nonce_exit);
+        $nonce_out = implode("\n", $nonce_lines);
+        // "Nonce" appears in response extensions only if the responder echoed it
+        $result['nonce_echoed'] = ($nonce_out !== '' && (bool) preg_match('/Response Nonce|Nonce:\s*[0-9a-f]/i', $nonce_out));
+
+        // ── TLS probe (HTTPS endpoints only) ──────────────────────────────────
+        if (str_starts_with(strtolower($responder_url), 'https://')) {
+            $parsed = parse_url($responder_url);
+            $host   = $parsed['host'] ?? '';
+            $port   = (int) ($parsed['port'] ?? 443);
+            if ($host !== '') {
+                $tls_lines = []; $tls_exit = null;
+                exec('echo Q | openssl s_client'
+                    . ' -connect '    . escapeshellarg("$host:$port")
+                    . ' -servername ' . escapeshellarg($host)
+                    . ' 2>&1',
+                    $tls_lines, $tls_exit);
+                $tls_out = implode("\n", $tls_lines);
+                if (preg_match('/^\s*Protocol\s*:\s*(.+)$/im', $tls_out, $m))  $result['tls_version'] = trim($m[1]);
+                if (preg_match('/^\s*Cipher\s*:\s*(.+)$/im',   $tls_out, $m))  $result['tls_cipher']  = trim($m[1]);
+                if (preg_match('/Verify return code:\s*0\b/i',  $tls_out)) {
+                    $result['tls_cert_valid'] = true;
+                } elseif (preg_match('/Verify return code:\s*\d+\s*\(([^)]+)\)/i', $tls_out, $m)) {
+                    $result['tls_cert_valid'] = false;
+                    $result['tls_cert_error'] = trim($m[1]);
+                }
             }
         }
 
@@ -240,6 +397,7 @@ function revoc_check_ocsp(string $ee_pem, string $issuer_pem): array {
         @unlink($tmp_ee);
         @unlink($tmp_issuer);
         @unlink($tmp_resp);
+        @unlink($tmp_req);
     }
 
     return $result;
@@ -535,14 +693,157 @@ function revoc_pkilint_findings_html(string $raw_json, string $source_label): st
 // ── Result renderers ──────────────────────────────────────────────────────────
 
 function revoc_render_ocsp(array $r, string $lint_html): string {
-    $out  = revoc_row('Status',        revoc_status_html($r['status']));
-    if ($r['reason'])      $out .= revoc_row('Reason',       '<span class="revoc-warn">' . revoc_e($r['reason']) . '</span>');
-    if ($r['revoked_at'])  $out .= revoc_row('Revoked At',   '<code class="revoc-code">' . revoc_e($r['revoked_at']) . '</code>');
-    if ($r['responder_url']) $out .= revoc_row('Responder',  '<a class="revoc-link" href="' . revoc_e($r['responder_url']) . '" target="_blank" rel="noopener">' . revoc_e($r['responder_url']) . '</a>');
-    if ($r['responder_id'])  $out .= revoc_row('Responder ID', '<code class="revoc-code">' . revoc_e($r['responder_id']) . '</code>');
-    if ($r['this_update'])   $out .= revoc_row('This Update', '<code class="revoc-code">' . revoc_e($r['this_update']) . '</code>');
-    if ($r['next_update'])   $out .= revoc_row('Next Update', '<code class="revoc-code">' . revoc_e($r['next_update']) . '</code>');
-    if ($r['delegated'])     $out .= revoc_row('Responder',   '<span class="revoc-warn">Delegated OCSP responder (not the issuer)</span>');
+    $out = '';
+
+    // ── Status ────────────────────────────────────────────────────────────────
+    $out .= revoc_row('Status', revoc_status_html($r['status']));
+    if ($r['reason'])     $out .= revoc_row('Reason',     '<span class="revoc-warn">' . revoc_e($r['reason']) . '</span>');
+    if ($r['revoked_at']) $out .= revoc_row('Revoked At', '<code class="revoc-code">' . revoc_e($r['revoked_at']) . '</code>');
+
+    // ── Responder ────────────────────────────────────────────────────────────
+    $out .= '<div class="revoc-sub-header">Responder</div>';
+    if ($r['responder_url']) {
+        $out .= revoc_row('URL', '<a class="revoc-link" href="' . revoc_e($r['responder_url']) . '" target="_blank" rel="noopener">' . revoc_e($r['responder_url']) . '</a>');
+    }
+    if ($r['responder_id']) {
+        $out .= revoc_row('Responder ID', '<code class="revoc-code">' . revoc_e($r['responder_id']) . '</code>');
+    }
+    if ($r['sig_algorithm']) {
+        $sig = $r['sig_algorithm'];
+        $sig_warn = preg_match('/sha1|md5/i', $sig) ? ' <span class="revoc-warn">⚠ Weak hash</span>' : '';
+        $out .= revoc_row('Signature', '<code class="revoc-code">' . revoc_e($sig) . '</code>' . $sig_warn);
+    }
+
+    // Delegated responder cert
+    if ($r['delegated']) {
+        $out .= revoc_row('Type', '<span class="revoc-warn">⚠ Delegated OCSP responder</span>');
+        if ($r['responder_cert_has_eku'] !== null) {
+            $out .= revoc_row('OCSPSigning EKU', $r['responder_cert_has_eku']
+                ? '<span class="revoc-ok">✓ Present</span>'
+                : '<span class="revoc-bad">✗ Missing — misconfiguration</span>');
+        }
+        if ($r['responder_cert_has_nocheck'] !== null) {
+            $out .= revoc_row('OCSP No-Check', $r['responder_cert_has_nocheck']
+                ? '<span class="revoc-ok">✓ Present</span>'
+                : '<span class="revoc-warn">⚠ Absent — clients may chain-check the responder cert</span>');
+        }
+        if ($r['responder_cert_expiry'] !== null) {
+            $exp_html = '<code class="revoc-code">' . revoc_e($r['responder_cert_expiry']) . '</code>';
+            if ($r['responder_cert_valid'] === false) {
+                $exp_html .= ' <span class="revoc-bad">✗ EXPIRED</span>';
+            }
+            $out .= revoc_row('Responder Cert Expiry', $exp_html);
+        }
+    } else {
+        $out .= revoc_row('Type', '<span class="revoc-muted">CA signing directly (not delegated)</span>');
+    }
+
+    // ── Freshness ─────────────────────────────────────────────────────────────
+    $out .= '<div class="revoc-sub-header">Freshness</div>';
+    if ($r['this_update']) $out .= revoc_row('This Update', '<code class="revoc-code">' . revoc_e($r['this_update']) . '</code>');
+
+    if ($r['next_update_absent']) {
+        $out .= revoc_row('Next Update', '<span class="revoc-warn">⚠ Absent — not recommended for publicly-trusted certificates</span>');
+    } elseif ($r['next_update']) {
+        $out .= revoc_row('Next Update', '<code class="revoc-code">' . revoc_e($r['next_update']) . '</code>');
+    }
+
+    if ($r['age_seconds'] !== null) {
+        $age_html = '<code class="revoc-code">' . revoc_e(revoc_fmt_duration($r['age_seconds'])) . '</code>';
+        if ($r['cabf_age_ok'] === false) {
+            $age_html .= ' <span class="revoc-bad">✗ Exceeds 10-day CA/B Forum BR limit</span>';
+        } elseif ($r['age_seconds'] > 604800) {
+            $age_html .= ' <span class="revoc-warn">⚠ Over 7 days old</span>';
+        }
+        $out .= revoc_row('Response Age', $age_html);
+    }
+
+    if ($r['remaining_seconds'] !== null) {
+        $rem_html = '<code class="revoc-code">' . revoc_e(revoc_fmt_duration($r['remaining_seconds'])) . '</code>';
+        if ($r['remaining_seconds'] < 3600) {
+            $rem_html .= ' <span class="revoc-bad">✗ Expiring within the hour</span>';
+        } elseif ($r['remaining_seconds'] < 86400) {
+            $rem_html .= ' <span class="revoc-warn">⚠ Expiring within 24 hours</span>';
+        }
+        $out .= revoc_row('Remaining Validity', $rem_html);
+    }
+
+    // ── HTTP transport ────────────────────────────────────────────────────────
+    $out .= '<div class="revoc-sub-header">HTTP Transport</div>';
+
+    if ($r['http_status'] !== null) {
+        $s_html = '<code class="revoc-code">' . revoc_e((string)$r['http_status']) . '</code>';
+        if ($r['http_status'] !== 200) $s_html .= ' <span class="revoc-warn">⚠ Expected 200</span>';
+        $out .= revoc_row('HTTP Status', $s_html);
+    }
+
+    if ($r['http_latency_ms'] !== null) {
+        $lat_html = '<code class="revoc-code">' . revoc_e($r['http_latency_ms'] . ' ms') . '</code>';
+        if ($r['http_latency_ms'] > 1000)      $lat_html .= ' <span class="revoc-bad">✗ Very high latency</span>';
+        elseif ($r['http_latency_ms'] > 500)   $lat_html .= ' <span class="revoc-warn">⚠ High latency</span>';
+        $out .= revoc_row('Latency', $lat_html);
+    }
+
+    if ($r['http_content_type'] !== null) {
+        $ct_ok   = str_contains($r['http_content_type'], 'application/ocsp-response');
+        $ct_html = '<code class="revoc-code">' . revoc_e($r['http_content_type']) . '</code>';
+        if (!$ct_ok) $ct_html .= ' <span class="revoc-bad">✗ Must be application/ocsp-response</span>';
+        $out .= revoc_row('Content-Type', $ct_html);
+    }
+
+    if ($r['http_cache_control'] !== null) {
+        $out .= revoc_row('Cache-Control', '<code class="revoc-code">' . revoc_e($r['http_cache_control']) . '</code>');
+    } else {
+        $out .= revoc_row('Cache-Control', '<span class="revoc-warn">⚠ Absent — CDN caching not explicitly controlled</span>');
+    }
+
+    if ($r['http_max_age'] !== null) {
+        $out .= revoc_row('max-age', '<code class="revoc-code">' . revoc_e(revoc_fmt_duration($r['http_max_age'])) . '</code>');
+    }
+
+    if ($r['http_etag'] !== null) {
+        $out .= revoc_row('ETag', '<code class="revoc-code">' . revoc_e($r['http_etag']) . '</code>');
+    }
+
+    if ($r['http_response_bytes'] !== null) {
+        $sz    = $r['http_response_bytes'];
+        $sz_html = '<code class="revoc-code">' . revoc_e(number_format($sz) . ' bytes') . '</code>';
+        if ($r['stapling_size_ok'] === false) {
+            $sz_html .= ' <span class="revoc-bad">✗ Too large for TLS stapling in some implementations (&gt; 65 535 B)</span>';
+        } elseif ($sz > 10240) {
+            $sz_html .= ' <span class="revoc-warn">⚠ Large — verify stapling buffer on your TLS server</span>';
+        } else {
+            $sz_html .= ' <span class="revoc-ok">✓ Stapling-friendly</span>';
+        }
+        $out .= revoc_row('Response Size', $sz_html);
+    }
+
+    if ($r['http_get_supported'] !== null) {
+        $out .= revoc_row('GET (RFC 5019)', $r['http_get_supported']
+            ? '<span class="revoc-ok">✓ Supported — CDN-cacheable</span>'
+            : '<span class="revoc-muted">✗ Not supported — POST only (not CDN-cacheable)</span>');
+    }
+
+    // ── Nonce ─────────────────────────────────────────────────────────────────
+    if ($r['nonce_echoed'] !== null) {
+        $out .= revoc_row('Nonce', $r['nonce_echoed']
+            ? '<span class="revoc-ok">✓ Echoed — response is request-specific, not served from cache</span>'
+            : '<span class="revoc-muted">Not echoed — CDN / pre-signed response (no per-request replay protection)</span>');
+    }
+
+    // ── TLS (HTTPS endpoints only) ────────────────────────────────────────────
+    if ($r['tls_version'] !== null || $r['tls_cipher'] !== null || $r['tls_cert_valid'] !== null) {
+        $out .= '<div class="revoc-sub-header">TLS Endpoint</div>';
+        if ($r['tls_version']) $out .= revoc_row('Protocol', '<code class="revoc-code">' . revoc_e($r['tls_version']) . '</code>');
+        if ($r['tls_cipher'])  $out .= revoc_row('Cipher',   '<code class="revoc-code">' . revoc_e($r['tls_cipher']) . '</code>');
+        if ($r['tls_cert_valid'] === true) {
+            $out .= revoc_row('Endpoint Cert', '<span class="revoc-ok">✓ Valid</span>');
+        } elseif ($r['tls_cert_valid'] === false) {
+            $out .= revoc_row('Endpoint Cert', '<span class="revoc-bad">✗ Invalid'
+                . ($r['tls_cert_error'] ? ': ' . revoc_e($r['tls_cert_error']) : '') . '</span>');
+        }
+    }
+
     $out .= $lint_html;
     return $out;
 }
@@ -573,11 +874,19 @@ function revoc_styles(): string {
 .revoc-code { font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; color: #a8c0e8; }
 .revoc-link { color: var(--accent2); text-decoration: none; word-break: break-all; }
 .revoc-link:hover { text-decoration: underline; }
-.revoc-warn { color: var(--warn); }
+.revoc-warn   { color: var(--warn); }
+.revoc-ok     { color: #3ddc7a; }
+.revoc-bad    { color: #e05c5c; }
+.revoc-muted  { color: var(--muted); }
 .revoc-status { font-weight: 700; font-size: 0.78rem; letter-spacing: 0.06em; }
 .revoc-good    { color: #3ddc7a; }
 .revoc-revoked { color: #e05c5c; }
 .revoc-unknown { color: #8899aa; }
+.revoc-sub-header {
+  font-size: 0.6rem; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted); margin-top: 0.75rem; margin-bottom: 0.1rem;
+  padding-top: 0.6rem; border-top: 1px solid var(--border);
+}
 /* pkilint findings */
 .revoc-lint-section { margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 0.75rem; }
 .revoc-lint-header { font-size: 0.62rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.5rem; }
