@@ -290,9 +290,12 @@ function process_mpca_csr(string $csrFile, array $profile, string $email): array
         return ['error' => "Sub CA '{$subCa}' is not initialized. Run mpca_init.sh first."];
     }
 
-    // Build extension file: read profile CNF, strip [meta] block, substitute {{SAN}}
+    // Build extension file: extract from [leaf_ext] onwards, discarding [meta] and any preamble
     $profileContent = (string) file_get_contents($profile['file']);
-    $profileContent = preg_replace('/^\[meta\][^\[]*(?=\[)/ms', '', $profileContent);
+    if (!preg_match('/(\[leaf_ext\].*)/ms', $profileContent, $m)) {
+        return ['error' => "Profile '{$profile['label']}' has no [leaf_ext] section"];
+    }
+    $profileContent = $m[1];
 
     if ($profile['san_type'] === 'email' && $email !== '') {
         $sanValue = 'email:' . $email;
