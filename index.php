@@ -709,6 +709,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
         </div>
 
         <div class="tool-card">
+          <div class="tool-card-bar tool-card-bar--teal"></div>
+          <div class="tool-card-body">
+            <div class="tool-card-icon">🔑</div>
+            <div class="tool-card-name">CSR Generator</div>
+            <div class="tool-card-desc">Build a Certificate Signing Request with full control over the key algorithm (RSA, ECDSA, Ed25519), curve or key size, and signature hash. Compose the Subject DN field-by-field from a complete OID-annotated list — deprecated attributes flagged — with SAN support for DNS, IP, email, and URI. UTF-8 encoding enabled throughout for international characters.</div>
+            <div class="tool-card-tags">
+              <span class="tag">CSR</span>
+              <span class="tag">RSA</span>
+              <span class="tag">ECDSA</span>
+              <span class="tag">Ed25519</span>
+              <span class="tag">SAN</span>
+            </div>
+            <a href="/csr_generator.php" class="tool-card-link">Open Tool →</a>
+          </div>
+        </div>
+
+        <div class="tool-card">
           <div class="tool-card-bar tool-card-bar--orange"></div>
           <div class="tool-card-body">
             <div class="tool-card-icon">🏭</div>
