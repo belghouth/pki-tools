@@ -342,24 +342,24 @@ function process_mpca_csr(string $csrFile, array $profile, string $email): array
             return ['error' => 'Signing produced no output'];
         }
 
-        // pkimetal lint — non-blocking on unreachable instance; no blocking rules for MPCA yet
-        $issuerPem = (string) file_get_contents($ca['crt']);
-        run_pkimetal_check($certPem, $issuerPem); // result ignored for now — MPCA profiles not yet in pkimetal
+        $issuerPem    = (string) file_get_contents($ca['crt']);
+        $lintFindings = run_pkimetal_collect($certPem, $issuerPem) ?? [];
 
         $info = parse_cert($certFile);
 
         return [
-            'ok'          => true,
-            'profile'     => $profile['label'],
-            'certificate' => trim($certPem),
-            'issuer_pem'  => trim($issuerPem),
-            'subject'     => $info['subject']    ?? '',
-            'issuer'      => $info['issuer']     ?? '',
-            'not_before'  => $info['not_before'] ?? '',
-            'not_after'   => $info['not_after']  ?? '',
-            'serial'      => $info['serial']     ?? '',
-            'key_bits'    => $keyBits,
-            'email'       => $email,
+            'ok'           => true,
+            'profile'      => $profile['label'],
+            'certificate'  => trim($certPem),
+            'issuer_pem'   => trim($issuerPem),
+            'subject'      => $info['subject']    ?? '',
+            'issuer'       => $info['issuer']     ?? '',
+            'not_before'   => $info['not_before'] ?? '',
+            'not_after'    => $info['not_after']  ?? '',
+            'serial'       => $info['serial']     ?? '',
+            'key_bits'     => $keyBits,
+            'email'        => $email,
+            'lint_findings' => $lintFindings,
         ];
 
     } finally {
@@ -372,7 +372,7 @@ function process_mpca_csr(string $csrFile, array $profile, string $email): array
 
 // ── Shared helpers (mirrors cert_factory.php) ──────────────────────────────────
 
-function run_pkimetal_check(string $certPem, string $issuerPem): ?string
+function run_pkimetal_collect(string $certPem, string $issuerPem): ?array
 {
     if (!function_exists('curl_init')) return null;
     $env  = getenv('PKIMETAL_URL');
@@ -394,21 +394,21 @@ function run_pkimetal_check(string $certPem, string $issuerPem): ?string
         CURLOPT_CONNECTTIMEOUT => 5,
     ]);
     $response = curl_exec($ch);
-    $code     = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    if ($response === false || $code !== 200) return null;
+    if ($response === false || $httpCode !== 200) return null;
     $findings = json_decode((string) $response, true);
     if (!is_array($findings)) return null;
-    $errors = [];
+    $out = [];
     foreach ($findings as $f) {
-        $sev  = strtolower(trim($f['Severity'] ?? $f['severity'] ?? ''));
-        $find = trim($f['Finding'] ?? $f['finding'] ?? '');
+        $sev    = strtolower(trim($f['Severity'] ?? $f['severity'] ?? ''));
+        $find   = trim($f['Finding'] ?? $f['finding'] ?? '');
+        $code   = trim($f['Code']    ?? $f['code']    ?? '');
+        $linter = trim($f['Linter']  ?? $f['linter']  ?? '');
         if ($find === '[EndOfResults]' || $sev === 'meta') continue;
-        if ($sev === 'error' || $sev === 'fatal') {
-            $errors[] = '[' . ($f['Linter'] ?? '') . '] ' . $find;
-        }
+        $out[] = ['severity' => $sev, 'linter' => $linter, 'code' => $code, 'finding' => $find];
     }
-    return $errors !== [] ? implode("\n", $errors) : null;
+    return $out;
 }
 
 function extract_cn(string $text): string
@@ -679,6 +679,21 @@ $noProfiles = empty($profiles);
     .revoke-result.ok  { background: rgba(0,212,170,0.07); border: 1px solid rgba(0,212,170,0.3); color: var(--accent); }
     .revoke-result.err { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.3); color: var(--danger); }
 
+    /* Lint findings */
+    .lint-results { margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+    .lint-title { font-size: 0.78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.6rem; }
+    .lint-finding { display: flex; align-items: baseline; gap: 0.6rem; font-family: var(--mono); font-size: 0.72rem; padding: 0.3rem 0; border-bottom: 1px solid rgba(255,255,255,0.04); word-break: break-all; }
+    .lint-finding:last-child { border-bottom: none; }
+    .lint-sev { font-size: 0.62rem; font-weight: 700; letter-spacing: 0.05em; border-radius: 3px; padding: 0.1em 0.45em; white-space: nowrap; flex-shrink: 0; }
+    .lint-error .lint-sev, .lint-fatal .lint-sev { background: rgba(248,113,113,0.15); color: #f87171; }
+    .lint-error, .lint-fatal { color: #f87171; }
+    .lint-warning .lint-sev { background: rgba(251,191,36,0.12); color: #fbbf24; }
+    .lint-warning { color: #fbbf24; }
+    .lint-notice .lint-sev { background: rgba(96,165,250,0.12); color: #60a5fa; }
+    .lint-notice { color: #60a5fa; }
+    .lint-info .lint-sev, .lint-pass .lint-sev { background: rgba(160,160,160,0.08); color: var(--muted); }
+    .lint-info, .lint-pass { color: var(--muted); }
+
     .site-footer {
       border-top: 1px solid var(--border); padding: 1.4rem 2rem;
       display: flex; align-items: center; justify-content: space-between;
@@ -803,6 +818,11 @@ $noProfiles = empty($profiles);
     <textarea class="pem-output" id="pemOutput" readonly spellcheck="false"></textarea>
 
     <p class="chain-note" id="chainNote"></p>
+
+    <div class="lint-results" id="lintResults" hidden>
+      <p class="lint-title">Lint Results</p>
+      <div id="lintFindings"></div>
+    </div>
 
     <div class="revoke-row">
       <span class="revoke-label">Revocation reason:</span>
@@ -1014,6 +1034,22 @@ $noProfiles = empty($profiles);
       ({ smime: 'smime_chain.pem', personal: 'personal_chain.pem', codesign: 'codesign_chain.pem' }[
         (PROFILES[profileSelect.value] || {}).sub_ca
       ] || 'mpca.html') + '" target="_blank" rel="noopener">Download issuing chain PEM</a>';
+
+    var lintSection  = document.getElementById('lintResults');
+    var lintFindings = document.getElementById('lintFindings');
+    var findings = data.lint_findings || [];
+    if (findings.length > 0) {
+      lintFindings.innerHTML = findings.map(function (f) {
+        var label = '[' + f.linter + '] ' + (f.code ? f.code + ': ' : '') + f.finding;
+        return '<div class="lint-finding lint-' + f.severity + '">'
+             + '<span class="lint-sev">' + f.severity.toUpperCase() + '</span>'
+             + '<span>' + esc(label) + '</span>'
+             + '</div>';
+      }).join('');
+      lintSection.hidden = false;
+    } else {
+      lintSection.hidden = true;
+    }
 
     resultCard.hidden = false;
     resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
