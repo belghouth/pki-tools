@@ -269,15 +269,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ── Page render ───────────────────────────────────────────────────────────────
-$site_base_url = SITE_BASE_URL;
-$pki_base_url  = PKI_BASE_URL;
-?>
-<!DOCTYPE html>
+$navLabel = 'CSR Generator';
+require_once __DIR__ . '/recaptcha.php';
+?><!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CSR Generator — Meerkat PKI Tools</title>
+  <?php
+  require_once __DIR__ . '/includes/seo.php';
+  seo_head([
+    'title'       => 'CSR Generator — Build Certificate Signing Requests | ' . SITE_DOMAIN,
+    'description' => 'Generate a CSR with full control over key algorithm (RSA, ECDSA, Ed25519), curve, key size, and signature hash. Compose Subject DN and SANs field-by-field with per-field validation and UTF-8 support.',
+    'url'         => SITE_BASE_URL . '/csr_generator.php',
+  ]);
+  ?>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg: #0e1014; --surface: #13171e; --surface2: #191e28;
@@ -287,10 +297,23 @@ $pki_base_url  = PKI_BASE_URL;
       --sans: 'IBM Plex Sans',system-ui,sans-serif;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    [hidden] { display: none !important; }
     body { background: var(--bg); color: var(--text); font-family: var(--sans);
-           font-weight: 300; line-height: 1.7; padding: 2.5rem 1.25rem 5rem; }
+           font-weight: 300; line-height: 1.7; }
     a { color: var(--accent); text-decoration: none; }
-    .wrap { max-width: 780px; margin: 0 auto; }
+    a:hover { color: #fff; }
+    .wrap { max-width: 780px; margin: 0 auto; padding: 3.5rem 2rem 6rem; }
+
+    /* ── Footer ── */
+    .site-footer {
+      border-top: 1px solid var(--border); padding: 1.4rem 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 1rem;
+      font-family: var(--mono); font-size: 0.72rem; color: var(--muted);
+    }
+    .site-footer a { color: var(--muted); }
+    .site-footer a:hover { color: var(--accent); }
+    .site-footer-links { display: flex; gap: 1.5rem; }
 
     h1 { font-size: 1.55rem; font-weight: 600; color: #fff; margin-bottom: .2rem; }
     .sub { font-family: var(--mono); font-size: .7rem; color: var(--muted);
@@ -395,6 +418,10 @@ $pki_base_url  = PKI_BASE_URL;
   </style>
 </head>
 <body>
+
+<?php require __DIR__ . '/includes/site_nav.php'; ?>
+
+<main>
 <div class="wrap">
 
   <h1>CSR Generator</h1>
@@ -890,6 +917,21 @@ function escHtml(s) {
 // Pre-populate with CN by default
 addDnField('CN');
 </script>
+
+</div><!-- .wrap -->
+</main>
+
+<footer class="site-footer">
+  <span>&copy; <?= date('Y') ?> Thameur Belghith</span>
+  <div class="site-footer-links">
+    <a href="/">Home</a>
+    <a href="/references.php">PKI References</a>
+    <a href="/privacy.php">Privacy Policy</a>
+    <a href="<?= 'mailto:' . CONTACT_EMAIL ?>"><?= CONTACT_EMAIL ?></a>
+  </div>
+</footer>
+
+<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
 
 </body>
 </html>
