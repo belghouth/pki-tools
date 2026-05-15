@@ -757,7 +757,7 @@ function revoc_render_ocsp(array $r, string $lint_html): string {
 
     // Delegated responder cert
     if ($r['delegated']) {
-        $out .= revoc_row('Type', '<span class="revoc-warn">⚠ Delegated OCSP responder</span>');
+        $out .= revoc_row('Type', '<span class="revoc-muted">Delegated OCSP responder</span>');
         if ($r['responder_cert_has_eku'] !== null) {
             $out .= revoc_row('OCSPSigning EKU', $r['responder_cert_has_eku']
                 ? '<span class="revoc-ok">✓ Present</span>'
