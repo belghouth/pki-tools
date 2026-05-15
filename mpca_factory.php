@@ -184,9 +184,13 @@ function handle_mpca_revoke(): array
     }
 
     $ca   = $caMap[$subCa];
-    $lock = fopen($ca['lock'], 'w');
-    if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
-        if ($lock) fclose($lock);
+    $lock = fopen($ca['lock'], 'c');
+    if (!$lock) {
+        @unlink($tmpCert);
+        return ['error' => "Cannot open lock file for sub CA '{$subCa}' — check that the CA directory is writable by the web server (path: {$ca['lock']})"];
+    }
+    if (!flock($lock, LOCK_EX | LOCK_NB)) {
+        fclose($lock);
         @unlink($tmpCert);
         return ['error' => 'CA is busy — please retry in a moment'];
     }
@@ -298,9 +302,12 @@ function process_mpca_csr(string $csrFile, array $profile, string $email): array
         $profileContent = preg_replace('/^subjectAltName\s*=\s*\{\{SAN\}\}\s*$/m', '', $profileContent);
     }
 
-    $lock = fopen($ca['lock'], 'w');
-    if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
-        if ($lock) fclose($lock);
+    $lock = fopen($ca['lock'], 'c');
+    if (!$lock) {
+        return ['error' => "Cannot open lock file for sub CA '{$subCa}' — check that the CA directory is writable by the web server (path: {$ca['lock']})"];
+    }
+    if (!flock($lock, LOCK_EX | LOCK_NB)) {
+        fclose($lock);
         return ['error' => 'Another issuance is in progress — please retry in a moment'];
     }
 
