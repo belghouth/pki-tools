@@ -495,7 +495,7 @@ publish_web() {
     "$CS_DIR/crl/codesign_ca.crl:codesign_ca" \
     "$TSA_CA_DIR/crl/tsa_ca.crl:tsa_ca"
   do
-    cp "${pair%%:*}" "$WEB_DIR/${pair##*:}.crl"
+    openssl crl -in "${pair%%:*}" -outform DER -out "$WEB_DIR/${pair##*:}.crl" 2>/dev/null
   done
 
   cat "$SMIME_DIR/smime_ca.crt"       "$ROOT_DIR/root.crt" > "$WEB_DIR/smime_chain.pem"
