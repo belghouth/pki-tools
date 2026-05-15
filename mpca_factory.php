@@ -851,12 +851,13 @@ $noProfiles = empty($profiles);
     });
   }
 
-  // ── Pre-fill CSR from csr_generator.php via sessionStorage ──────────────────
+  // ── Pre-fill CSR from csr_generator / artifact_parser via sessionStorage ─────
   (function () {
-    var stored = sessionStorage.getItem('meerkat_csr');
+    var stored = sessionStorage.getItem('pki_prefill_csr') || sessionStorage.getItem('meerkat_csr');
     if (stored) {
       var ta = document.getElementById('csrText');
       if (ta && !ta.value.trim()) ta.value = stored;
+      sessionStorage.removeItem('pki_prefill_csr');
       sessionStorage.removeItem('meerkat_csr');
     }
   })();

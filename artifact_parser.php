@@ -110,7 +110,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'n_mods'   => count(ArtifactRegistry::all()),
                         'pem'      => $parsed['pem'] ?? null,
                         'is_csr'   => str_contains($module->label(), 'CSR'),
+                        'csr_san_types' => [],
+                        'csr_has_org'   => false,
                     ];
+                    // Detect SAN types and Subject O= for factory routing (temp file avoids heredoc injection)
+                    if ($result['is_csr'] && $result['pem']) {
+                        $csrTmp = tempnam(sys_get_temp_dir(), 'csr_');
+                        if ($csrTmp !== false) {
+                            file_put_contents($csrTmp, $result['pem']);
+                            $csrText = (string) shell_exec(
+                                OPENSSL_BIN . ' req -noout -text -in ' . escapeshellarg($csrTmp) . ' 2>/dev/null'
+                            );
+                            unlink($csrTmp);
+                            if (preg_match('/Subject:([^\n]+)/i', $csrText, $sm)) {
+                                $result['csr_has_org'] = (bool) preg_match('/\bO\s*=/', $sm[1]);
+                            }
+                            if (preg_match('/Subject Alternative Name:\s*\n\s*([^\n]+)/i', $csrText, $sn)) {
+                                if (preg_match('/DNS:/i', $sn[1]))   $result['csr_san_types'][] = 'dns';
+                                if (preg_match('/email:/i', $sn[1])) $result['csr_san_types'][] = 'email';
+                            }
+                        }
+                    }
                 } catch (Throwable $e) {
                     $error = 'Parse error: ' . htmlspecialchars($e->getMessage());
                 }
@@ -279,7 +299,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     /* ── Issue-cert CTA (shown for CSR results) ── */
     .ap-csr-action {
-      margin-bottom: 1.5rem; display: flex; justify-content: flex-end;
+      margin-bottom: 1.5rem; display: flex; justify-content: flex-end; gap: .6rem; flex-wrap: wrap;
     }
     .ap-btn-issue-cert {
       font-family: var(--mono); font-size: .75rem; text-transform: uppercase; letter-spacing: .07em;
@@ -289,6 +309,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       transition: background .15s, border-color .15s;
     }
     .ap-btn-issue-cert:hover { background: rgba(0,212,170,.08); border-color: var(--accent); }
+    .ap-btn-issue-cert--mpca { color: #a78bfa; border-color: rgba(167,139,250,.4); }
+    .ap-btn-issue-cert--mpca:hover { background: rgba(167,139,250,.08); border-color: #a78bfa; }
     .ap-modules-list h3 { font-family: var(--mono); font-size: .65rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: .6rem; }
     .ap-mod-chips { display: flex; flex-wrap: wrap; gap: .4rem; }
     .ap-mod-chip { font-family: var(--mono); font-size: .65rem; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 3px; padding: .15em .55em; }
@@ -474,11 +496,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   <?php if ($result['is_csr'] && $result['pem']): ?>
   <!-- Issue certificate CTA for CSR results -->
-  <div class="ap-csr-action">
-    <button type="button" class="ap-btn-issue-cert" id="btnIssueCert"
-            data-pem="<?= htmlspecialchars(trim($result['pem']), ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8') ?>">
-      Issue Certificate from this CSR →
-    </button>
+  <div class="ap-csr-action"
+       id="csrActionBar"
+       data-pem="<?= htmlspecialchars(trim($result['pem']), ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8') ?>"
+       data-san-types="<?= htmlspecialchars(implode(',', $result['csr_san_types']), ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8') ?>"
+       data-has-org="<?= $result['csr_has_org'] ? '1' : '0' ?>">
   </div>
   <?php endif; ?>
 
@@ -614,12 +636,40 @@ async function doAnalyse() {
   });
 
   // ── Issue Certificate from CSR ────────────────────────────────────────────────
-  var btnIssueCert = document.getElementById('btnIssueCert');
-  if (btnIssueCert) {
-    btnIssueCert.addEventListener('click', function () {
-      sessionStorage.setItem('pki_prefill_csr', btnIssueCert.dataset.pem);
-      window.open('/cert_factory.php', '_blank');
-    });
+  var actionBar = document.getElementById('csrActionBar');
+  if (actionBar) {
+    var pem      = actionBar.dataset.pem;
+    var sanTypes = actionBar.dataset.sanTypes ? actionBar.dataset.sanTypes.split(',').filter(Boolean) : [];
+    var hasOrg   = actionBar.dataset.hasOrg === '1';
+    var hasDns   = sanTypes.indexOf('dns')   !== -1;
+    var hasEmail = sanTypes.indexOf('email') !== -1;
+
+    // Routing: dns SAN → TLS; email SAN or (no SAN + org) → MPCA; ambiguous → both
+    var showTls  = hasDns  || (!hasEmail);
+    var showMpca = hasEmail || (!hasDns);
+
+    function makeIssueBtn(label, cls, factory, storageKey) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ap-btn-issue-cert' + (cls ? ' ' + cls : '');
+      btn.textContent = label;
+      btn.addEventListener('click', function () {
+        sessionStorage.setItem(storageKey, pem);
+        window.open(factory, '_blank');
+      });
+      return btn;
+    }
+
+    if (showTls) {
+      actionBar.appendChild(makeIssueBtn(
+        'Issue TLS Certificate →', '', '/cert_factory.php', 'pki_prefill_csr'
+      ));
+    }
+    if (showMpca) {
+      actionBar.appendChild(makeIssueBtn(
+        'Issue MPCA Certificate →', 'ap-btn-issue-cert--mpca', '/mpca_factory.php', 'pki_prefill_csr'
+      ));
+    }
   }
 }());
 </script>

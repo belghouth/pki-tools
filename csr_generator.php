@@ -834,7 +834,8 @@ $navLabel = 'CSR Generator';
         <button class="btn-action" onclick="copyText('csrPem', this)">Copy CSR</button>
         <button class="btn-action" onclick="dlText('csrPem', 'request.csr')">Download CSR</button>
         <button class="btn-action accent" onclick="parseIt()">Parse →</button>
-        <button class="btn-action accent" onclick="issueIt()">Issue →</button>
+        <button class="btn-action accent" id="btnIssueTls"  onclick="issueIt('tls')"  style="display:none">Issue TLS →</button>
+        <button class="btn-action accent" id="btnIssueMpca" onclick="issueIt('mpca')" style="display:none">Issue MPCA →</button>
       </div>
     </div>
   </div>
@@ -1177,6 +1178,7 @@ async function generate() {
     document.getElementById('keyPem').value = data.key;
     document.getElementById('csrPem').value = data.csr;
     setKeyWarning(null);
+    updateIssueButtons();
     var rs = document.getElementById('resultSection');
     rs.classList.add('show');
     rs.scrollIntoView({behavior:'smooth', block:'start'});
@@ -1210,6 +1212,7 @@ async function _runBadKeyCsr(keyId) {
     document.getElementById('keyPem').value = data.key;
     document.getElementById('csrPem').value = data.csr;
     setKeyWarning(data.badKeyLabel, data.badKeyCve);
+    updateIssueButtons();
     var rs = document.getElementById('resultSection');
     rs.classList.add('show');
     rs.scrollIntoView({behavior: 'smooth', block: 'start'});
@@ -1241,10 +1244,31 @@ function parseIt() {
   sessionStorage.setItem('meerkat_pem', csr);
   window.open('artifact_parser.php', '_blank');
 }
-function issueIt() {
+function issueIt(factory) {
   var csr = document.getElementById('csrPem').value;
-  sessionStorage.setItem('meerkat_csr', csr);
-  window.open('cert_factory.php', '_blank');
+  sessionStorage.setItem('pki_prefill_csr', csr);
+  window.open(factory === 'mpca' ? 'mpca_factory.php' : 'cert_factory.php', '_blank');
+}
+
+function updateIssueButtons() {
+  var sanRows = document.querySelectorAll('#sanList .field-row');
+  var hasDns = false, hasEmail = false, hasOrg = false;
+  sanRows.forEach(function(row) {
+    var t = row.dataset.type;
+    if (t === 'DNS')   hasDns  = true;
+    if (t === 'email') hasEmail = true;
+  });
+  var dnRows = document.querySelectorAll('#dnList .field-row');
+  dnRows.forEach(function(row) {
+    if (row.dataset.attr === 'O') {
+      var val = row.querySelector('.field-input');
+      if (val && val.value.trim()) hasOrg = true;
+    }
+  });
+  var showTls  = hasDns  || (!hasEmail);
+  var showMpca = hasEmail || (!hasDns);
+  document.getElementById('btnIssueTls').style.display  = showTls  ? '' : 'none';
+  document.getElementById('btnIssueMpca').style.display = showMpca ? '' : 'none';
 }
 
 // ── Key warning helper ────────────────────────────────────────────────────────
