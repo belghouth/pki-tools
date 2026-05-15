@@ -801,10 +801,16 @@ function revoc_render_ocsp(array $r, string $lint_html): string {
 
     if ($r['remaining_seconds'] !== null) {
         $rem_html = '<code class="revoc-code">' . revoc_e(revoc_fmt_duration($r['remaining_seconds'])) . '</code>';
-        if ($r['remaining_seconds'] < 3600) {
-            $rem_html .= ' <span class="revoc-bad">✗ Expiring within the hour</span>';
-        } elseif ($r['remaining_seconds'] < 86400) {
-            $rem_html .= ' <span class="revoc-warn">⚠ Expiring within 24 hours</span>';
+        // Only warn when the response is actually being cached/reused.
+        // A live-signed response (nonce echoed, or age < 60s) has a nextUpdate
+        // that is never reached in practice — alerting there is noise.
+        $is_live = ($r['nonce_echoed'] === true) || ($r['age_seconds'] !== null && $r['age_seconds'] < 60);
+        if (!$is_live) {
+            if ($r['remaining_seconds'] < 3600) {
+                $rem_html .= ' <span class="revoc-bad">✗ Expiring within the hour</span>';
+            } elseif ($r['remaining_seconds'] < 86400) {
+                $rem_html .= ' <span class="revoc-warn">⚠ Expiring within 24 hours</span>';
+            }
         }
         $out .= revoc_row('Remaining Validity', $rem_html);
     }
