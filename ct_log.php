@@ -123,7 +123,8 @@ function issuer_spki_hash(string $issuer_der): string
 {
     // OpenSSL 3.x routes `-in -` through the STORE API which breaks under PHP-FPM;
     // write to a temp file to avoid that entirely.
-    $tmp = tempnam(sys_get_temp_dir(), 'ct_iss_') . '.der';
+    $tmpBase = tempnam(sys_get_temp_dir(), 'ct_iss_');
+    $tmp     = $tmpBase . '.der';
     try {
         file_put_contents($tmp, $issuer_der);
         $r = ct_run([OPENSSL_BIN, 'x509', '-inform', 'DER', '-in', $tmp, '-noout', '-pubkey']);
@@ -142,6 +143,7 @@ function issuer_spki_hash(string $issuer_der): string
         return hash('sha256', $spki_der, true);
     } finally {
         @unlink($tmp);
+        @unlink($tmpBase);
     }
 }
 
