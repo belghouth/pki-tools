@@ -292,7 +292,7 @@ function process_mpca_csr(string $csrFile, array $profile, string $email): array
 
     // Build extension file: extract from [leaf_ext] onwards, discarding [meta] and any preamble
     $profileContent = (string) file_get_contents($profile['file']);
-    if (!preg_match('/(\[leaf_ext\].*)/ms', $profileContent, $m)) {
+    if (!preg_match('/^(\[leaf_ext\].*)/ms', $profileContent, $m)) {
         return ['error' => "Profile '{$profile['label']}' has no [leaf_ext] section"];
     }
     $profileContent = $m[1];

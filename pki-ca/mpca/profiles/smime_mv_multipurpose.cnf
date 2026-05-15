@@ -1,9 +1,9 @@
 ; S/MIME Mailbox-Validated — Multipurpose
 ; Complies with CA/B Forum S/MIME Baseline Requirements (Mailbox-Validated, Multipurpose).
 ;
-; [meta] is parsed by mpca_factory.php — not an OpenSSL section.
-; [leaf_ext] and referenced sections are passed to openssl ca -extfile.
-; {{SAN}} is replaced at runtime by mpca_factory.php with the rfc822Name value.
+; The meta section is parsed by mpca_factory.php and ignored by OpenSSL.
+; The leaf_ext section and any referenced sections go to openssl ca -extfile.
+; The {{SAN}} placeholder is substituted at runtime with the rfc822Name value.
 
 [meta]
 label         = S/MIME MV — Multipurpose
