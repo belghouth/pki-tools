@@ -95,11 +95,96 @@ function method_badge(string $m): string {
 }
 function ua_label(string $ua): string {
     if ($ua === '') return '<span class="muted">—</span>';
-    if (preg_match('/bot|crawl|spider|slurp|python|curl|wget|go-http|libwww|java|scrapy|zgrab|nuclei/i', $ua))
-        return '<span class="ua-bot" title="'.htmlspecialchars($ua).'">bot</span>';
-    if (preg_match('/(Edg|OPR|Firefox|Chrome|Safari)\b/i', $ua, $m))
-        return '<span class="ua-browser" title="'.htmlspecialchars($ua).'">'.htmlspecialchars($m[1]).'</span>';
-    return '<span class="muted" title="'.htmlspecialchars($ua).'">'.htmlspecialchars(substr($ua, 0, 20)).'…</span>';
+    $t = 'title="' . htmlspecialchars($ua) . '"';
+
+    // ── Named bots (most specific first) ─────────────────────────────────────
+    static $BOT_MAP = [
+        'GPTBot'               => 'OpenAI / GPTBot',
+        'ChatGPT-User'         => 'OpenAI / ChatGPT',
+        'OAI-SearchBot'        => 'OpenAI / Search',
+        'Googlebot'            => 'Google / Bot',
+        'Google-Extended'      => 'Google / AI',
+        'AdsBot-Google'        => 'Google / Ads',
+        'Bingbot'              => 'Bing / Bot',
+        'BingPreview'          => 'Bing / Preview',
+        'Applebot'             => 'Apple / Bot',
+        'anthropic-ai'         => 'Anthropic / AI',
+        'ClaudeBot'            => 'Anthropic / Claude',
+        'FacebookExternalHit'  => 'Meta / Facebook',
+        'Facebot'              => 'Meta / Facebook',
+        'Twitterbot'           => 'X / Twitter',
+        'LinkedInBot'          => 'LinkedIn / Bot',
+        'Slackbot'             => 'Slack',
+        'Discordbot'           => 'Discord',
+        'TelegramBot'          => 'Telegram',
+        'WhatsApp'             => 'WhatsApp',
+        'Amazonbot'            => 'Amazon / Bot',
+        'AhrefsBot'            => 'Ahrefs',
+        'SemrushBot'           => 'Semrush',
+        'DotBot'               => 'Moz',
+        'MJ12bot'              => 'Majestic',
+        'YandexBot'            => 'Yandex',
+        'DuckDuckBot'          => 'DuckDuckGo',
+        'Bytespider'           => 'ByteDance',
+        'PetalBot'             => 'Huawei',
+        'CCBot'                => 'CommonCrawl',
+        'ia_archiver'          => 'Wayback',
+        'archive.org_bot'      => 'Wayback',
+    ];
+    foreach ($BOT_MAP as $sig => $label) {
+        if (stripos($ua, $sig) !== false)
+            return "<span class=\"ua-bot\" $t>$label</span>";
+    }
+
+    // ── Generic tools ─────────────────────────────────────────────────────────
+    static $TOOL_MAP = [
+        'curl'       => 'curl',
+        'python'     => 'python',
+        'go-http'    => 'Go HTTP',
+        'wget'       => 'wget',
+        'java'       => 'Java',
+        'scrapy'     => 'Scrapy',
+        'zgrab'      => 'zgrab',
+        'nuclei'     => 'Nuclei',
+        'libwww'     => 'libwww',
+        'masscan'    => 'masscan',
+        'nmap'       => 'nmap',
+    ];
+    foreach ($TOOL_MAP as $sig => $label) {
+        if (stripos($ua, $sig) !== false)
+            return "<span class=\"ua-bot\" $t>$label</span>";
+    }
+    if (preg_match('/bot|crawl|spider|slurp/i', $ua))
+        return "<span class=\"ua-bot\" $t>bot</span>";
+
+    // ── Platform ─────────────────────────────────────────────────────────────
+    $plat = '';
+    if (stripos($ua, 'iPhone') !== false)        $plat = 'iPhone';
+    elseif (stripos($ua, 'iPad') !== false)      $plat = 'iPad';
+    elseif (stripos($ua, 'Android') !== false)   $plat = 'Android';
+    elseif (stripos($ua, 'CrOS') !== false)      $plat = 'ChromeOS';
+    elseif (stripos($ua, 'Windows') !== false)   $plat = 'Windows';
+    elseif (stripos($ua, 'Macintosh') !== false) $plat = 'Mac';
+    elseif (stripos($ua, 'Linux') !== false)     $plat = 'Linux';
+
+    // ── Browser (order matters: Edge/Opera embed Chrome token) ────────────────
+    $browser = '';
+    if (stripos($ua, 'EdgiOS/') !== false ||
+        stripos($ua, 'EdgA/')   !== false ||
+        stripos($ua, 'Edg/')    !== false)             $browser = 'Edge';
+    elseif (stripos($ua, 'OPR/')           !== false)  $browser = 'Opera';
+    elseif (stripos($ua, 'SamsungBrowser/') !== false) $browser = 'Samsung';
+    elseif (stripos($ua, 'FxiOS/')         !== false)  $browser = 'Firefox';
+    elseif (stripos($ua, 'Firefox/')       !== false)  $browser = 'Firefox';
+    elseif (stripos($ua, 'CriOS/')         !== false)  $browser = 'Chrome';  // Chrome on iOS
+    elseif (stripos($ua, 'Chrome/')        !== false)  $browser = 'Chrome';
+    elseif (stripos($ua, 'Safari/')        !== false)  $browser = 'Safari';
+
+    if ($browser) {
+        $label = $plat ? "$browser / $plat" : $browser;
+        return "<span class=\"ua-browser\" $t>$label</span>";
+    }
+    return '<span class="muted" ' . $t . '>' . htmlspecialchars(substr($ua, 0, 22)) . '…</span>';
 }
 function flag(string $cc): string {
     $cc = strtoupper(trim($cc));
