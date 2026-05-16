@@ -7,6 +7,7 @@
 define('ARTIFACT_PARSER', true);
 
 require_once __DIR__ . '/config.php';
+$x509parse_invoked = true;
 require_once __DIR__ . '/x509parse.php';
 require_once __DIR__ . '/modules/_base.php';
 require_once __DIR__ . '/modules/mod_tsr.php';
