@@ -76,6 +76,10 @@ function _admin_schema(PDO $pdo): void {
     try { $pdo->exec("ALTER TABLE visits ADD COLUMN status SMALLINT UNSIGNED NOT NULL DEFAULT 200 AFTER accept_lang"); } catch (Throwable) {}
     try { $pdo->exec("ALTER TABLE visits ADD INDEX idx_status (status)"); } catch (Throwable) {}
 
+    // Migrate: add acknowledged_at to errors
+    try { $pdo->exec("ALTER TABLE errors ADD COLUMN acknowledged_at DATETIME NULL DEFAULT NULL AFTER error_line"); } catch (Throwable) {}
+    try { $pdo->exec("ALTER TABLE errors ADD INDEX idx_ack (acknowledged_at)"); } catch (Throwable) {}
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS geoip_cache (
         ip         VARCHAR(45) PRIMARY KEY,
         country    CHAR(3)     NOT NULL DEFAULT 'XX',
@@ -347,6 +351,20 @@ function user_toggle_disabled(int $id): string {
         )->execute([$id]);
         return '';
     } catch (Throwable) { return 'Failed to update user.'; }
+}
+
+// ── Error acknowledgement ─────────────────────────────────────────────────────
+function ack_error(int $id): void {
+    try {
+        admin_pdo()?->prepare("UPDATE errors SET acknowledged_at=NOW() WHERE id=? AND acknowledged_at IS NULL")
+            ->execute([$id]);
+    } catch (Throwable) {}
+}
+
+function ack_all_errors(): void {
+    try {
+        admin_pdo()?->exec("UPDATE errors SET acknowledged_at=NOW() WHERE acknowledged_at IS NULL");
+    } catch (Throwable) {}
 }
 
 // ── IP blocking ───────────────────────────────────────────────────────────────

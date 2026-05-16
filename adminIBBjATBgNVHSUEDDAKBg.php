@@ -32,6 +32,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && _admin_csrf_ok()) {
         header('Location: ?tab=blocked' . ($__err ? '&err=' . urlencode($__err) : '&ok=1'));
         exit;
     }
+    if ($__act === 'ack_error') {
+        $__id = (int)($_POST['id'] ?? 0);
+        if ($__id > 0) ack_error($__id);
+        header('Location: ' . ($_SERVER['HTTP_REFERER'] ?? '?'));
+        exit;
+    }
+    if ($__act === 'ack_all_errors') {
+        ack_all_errors();
+        header('Location: ' . ($_SERVER['HTTP_REFERER'] ?? '?'));
+        exit;
+    }
 }
 
 // ── Users CRUD (POST) ─────────────────────────────────────────────────────────
@@ -309,8 +320,8 @@ if ($tab === 'activity' && $pdo) {
     // Top IPs (blocked IPs excluded so they don't crowd out active ones)
     $top_ips = $pdo->query("SELECT ip, COUNT(*) AS c, MAX(created_at) AS last, ROUND(SUM(status>=400)/COUNT(*)*100) AS epct FROM visits WHERE created_at >= $pstart AND ip NOT IN (SELECT ip FROM blocked_ips) GROUP BY ip ORDER BY c DESC LIMIT 40")->fetchAll();
 
-    // Errors
-    $err_rows = $pdo->query("SELECT created_at,ip,uri,error_type,error_msg,error_file,error_line FROM errors ORDER BY created_at DESC LIMIT 25")->fetchAll();
+    // Errors (unacknowledged only)
+    $err_rows = $pdo->query("SELECT id,created_at,ip,uri,error_type,error_msg,error_file,error_line FROM errors WHERE acknowledged_at IS NULL ORDER BY created_at DESC LIMIT 25")->fetchAll();
 }
 
 $total_pages = max(1, (int)ceil($total_rows / $pp));
@@ -744,12 +755,21 @@ $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fet
   <div class="card">
     <div class="card-hd">
       <h2>PHP Errors</h2>
-      <span class="card-meta">latest 25</span>
+      <div style="display:flex;align-items:center;gap:.75rem">
+        <span class="card-meta"><?= count($err_rows) ?> unacknowledged</span>
+        <?php if ($err_rows): ?>
+        <form method="POST" style="display:inline" onsubmit="return confirm('Acknowledge all errors?')">
+          <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+          <input type="hidden" name="action" value="ack_all_errors">
+          <button type="submit" class="btn-sm" style="font-size:.65rem;padding:.28rem .65rem">✓ Ack All</button>
+        </form>
+        <?php endif; ?>
+      </div>
     </div>
     <?php if ($err_rows): ?>
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>Time</th><th>IP</th><th>Type</th><th>URI</th><th>Message</th><th>File : line</th></tr></thead>
+        <thead><tr><th>Time</th><th>IP</th><th>Type</th><th>URI</th><th>Message</th><th>File : line</th><th></th></tr></thead>
         <tbody>
         <?php foreach ($err_rows as $e): ?>
         <tr>
@@ -759,13 +779,21 @@ $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fet
           <td><span class="uri"><?= htmlspecialchars($e['uri']) ?></span></td>
           <td><span class="err-msg"><?= htmlspecialchars($e['error_msg']) ?></span></td>
           <td><span class="err-file" title="<?= htmlspecialchars($e['error_file']) ?>"><?= htmlspecialchars(basename($e['error_file'])) ?> : <?= (int)$e['error_line'] ?></span></td>
+          <td>
+            <form method="POST" style="display:inline">
+              <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+              <input type="hidden" name="action" value="ack_error">
+              <input type="hidden" name="id" value="<?= (int)$e['id'] ?>">
+              <button type="submit" class="btn-act" style="font-size:.62rem;padding:.15rem .45rem;border-color:rgba(34,197,94,.25);color:var(--ok)" title="Acknowledge — hide from list">✓</button>
+            </form>
+          </td>
         </tr>
         <?php endforeach; ?>
         </tbody>
       </table>
     </div>
     <?php else: ?>
-    <div class="empty-state">No PHP errors logged.</div>
+    <div class="empty-state">No unacknowledged PHP errors.</div>
     <?php endif; ?>
   </div>
 
