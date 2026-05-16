@@ -143,6 +143,29 @@ define('MPCA_BASE_URL',     'https://' . PKI_DOMAIN . '/mpca');
 define('MPCA_TSA_URL',      'https://thameur.org/tsa');
 define('MPCA_ESEAL_URL',    'https://thameur.org/eseal');
 
+// ── Secrets ────────────────────────────────────────────────────────────────────
+// .secrets is gitignored and blocked by nginx (dotfile rule).
+// It sets variables consumed by the define() calls below, e.g.:
+//   $_google_client_id     = '...';
+//   $_google_client_secret = '...';
+@include __DIR__ . '/.secrets';
+
+// ── Admin database ────────────────────────────────────────────────────────────
+define('ADMIN_DB_HOST', 'localhost');
+define('ADMIN_DB_NAME', 'pki_tools');
+define('ADMIN_DB_USER', 'pki_tools_XEwWTATB');
+define('ADMIN_DB_PASS', 'iseFleqW4bZzLNEMoAAwCgYIKoZIzj0EAwIDRwAwRAIgR5d');
+
+// ── Admin panel ────────────────────────────────────────────────────────────────
+define('ADMIN_ALLOWED_EMAIL', 'tbelghith@gmail.com');
+define('ADMIN_LOGIN_URL',     SITE_BASE_URL . '/loginIBBjATBgNVHSUEDDAKBg.php');
+define('ADMIN_PANEL_URL',     SITE_BASE_URL . '/adminIBBjATBgNVHSUEDDAKBg.php');
+
+// ── Google OAuth ───────────────────────────────────────────────────────────────
+// Credentials live in .secrets (gitignored). Defaults are empty = OAuth disabled.
+define('GOOGLE_CLIENT_ID',     $_google_client_id     ?? '');
+define('GOOGLE_CLIENT_SECRET', $_google_client_secret ?? '');
+
 // ── CT log identities ─────────────────────────────────────────────────────────
 // Key = filename stem in PKI_CT_KEYS_DIR (e.g. "kablouti" → kablouti.pem / kablouti.id)
 // Value = [description, operator, mmd_seconds]
