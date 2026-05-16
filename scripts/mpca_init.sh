@@ -259,7 +259,7 @@ dir                    = $TSA_SIGN_DIR
 serial                 = \$dir/tsaserial
 crypto_device          = builtin
 signer_cert            = \$dir/tsa_signing.crt
-certs                  = \$dir/chain.pem
+certs                  = \$dir/ca_chain.pem
 signer_key             = \$dir/tsa_signing.key
 signer_digest          = sha256
 default_policy         = $OID_TSA_POLICY
@@ -502,6 +502,14 @@ EXT
       "$TSA_CA_DIR/tsa_ca.crt" \
       "$ROOT_DIR/root.crt" \
     > "$TSA_SIGN_DIR/chain.pem"
+
+  # Issuing chain without the signer cert — used as `certs` in tsa.cnf.
+  # chain.pem would cause the signer cert to appear twice in ESSCertIDv2
+  # (once via signer_cert, once as the first entry in chain.pem), breaking
+  # the ess_cert_id_chain order check in openssl ts -verify.
+  cat "$TSA_CA_DIR/tsa_ca.crt" \
+      "$ROOT_DIR/root.crt" \
+    > "$TSA_SIGN_DIR/ca_chain.pem"
 
   ok "TSA Signing certificate initialized"
   openssl x509 -noout -subject -enddate -in "$TSA_SIGN_DIR/tsa_signing.crt"
