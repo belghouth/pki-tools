@@ -72,6 +72,10 @@ function _admin_schema(PDO $pdo): void {
         INDEX idx_type       (error_type)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+    // Migrate: add status column if this is an older schema
+    try { $pdo->exec("ALTER TABLE visits ADD COLUMN status SMALLINT UNSIGNED NOT NULL DEFAULT 200 AFTER accept_lang"); } catch (Throwable) {}
+    try { $pdo->exec("ALTER TABLE visits ADD INDEX idx_status (status)"); } catch (Throwable) {}
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS admin_sessions (
         token        CHAR(64)     PRIMARY KEY,
         email        VARCHAR(255) NOT NULL,
@@ -116,4 +120,81 @@ function admin_destroy_session(string $token): void {
     try {
         admin_pdo()?->prepare("DELETE FROM admin_sessions WHERE token=?")->execute([$token]);
     } catch (Throwable) {}
+}
+
+function log_visit(int $status = 200): void {
+    $pdo = admin_pdo();
+    if (!$pdo) return;
+    // Prefer real client IP (Cloudflare > X-Real-IP > REMOTE_ADDR)
+    $raw = $_SERVER['HTTP_CF_CONNECTING_IP']
+        ?? $_SERVER['HTTP_X_REAL_IP']
+        ?? $_SERVER['HTTP_X_FORWARDED_FOR']
+        ?? $_SERVER['REMOTE_ADDR'] ?? '';
+    $ip = substr(trim(explode(',', $raw)[0]), 0, 45);
+    $srv = [];
+    foreach (['SERVER_PROTOCOL','HTTP_CF_IPCOUNTRY','HTTP_CF_VISITOR',
+              'CONTENT_TYPE','CONTENT_LENGTH','HTTP_ACCEPT_ENCODING'] as $k) {
+        if (!empty($_SERVER[$k])) $srv[$k] = $_SERVER[$k];
+    }
+    try {
+        $pdo->prepare(
+            "INSERT INTO visits
+             (ip,method,uri,query_string,user_agent,referer,host,is_https,script_name,accept_lang,status,server_json)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+        )->execute([
+            $ip,
+            substr($_SERVER['REQUEST_METHOD'] ?? 'GET', 0, 10),
+            substr(strtok($_SERVER['REQUEST_URI'] ?? '/', '?'), 0, 2048),
+            substr($_SERVER['QUERY_STRING'] ?? '', 0, 2048),
+            substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 500),
+            substr($_SERVER['HTTP_REFERER'] ?? '', 0, 500),
+            substr($_SERVER['HTTP_HOST'] ?? '', 0, 255),
+            (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 1 : 0,
+            substr(basename($_SERVER['SCRIPT_FILENAME'] ?? ''), 0, 128),
+            substr($_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? '', 0, 128),
+            $status,
+            $srv ? json_encode($srv) : null,
+        ]);
+    } catch (Throwable) {}
+}
+
+function _admin_log_error(string $type, int $errno, string $msg, string $file, int $line): void {
+    $pdo = admin_pdo();
+    if (!$pdo) return;
+    $raw = $_SERVER['HTTP_CF_CONNECTING_IP']
+        ?? $_SERVER['HTTP_X_REAL_IP']
+        ?? $_SERVER['HTTP_X_FORWARDED_FOR']
+        ?? $_SERVER['REMOTE_ADDR'] ?? '';
+    $ip = substr(trim(explode(',', $raw)[0]), 0, 45);
+    try {
+        $pdo->prepare(
+            "INSERT INTO errors (ip,uri,error_type,error_errno,error_msg,error_file,error_line,script_name)
+             VALUES (?,?,?,?,?,?,?,?)"
+        )->execute([
+            $ip,
+            substr($_SERVER['REQUEST_URI'] ?? '', 0, 2048),
+            $type,
+            $errno,
+            substr($msg, 0, 4000),
+            substr($file, 0, 512),
+            $line,
+            substr(basename($_SERVER['SCRIPT_FILENAME'] ?? ''), 0, 128),
+        ]);
+    } catch (Throwable) {}
+}
+
+// Auto-register visit logger + PHP error capture (skipped on admin pages)
+if (!defined('ADMIN_NO_LOG')) {
+    set_error_handler(static function (int $no, string $msg, string $file, int $line): bool {
+        if (error_reporting() & $no) _admin_log_error('php_error', $no, $msg, $file, $line);
+        return false; // let PHP use its default handling too
+    });
+    register_shutdown_function(static function (): void {
+        $e = error_get_last();
+        if ($e && ($e['type'] & (E_ERROR | E_PARSE | E_CORE_ERROR | E_COMPILE_ERROR))) {
+            _admin_log_error('php_fatal', $e['type'], $e['message'], $e['file'], $e['line']);
+        }
+        $s = http_response_code();
+        log_visit(is_int($s) ? $s : 200);
+    });
 }

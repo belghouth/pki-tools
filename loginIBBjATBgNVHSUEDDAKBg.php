@@ -1,6 +1,6 @@
 <?php
+define('ADMIN_NO_LOG', true);
 require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/includes/admin_db.php';
 
 // Isolated PHP session for OAuth CSRF state only
 session_name('mkt_ao');

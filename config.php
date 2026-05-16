@@ -184,3 +184,8 @@ define('CT_LOG_META', [
     'dhibi'      => ['Meerkat Dhibi CT 2026h1',    'Dhibi Digital Trust',                 86400],
     'bousannoun' => ['Meerkat Bousannoun CT 2025',      'Bousannoun Certificate Transparency',  86400],
 ]);
+
+// ── Activity logging ───────────────────────────────────────────────────────────
+// Included here so every page that loads config.php auto-logs visits + PHP errors.
+// Admin pages define ADMIN_NO_LOG before including config.php to opt out.
+require_once __DIR__ . '/includes/admin_db.php';
