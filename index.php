@@ -372,18 +372,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     .tool-group:last-child { margin-bottom: 0; }
 
     .tool-group-header {
-      display: flex; align-items: center; gap: 1rem;
+      padding: 0.85rem 1.25rem;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius);
       margin-bottom: 1.25rem;
     }
     .tool-group-label {
-      font-family: var(--mono);
-      font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase;
-      color: var(--muted);
-      white-space: nowrap;
-    }
-    .tool-group-line {
-      flex: 1; height: 1px;
-      background: var(--border);
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #fff;
+      letter-spacing: -0.01em;
     }
 
     .tools-grid {
@@ -654,7 +654,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       <div class="tool-group">
         <div class="tool-group-header">
           <span class="tool-group-label">Certificate Issuance &amp; Test CAs</span>
-          <div class="tool-group-line"></div>
         </div>
         <div class="tools-grid">
 
@@ -714,7 +713,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       <div class="tool-group">
         <div class="tool-group-header">
           <span class="tool-group-label">Trust Service Endpoints</span>
-          <div class="tool-group-line"></div>
         </div>
         <div class="tools-grid">
 
@@ -788,7 +786,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       <div class="tool-group">
         <div class="tool-group-header">
           <span class="tool-group-label">Service Clients &amp; Signers</span>
-          <div class="tool-group-line"></div>
         </div>
         <div class="tools-grid">
 
@@ -831,7 +828,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       <div class="tool-group">
         <div class="tool-group-header">
           <span class="tool-group-label">Inspection &amp; Compliance</span>
-          <div class="tool-group-line"></div>
         </div>
         <div class="tools-grid">
 
