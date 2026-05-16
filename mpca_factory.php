@@ -1085,6 +1085,9 @@ $noProfiles = empty($profiles);
   });
   document.getElementById('btnParse').addEventListener('click', function () {
     if (!pemOutput.value) return;
+    sessionStorage.removeItem('mkt_eseal_cms');
+    sessionStorage.removeItem('mkt_eseal_xades');
+    sessionStorage.removeItem('meerkat_pem');
     sessionStorage.setItem('pki_prefill_cert', pemOutput.value);
     window.open('/artifact_parser.php', '_blank');
   });
