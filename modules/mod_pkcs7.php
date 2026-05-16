@@ -18,7 +18,7 @@ class Pkcs7Module extends ArtifactModule {
     }
 
     public function parse(string $bytes): array {
-        // Normalise CMS header → PKCS7 for openssl compat
+        // Normalise to PKCS7 PEM for openssl input
         $pem = str_replace(
             ['-----BEGIN CMS-----',  '-----END CMS-----'],
             ['-----BEGIN PKCS7-----', '-----END PKCS7-----'],
@@ -28,18 +28,34 @@ class Pkcs7Module extends ArtifactModule {
             $pem = artifact_to_pem($bytes, 'PKCS7') ?? $bytes;
         }
 
-        // Extract embedded certificates (works without shell for p7b)
-        $shell_certs = artifact_openssl('pkcs7 -print_certs -text -noout', $pem);
-        $shell_info  = artifact_openssl('pkcs7 -print -noout', $pem);
+        // openssl pkcs7 -print_certs -text -noout suppresses PEM output (only text), so the
+        // certificate regex never matches. Use openssl cms which handles CMS unsigned attributes
+        // and outputs PEM blocks when -text is omitted.
+        $shell_certs = artifact_openssl('cms -cmsout -print_certs -noout', $pem);
+        $shell_info  = artifact_openssl('cms -cmsout -print -noout', $pem);
 
-        $data = ['certs' => [], 'content_type' => null];
+        // Derive DER bytes for binary OID detection
+        $der = artifact_is_der($bytes) ? $bytes : (function () use ($pem): string {
+            $b64 = preg_replace('/\s+/', '', str_replace(
+                ['-----BEGIN PKCS7-----', '-----END PKCS7-----'], '', $pem
+            ));
+            return base64_decode($b64, true) ?: '';
+        })();
 
-        if ($shell_info && preg_match('/contentType:\s*(.+)/i', $shell_info, $m)) {
+        // id-aa-signatureTimeStampToken OID: 1.2.840.113549.1.9.16.2.14
+        $tst_oid    = "\x06\x0b\x2a\x86\x48\x86\xf7\x0d\x01\x09\x10\x02\x0e";
+        $is_cades_t = strlen($der) > 20 && str_contains($der, $tst_oid);
+
+        $data = ['certs' => [], 'content_type' => null, 'is_cades_t' => $is_cades_t];
+
+        // Content type from cms -cmsout -print output
+        if ($shell_info && preg_match('/contentType:\s*(\S+)/i', $shell_info, $m)) {
             $data['content_type'] = trim($m[1]);
-        } elseif ($shell_certs !== null) {
-            $data['content_type'] = 'signed-data / certificates-only';
+        } elseif ($shell_info !== null || $shell_certs !== null) {
+            $data['content_type'] = 'pkcs7-signedData';
         }
 
+        // Extract embedded certificates from PEM blocks in cms -print_certs output
         if ($shell_certs) {
             preg_match_all(
                 '/(-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----)/s',
@@ -50,8 +66,8 @@ class Pkcs7Module extends ArtifactModule {
                 if (!$cert) continue;
                 $cd = openssl_x509_parse($cert, false);
                 $data['certs'][] = [
-                    'subject' => $cd['name']   ?? '(unknown)',
-                    'issuer'  => implode(', ', array_map(
+                    'subject'   => $cd['name'] ?? '(unknown)',
+                    'issuer'    => implode(', ', array_map(
                         fn($k, $v) => "$k=$v",
                         array_keys($cd['issuer']   ?? []),
                         array_values($cd['issuer'] ?? [])
@@ -59,25 +75,42 @@ class Pkcs7Module extends ArtifactModule {
                     'not_after' => isset($cd['validTo_time_t'])
                         ? gmdate('Y-m-d', (int) $cd['validTo_time_t']) . ' UTC'
                         : null,
+                    'is_signer' => false,
                 ];
             }
+            // First cert is conventionally the signer cert
+            if (isset($data['certs'][0])) $data['certs'][0]['is_signer'] = true;
         }
 
         return $data;
     }
 
     public function render(array $parsed): string {
-        $info  = xp_row('Content Type', '<code class="xp-code">' . xpe($parsed['content_type'] ?? 'Unknown') . '</code>');
+        $ct  = $parsed['content_type'] ?? 'pkcs7-signedData';
+        $ts  = $parsed['is_cades_t'];
+
+        $ct_val = '<code class="xp-code">' . xpe($ct) . '</code>';
+        if ($ts) {
+            $ct_val .= '&nbsp;&nbsp;<span style="font-size:.75em;font-family:var(--mono,monospace);'
+                     . 'background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);'
+                     . 'color:#4ade80;border-radius:3px;padding:.1em .5em">CAdES-T ✓</span>';
+        }
+
+        $info  = xp_row('Content Type', $ct_val);
+        $info .= xp_row('Signature Timestamp', $ts
+            ? '<span style="color:#4ade80">Embedded (RFC 3161 TST)</span>'
+            : xp_badge('None', 'neutral'));
         $info .= xp_row('Embedded Certs', xp_badge((string) count($parsed['certs']), 'neutral'));
 
         $certs_html = '';
         foreach ($parsed['certs'] as $i => $c) {
-            $certs_html .= '<div class="xp-ext-block" style="border-left-color:#44aa88">'
-                         . '<div class="xp-ext-header"><span class="xp-ext-name">Certificate ' . ($i + 1) . '</span></div>'
+            $role  = $c['is_signer'] ? ' &nbsp;<span style="font-size:.72em;color:#a78bfa">[signer]</span>' : '';
+            $certs_html .= '<div class="xp-ext-block" style="border-left-color:#8866cc">'
+                         . '<div class="xp-ext-header"><span class="xp-ext-name">Certificate ' . ($i + 1) . $role . '</span></div>'
                          . '<div class="xp-ext-body">'
                          . xp_row('Subject', '<code class="xp-code">' . xpe($c['subject']) . '</code>')
                          . xp_row('Issuer',  '<code class="xp-code">' . xpe($c['issuer'])  . '</code>')
-                         . ($c['not_after'] ? xp_row('Expires', '<span class="xp-code">' . xpe($c['not_after']) . '</span>') : '')
+                         . ($c['not_after'] ? xp_row('Expires', '<code class="xp-code">' . xpe($c['not_after']) . '</code>') : '')
                          . '</div></div>';
         }
         if (!$certs_html) {
@@ -89,13 +122,15 @@ class Pkcs7Module extends ArtifactModule {
         }
 
         return '<div class="xp-wrap">'
-             . xp_section('cms-info',  'CMS / PKCS#7',          '#8866cc', $info)
-             . xp_section('cms-certs', 'Embedded Certificates',  '#44aa88', $certs_html)
+             . xp_section('cms-info',  'CMS / PKCS#7 SignedData', '#8866cc', $info)
+             . xp_section('cms-certs', 'Embedded Certificates',   '#8866cc', $certs_html)
              . '</div>';
     }
 
     public function subtype(array $parsed): ?string {
-        return $parsed['content_type'] ?? null;
+        $s = $parsed['content_type'] ?? null;
+        if ($parsed['is_cades_t']) $s = ($s ? $s . ' · ' : '') . 'CAdES-T';
+        return $s;
     }
 }
 
