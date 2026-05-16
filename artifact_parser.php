@@ -94,12 +94,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $t0 = microtime(true);
 
-            // Normalize bare base64 (no PEM headers) → DER bytes so that
-            // module recognize() methods can match via artifact_is_der().
+            // Normalize bare base64 (no PEM headers, not already DER) → DER bytes
+            // so that module recognize() methods can match via artifact_is_der().
+            // base64_decode strict mode rejects invalid chars; no regex needed.
             $bytes = (string) $raw;
-            if (!str_contains($bytes, '-----BEGIN')) {
+            if (!str_contains($bytes, '-----BEGIN') && !artifact_is_der($bytes)) {
                 $stripped = preg_replace('/\s+/', '', $bytes);
-                if (strlen($stripped) > 16 && preg_match('/^[A-Za-z0-9+\/]+=*$/', $stripped)) {
+                if (strlen($stripped) > 16) {
                     $decoded = base64_decode($stripped, true);
                     if ($decoded !== false && strlen($decoded) > 2 && ord($decoded[0]) === 0x30) {
                         $bytes = $decoded;

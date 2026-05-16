@@ -6,10 +6,16 @@ class TsrModule extends ArtifactModule {
     public function label(): string { return 'Timestamp Response (RFC 3161)'; }
 
     public function recognize(string $bytes, string $ext): bool {
-        return artifact_has_pem_header($bytes, 'TIME STAMP TOKEN')
+        if (artifact_has_pem_header($bytes, 'TIME STAMP TOKEN')
             || artifact_has_pem_header($bytes, 'TIME STAMP RESPONSE')
             || artifact_has_pem_header($bytes, 'TIMESTAMP TOKEN')
-            || in_array($ext, ['tsr', 'tst'], true);
+            || in_array($ext, ['tsr', 'tst'], true)) {
+            return true;
+        }
+        // DER: presence of id-ct-TSTInfo OID (1.2.840.113549.1.9.16.1.4)
+        // uniquely identifies a TimeStampToken inside a TSR.
+        return artifact_is_der($bytes)
+            && str_contains($bytes, "\x06\x0b\x2a\x86\x48\x86\xf7\x0d\x01\x09\x10\x01\x04");
     }
 
     public function parse(string $bytes): array {
