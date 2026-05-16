@@ -189,3 +189,19 @@ define('CT_LOG_META', [
 // Included here so every page that loads config.php auto-logs visits + PHP errors.
 // Admin pages define ADMIN_NO_LOG before including config.php to opt out.
 require_once __DIR__ . '/includes/admin_db.php';
+
+// ── IP block gate ──────────────────────────────────────────────────────────────
+// Admin pages are excluded so a blocked IP cannot lock out an admin session.
+if (!defined('ADMIN_NO_LOG')) {
+    $__raw = $_SERVER['HTTP_CF_CONNECTING_IP']
+          ?? $_SERVER['HTTP_X_REAL_IP']
+          ?? $_SERVER['HTTP_X_FORWARDED_FOR']
+          ?? $_SERVER['REMOTE_ADDR'] ?? '';
+    $__ip = substr(trim(explode(',', $__raw)[0]), 0, 45);
+    if ($__ip && is_ip_blocked($__ip)) {
+        http_response_code(403);
+        require __DIR__ . '/errors/blocked.php';
+        exit;
+    }
+    unset($__raw, $__ip);
+}

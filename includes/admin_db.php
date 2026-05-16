@@ -111,6 +111,16 @@ function _admin_schema(PDO $pdo): void {
     // Seed immutable root admin — no-op if already present
     $pdo->prepare("INSERT IGNORE INTO users (email, name, is_root) VALUES (?, 'Thameur Belghith', 1)")
         ->execute([ADMIN_ALLOWED_EMAIL]);
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS blocked_ips (
+        id          BIGINT UNSIGNED  AUTO_INCREMENT PRIMARY KEY,
+        ip          VARCHAR(45)      NOT NULL UNIQUE,
+        reason      VARCHAR(500)     DEFAULT NULL,
+        blocked_by  VARCHAR(255)     NOT NULL DEFAULT '',
+        blocked_at  DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_ip         (ip),
+        INDEX idx_blocked_at (blocked_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
 // Validate admin cookie; returns email on success or null.
@@ -337,6 +347,49 @@ function user_toggle_disabled(int $id): string {
         )->execute([$id]);
         return '';
     } catch (Throwable) { return 'Failed to update user.'; }
+}
+
+// ── IP blocking ───────────────────────────────────────────────────────────────
+function is_ip_blocked(string $ip): bool {
+    try {
+        $st = admin_pdo()?->prepare("SELECT id FROM blocked_ips WHERE ip=? LIMIT 1");
+        $st?->execute([$ip]);
+        return (bool)$st?->fetchColumn();
+    } catch (Throwable) { return false; }
+}
+
+function block_ip(string $ip, ?string $reason, string $blocked_by): string {
+    try {
+        admin_pdo()?->prepare(
+            "INSERT INTO blocked_ips (ip, reason, blocked_by) VALUES (?,?,?)
+             ON DUPLICATE KEY UPDATE reason=VALUES(reason), blocked_by=VALUES(blocked_by), blocked_at=NOW()"
+        )->execute([$ip, $reason, $blocked_by]);
+        return '';
+    } catch (Throwable) { return 'Failed to block IP.'; }
+}
+
+function unblock_ip(string $ip): string {
+    try {
+        admin_pdo()?->prepare("DELETE FROM blocked_ips WHERE ip=?")->execute([$ip]);
+        return '';
+    } catch (Throwable) { return 'Failed to unblock IP.'; }
+}
+
+function blocked_ip_list(): array {
+    try {
+        return admin_pdo()?->query(
+            "SELECT b.ip, b.reason, b.blocked_by, b.blocked_at,
+                    g.country,
+                    COUNT(v.id)                                                          AS total_req,
+                    MAX(v.created_at)                                                    AS last_seen,
+                    COALESCE(ROUND(SUM(IF(v.status>=400,1,0))/NULLIF(COUNT(v.id),0)*100),0) AS err_pct
+             FROM blocked_ips b
+             LEFT JOIN geoip_cache g ON g.ip = b.ip
+             LEFT JOIN visits v      ON v.ip = b.ip
+             GROUP BY b.ip, b.reason, b.blocked_by, b.blocked_at, g.country
+             ORDER BY b.blocked_at DESC"
+        )?->fetchAll() ?? [];
+    } catch (Throwable) { return []; }
 }
 
 // Auto-register visit logger + PHP error capture (skipped on admin pages)

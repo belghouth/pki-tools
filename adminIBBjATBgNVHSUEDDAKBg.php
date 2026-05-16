@@ -8,7 +8,31 @@ if (!$email) { header('Location: ' . ADMIN_LOGIN_URL, true, 302); exit; }
 $pdo = admin_pdo();
 
 // ── Tab ────────────────────────────────────────────────────────────────────────
-$tab = ($_GET['tab'] ?? '') === 'users' ? 'users' : 'activity';
+$tab = match($_GET['tab'] ?? '') {
+    'users'   => 'users',
+    'blocked' => 'blocked',
+    default   => 'activity',
+};
+
+// ── Block / Unblock — global POST, any tab ────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && _admin_csrf_ok()) {
+    $__act = $_POST['action'] ?? '';
+    if ($__act === 'block_ip') {
+        $__ip  = trim($_POST['ip']     ?? '');
+        $__rsn = trim($_POST['reason'] ?? '');
+        $__err = filter_var($__ip, FILTER_VALIDATE_IP)
+            ? block_ip($__ip, $__rsn ?: null, $email)
+            : 'Invalid IP address.';
+        header('Location: ?tab=blocked' . ($__err ? '&err=' . urlencode($__err) : '&ok=1'));
+        exit;
+    }
+    if ($__act === 'unblock_ip') {
+        $__ip  = trim($_POST['ip'] ?? '');
+        $__err = $__ip ? unblock_ip($__ip) : 'Invalid IP.';
+        header('Location: ?tab=blocked' . ($__err ? '&err=' . urlencode($__err) : '&ok=1'));
+        exit;
+    }
+}
 
 // ── Users CRUD (POST) ─────────────────────────────────────────────────────────
 $u_flash = ''; $u_flash_ok = true;
@@ -55,6 +79,11 @@ if ($tab === 'users' && $_SERVER['REQUEST_METHOD'] === 'POST' && _admin_csrf_ok(
 if ($tab === 'users') {
     if (isset($_GET['ok']))  { $u_flash = 'Done.';                              $u_flash_ok = true; }
     if (isset($_GET['err'])) { $u_flash = htmlspecialchars($_GET['err'] ?? ''); $u_flash_ok = false; }
+}
+$b_flash = ''; $b_flash_ok = true;
+if ($tab === 'blocked') {
+    if (isset($_GET['ok']))  { $b_flash = 'Done.';                              $b_flash_ok = true; }
+    if (isset($_GET['err'])) { $b_flash = htmlspecialchars($_GET['err'] ?? ''); $b_flash_ok = false; }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -271,8 +300,8 @@ if ($tab === 'activity' && $pdo) {
     // Tool usage
     $tool_usage = $pdo->query("SELECT script_name, COUNT(*) AS c FROM visits WHERE created_at >= $pstart AND script_name != '' GROUP BY script_name ORDER BY c DESC LIMIT 15")->fetchAll();
 
-    // Top IPs
-    $top_ips = $pdo->query("SELECT ip, COUNT(*) AS c, MAX(created_at) AS last, ROUND(SUM(status>=400)/COUNT(*)*100) AS epct FROM visits WHERE created_at >= $pstart GROUP BY ip ORDER BY c DESC LIMIT 12")->fetchAll();
+    // Top IPs (blocked IPs excluded so they don't crowd out active ones)
+    $top_ips = $pdo->query("SELECT ip, COUNT(*) AS c, MAX(created_at) AS last, ROUND(SUM(status>=400)/COUNT(*)*100) AS epct FROM visits WHERE created_at >= $pstart AND ip NOT IN (SELECT ip FROM blocked_ips) GROUP BY ip ORDER BY c DESC LIMIT 12")->fetchAll();
 
     // Errors
     $err_rows = $pdo->query("SELECT created_at,ip,uri,error_type,error_msg,error_file,error_line FROM errors ORDER BY created_at DESC LIMIT 25")->fetchAll();
@@ -285,14 +314,16 @@ $tool_max    = $tool_usage ? (int)$tool_usage[0]['c'] : 1;
 $geo_ips = array_unique(array_merge(array_column($rows, 'ip'), array_column($top_ips, 'ip')));
 $geo     = $pdo ? geoip_country($geo_ips) : [];
 
-$users = $tab === 'users' ? user_list() : [];
+$users        = $tab === 'users'   ? user_list()        : [];
+$blocked_list = $tab === 'blocked' ? blocked_ip_list()  : [];
+$blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fetchAll(PDO::FETCH_COLUMN)) : [];
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><?= $tab === 'users' ? 'Users' : 'Activity' ?> — <?= SITE_DOMAIN ?></title>
+  <title><?= match($tab) { 'users' => 'Users', 'blocked' => 'Blocked IPs', default => 'Activity' } ?> — <?= SITE_DOMAIN ?></title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -449,6 +480,11 @@ $users = $tab === 'users' ? user_list() : [];
     .badge--active   { background: rgba(34,197,94,.08);  border: 1px solid rgba(34,197,94,.2);  color: var(--ok);     font-size: .62rem; padding: .1rem .4rem; border-radius: 3px; font-family: var(--mono); }
     .badge--disabled { background: rgba(239,68,68,.08);  border: 1px solid rgba(239,68,68,.2);  color: #fca5a5;       font-size: .62rem; padding: .1rem .4rem; border-radius: 3px; font-family: var(--mono); }
 
+    /* inline block button (activity table IP cell) */
+    .btn-block-sm { background: none; border: none; cursor: pointer; color: #2a3040; font-size: .72rem; padding: 0 .2rem; line-height: 1; transition: color var(--tr); vertical-align: middle; }
+    .btn-block-sm:hover { color: var(--err); }
+    .badge--blocked-sm { font-family: var(--mono); font-size: .65rem; color: rgba(239,68,68,.5); vertical-align: middle; margin-left: .15rem; cursor: default; }
+
     /* modal — [hidden] must win over display:flex */
     [hidden] { display: none !important; }
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.72); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
@@ -474,6 +510,7 @@ $users = $tab === 'users' ? user_list() : [];
 </div>
 <nav class="tab-nav">
   <a href="?" class="<?= $tab === 'activity' ? 'active' : '' ?>">Activity</a>
+  <a href="?tab=blocked" class="<?= $tab === 'blocked' ? 'active' : '' ?>">Blocked IPs <?php if ($blocked_set): ?><span style="font-size:.6rem;opacity:.6">(<?= count($blocked_set) ?>)</span><?php endif; ?></a>
   <a href="?tab=users" class="<?= $tab === 'users' ? 'active' : '' ?>">Users</a>
 </nav>
 
@@ -536,7 +573,7 @@ $users = $tab === 'users' ? user_list() : [];
       <div class="card-hd"><h2>Top IPs</h2></div>
       <div class="tbl-wrap">
         <table class="ip-table">
-          <thead><tr><th>IP</th><th>Country</th><th>Req</th><th>Err%</th><th>Last seen</th></tr></thead>
+          <thead><tr><th>IP</th><th>Country</th><th>Req</th><th>Err%</th><th>Last seen</th><th></th></tr></thead>
           <tbody>
           <?php if ($top_ips): ?>
           <?php foreach ($top_ips as $row): ?>
@@ -546,6 +583,14 @@ $users = $tab === 'users' ? user_list() : [];
             <td><?= number_format($row['c']) ?></td>
             <td class="<?= (int)$row['epct'] > 30 ? 'epct-warn' : '' ?> muted"><?= (int)$row['epct'] ?>%</td>
             <td class="muted"><?= rel_time($row['last']) ?></td>
+            <td>
+              <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($row['ip'])) ?>?')">
+                <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+                <input type="hidden" name="action" value="block_ip">
+                <input type="hidden" name="ip" value="<?= htmlspecialchars($row['ip']) ?>">
+                <button type="submit" class="btn-act danger" style="font-size:.6rem;padding:.15rem .45rem">Block</button>
+              </form>
+            </td>
           </tr>
           <?php endforeach; ?>
           <?php else: ?><tr><td colspan="5" class="empty-state">No data yet.</td></tr><?php endif; ?>
@@ -560,7 +605,26 @@ $users = $tab === 'users' ? user_list() : [];
   <div class="card">
     <div class="card-hd">
       <h2>Activity Feed</h2>
-      <span class="card-meta"><?= number_format($total_rows) ?> rows matched</span>
+      <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+        <span class="card-meta"><?= number_format($total_rows) ?> rows matched</span>
+        <?php if ($fip): ?>
+        <?php if (isset($blocked_set[$fip])): ?>
+        <form method="POST" style="display:inline">
+          <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+          <input type="hidden" name="action" value="unblock_ip">
+          <input type="hidden" name="ip" value="<?= htmlspecialchars($fip) ?>">
+          <button type="submit" class="btn-sm" style="border-color:rgba(34,197,94,.3);color:#86efac;font-size:.65rem;padding:.25rem .7rem">↩ Unblock <?= htmlspecialchars($fip) ?></button>
+        </form>
+        <?php else: ?>
+        <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($fip)) ?>?')">
+          <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+          <input type="hidden" name="action" value="block_ip">
+          <input type="hidden" name="ip" value="<?= htmlspecialchars($fip) ?>">
+          <button type="submit" class="btn-sm" style="border-color:rgba(239,68,68,.3);color:#fca5a5;font-size:.65rem;padding:.25rem .7rem">⊘ Block <?= htmlspecialchars($fip) ?></button>
+        </form>
+        <?php endif; ?>
+        <?php endif; ?>
+      </div>
     </div>
     <div class="card-body">
 
@@ -609,7 +673,14 @@ $users = $tab === 'users' ? user_list() : [];
           <?php foreach ($rows as $r): ?>
           <tr>
             <td><span class="ts" title="<?= htmlspecialchars($r['created_at']) ?> UTC"><?= rel_time($r['created_at']) ?></span></td>
-            <td><a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a></td>
+            <td style="white-space:nowrap">
+              <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a>
+              <?php if (isset($blocked_set[$r['ip']])): ?>
+              <span class="badge--blocked-sm" title="Blocked">⊘</span>
+              <?php else: ?>
+              <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($r['ip'])) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="ip" value="<?= htmlspecialchars($r['ip']) ?>"><button type="submit" class="btn-block-sm" title="Block this IP">⊘</button></form>
+              <?php endif; ?>
+            </td>
             <td><?= geo_label($r['ip'], $geo) ?></td>
             <td><?= method_badge($r['method']) ?></td>
             <td><span class="uri" title="<?= htmlspecialchars($r['uri'] . ($r['query_string'] ? '?'.$r['query_string'] : '')) ?>">
@@ -816,6 +887,74 @@ $users = $tab === 'users' ? user_list() : [];
   </div>
 
   <?php endif; /* $tab === 'users' */ ?>
+
+  <?php if ($tab === 'blocked'): ?>
+
+  <?php if ($b_flash): ?>
+  <div class="flash flash--<?= $b_flash_ok ? 'ok' : 'err' ?>"><?= $b_flash ?></div>
+  <?php endif; ?>
+
+  <!-- Manual block form -->
+  <div class="users-hd" style="align-items:flex-end;flex-wrap:wrap;gap:.75rem">
+    <h1>Blocked IPs</h1>
+    <form method="POST" style="display:flex;align-items:flex-end;gap:.5rem;flex-wrap:wrap;margin-left:auto">
+      <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+      <input type="hidden" name="action" value="block_ip">
+      <div class="flt">
+        <label>IP Address</label>
+        <input type="text" name="ip" placeholder="1.2.3.4" required style="width:150px">
+      </div>
+      <div class="flt" style="flex:1;min-width:160px">
+        <label>Reason <span style="text-transform:none;color:var(--muted)">(optional)</span></label>
+        <input type="text" name="reason" placeholder="Abuse, scanning…" style="width:100%">
+      </div>
+      <button type="submit" class="btn-sm" style="border-color:rgba(239,68,68,.3);color:#fca5a5" onclick="return confirm('Block this IP?')">⊘ Block</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>IP</th><th>Country</th><th>All-time req</th><th>Last seen</th><th>Err%</th><th>Blocked by</th><th>Blocked at</th><th>Reason</th><th></th></tr>
+        </thead>
+        <tbody>
+        <?php if ($blocked_list): ?>
+        <?php foreach ($blocked_list as $b): ?>
+        <tr>
+          <td>
+            <a href="?ip=<?= urlencode($b['ip']) ?>" class="ip-link" title="View activity for this IP"><?= htmlspecialchars($b['ip']) ?></a>
+          </td>
+          <td>
+            <?php if ($b['country'] && $b['country'] !== 'XX'): ?>
+            <?= geo_label($b['ip'], [$b['ip'] => $b['country']]) ?>
+            <?php else: ?><span class="muted">—</span><?php endif; ?>
+          </td>
+          <td><?= $b['total_req'] ? number_format((int)$b['total_req']) : '<span class="muted">—</span>' ?></td>
+          <td><?= $b['last_seen'] ? rel_time($b['last_seen']) : '<span class="muted">—</span>' ?></td>
+          <td class="<?= (int)$b['err_pct'] > 30 ? 'epct-warn' : 'muted' ?>"><?= $b['total_req'] ? (int)$b['err_pct'] . '%' : '<span class="muted">—</span>' ?></td>
+          <td><span class="muted" style="font-size:.72rem"><?= htmlspecialchars($b['blocked_by']) ?></span></td>
+          <td><span class="ts" title="<?= htmlspecialchars($b['blocked_at']) ?> UTC"><?= rel_time($b['blocked_at']) ?></span></td>
+          <td><span class="muted" style="font-family:var(--mono);font-size:.68rem;max-width:180px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="<?= htmlspecialchars($b['reason'] ?? '') ?>"><?= $b['reason'] ? htmlspecialchars($b['reason']) : '—' ?></span></td>
+          <td>
+            <form method="POST" style="display:inline" onsubmit="return confirm('Unblock <?= htmlspecialchars(addslashes($b['ip'])) ?>?')">
+              <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+              <input type="hidden" name="action" value="unblock_ip">
+              <input type="hidden" name="ip" value="<?= htmlspecialchars($b['ip']) ?>">
+              <button type="submit" class="btn-act">Unblock</button>
+            </form>
+          </td>
+        </tr>
+        <?php endforeach; ?>
+        <?php else: ?>
+        <tr><td colspan="9" class="empty-state">No blocked IPs.</td></tr>
+        <?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <?php endif; /* $tab === 'blocked' */ ?>
 
 </div><!-- .wrap -->
 
