@@ -7,6 +7,42 @@ if (!$email) { header('Location: ' . ADMIN_LOGIN_URL, true, 302); exit; }
 
 $pdo = admin_pdo();
 
+// ── Tab ────────────────────────────────────────────────────────────────────────
+$tab = ($_GET['tab'] ?? '') === 'users' ? 'users' : 'activity';
+
+// ── Users CRUD (POST) ─────────────────────────────────────────────────────────
+$u_flash = ''; $u_flash_ok = true;
+if ($tab === 'users' && $_SERVER['REQUEST_METHOD'] === 'POST' && _admin_csrf_ok()) {
+    $act = $_POST['action'] ?? '';
+    $err = '';
+    if ($act === 'add_user') {
+        $u_em = trim($_POST['email'] ?? ''); $u_nm = trim($_POST['name'] ?? '');
+        $u_at = trim($_POST['attributes'] ?? '');
+        if ($u_at !== '' && json_decode($u_at) === null)       $err = 'Attributes: invalid JSON.';
+        elseif (!filter_var($u_em, FILTER_VALIDATE_EMAIL))     $err = 'Invalid email address.';
+        else $err = user_create($u_em, $u_nm, $u_at !== '' ? $u_at : null);
+    } elseif ($act === 'update_user') {
+        $u_id = (int)($_POST['id'] ?? 0); $u_em = trim($_POST['email'] ?? '');
+        $u_nm = trim($_POST['name'] ?? ''); $u_at = trim($_POST['attributes'] ?? '');
+        if ($u_id < 1)                                         $err = 'Invalid user.';
+        elseif ($u_at !== '' && json_decode($u_at) === null)   $err = 'Attributes: invalid JSON.';
+        elseif (!filter_var($u_em, FILTER_VALIDATE_EMAIL))     $err = 'Invalid email address.';
+        else $err = user_update($u_id, $u_em, $u_nm, $u_at !== '' ? $u_at : null);
+    } elseif ($act === 'delete_user') {
+        $u_id = (int)($_POST['id'] ?? 0);
+        $err = $u_id > 0 ? user_delete($u_id) : 'Invalid user.';
+    } elseif ($act === 'toggle_user') {
+        $u_id = (int)($_POST['id'] ?? 0);
+        $err = $u_id > 0 ? user_toggle_disabled($u_id) : 'Invalid user.';
+    }
+    header('Location: ?tab=users' . ($err ? '&err=' . urlencode($err) : '&ok=1'));
+    exit;
+}
+if ($tab === 'users') {
+    if (isset($_GET['ok']))  { $u_flash = 'Done.';                              $u_flash_ok = true; }
+    if (isset($_GET['err'])) { $u_flash = htmlspecialchars($_GET['err'] ?? ''); $u_flash_ok = false; }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 $TOOL_NAMES = [
     'index.php'              => 'Home',
@@ -115,7 +151,7 @@ $tool_usage = [];
 $top_ips    = [];
 $err_rows   = [];
 
-if ($pdo) {
+if ($tab === 'activity' && $pdo) {
     // Stats (always full period, ignore column filters)
     $r = $pdo->query("SELECT COUNT(*) AS t, COUNT(DISTINCT ip) AS u FROM visits WHERE created_at >= $pstart")->fetch();
     $stats['total'] = (int)$r['t']; $stats['uniq'] = (int)$r['u'];
@@ -149,13 +185,15 @@ $tool_max    = $tool_usage ? (int)$tool_usage[0]['c'] : 1;
 // Geo lookup — cache-first, ip-api.com batch for misses
 $geo_ips = array_unique(array_merge(array_column($rows, 'ip'), array_column($top_ips, 'ip')));
 $geo     = $pdo ? geoip_country($geo_ips) : [];
+
+$users = $tab === 'users' ? user_list() : [];
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Activity — <?= SITE_DOMAIN ?></title>
+  <title><?= $tab === 'users' ? 'Users' : 'Activity' ?> — <?= SITE_DOMAIN ?></title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -281,6 +319,50 @@ $geo     = $pdo ? geoip_country($geo_ips) : [];
     /* IP table side */
     .ip-table td:first-child { font-family: var(--mono); font-size: .72rem; }
     .epct-warn { color: var(--warn); }
+
+    /* tab nav */
+    .tab-nav { background: rgba(18,22,28,.98); border-bottom: 1px solid var(--border); padding: 0 1.75rem; display: flex; }
+    .tab-nav a { display: inline-flex; align-items: center; padding: .55rem 1.1rem; font-family: var(--mono); font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all var(--tr); text-decoration: none; }
+    .tab-nav a:hover { color: var(--text); }
+    .tab-nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* flash */
+    .flash { padding: .65rem 1rem; border-radius: var(--radius); font-size: .8rem; margin-bottom: 1.25rem; }
+    .flash--ok  { background: rgba(34,197,94,.08);  border: 1px solid rgba(34,197,94,.25);  color: #86efac; }
+    .flash--err { background: rgba(239,68,68,.08);  border: 1px solid rgba(239,68,68,.25);  color: #fca5a5; }
+
+    /* users page header */
+    .users-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; }
+    .users-hd h1 { font-size: 1.15rem; font-weight: 600; color: #fff; }
+
+    /* user table action buttons */
+    .btn-act { font-family: var(--mono); font-size: .65rem; padding: .2rem .55rem; border-radius: 3px; border: 1px solid var(--border2); background: transparent; color: var(--muted); cursor: pointer; transition: all var(--tr); text-decoration: none; display: inline-block; }
+    .btn-act:hover { color: var(--text); border-color: var(--text); }
+    .btn-act.primary { border-color: rgba(0,212,170,.35); color: var(--accent); }
+    .btn-act.primary:hover { background: rgba(0,212,170,.1); }
+    .btn-act.warn-act { border-color: rgba(245,158,11,.3); color: var(--warn); }
+    .btn-act.warn-act:hover { background: rgba(245,158,11,.08); }
+    .btn-act.danger { border-color: rgba(239,68,68,.3); color: #fca5a5; }
+    .btn-act.danger:hover { background: rgba(239,68,68,.1); border-color: var(--err); }
+
+    /* user status/role badges */
+    .badge--root     { background: rgba(0,212,170,.08);  border: 1px solid rgba(0,212,170,.2);  color: var(--accent); font-size: .62rem; padding: .1rem .4rem; border-radius: 3px; font-family: var(--mono); }
+    .badge--active   { background: rgba(34,197,94,.08);  border: 1px solid rgba(34,197,94,.2);  color: var(--ok);     font-size: .62rem; padding: .1rem .4rem; border-radius: 3px; font-family: var(--mono); }
+    .badge--disabled { background: rgba(239,68,68,.08);  border: 1px solid rgba(239,68,68,.2);  color: #fca5a5;       font-size: .62rem; padding: .1rem .4rem; border-radius: 3px; font-family: var(--mono); }
+
+    /* modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.72); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
+    .modal-card { background: var(--surface); border: 1px solid var(--border2); border-radius: 8px; width: 100%; max-width: 440px; }
+    .modal-hd { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .modal-hd h3 { font-family: var(--mono); font-size: .75rem; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+    .modal-close { background: none; border: none; color: var(--muted); font-size: 1.3rem; cursor: pointer; line-height: 1; padding: 0 .2rem; transition: color var(--tr); }
+    .modal-close:hover { color: var(--text); }
+    .modal-body { padding: 1.25rem; display: flex; flex-direction: column; gap: .9rem; }
+    .form-row { display: flex; flex-direction: column; gap: .35rem; }
+    .form-row label { font-family: var(--mono); font-size: .62rem; letter-spacing: .08em; text-transform: uppercase; color: #3d4f68; }
+    .form-row input, .form-row textarea { background: var(--surface2); border: 1px solid var(--border2); border-radius: 4px; color: var(--text); font-family: var(--mono); font-size: .78rem; padding: .45rem .7rem; outline: none; transition: border-color var(--tr); width: 100%; resize: vertical; }
+    .form-row input:focus, .form-row textarea:focus { border-color: var(--accent); }
+    .form-actions { display: flex; justify-content: flex-end; gap: .5rem; padding: .75rem 1.25rem; border-top: 1px solid var(--border); }
   </style>
 </head>
 <body>
@@ -290,9 +372,14 @@ $geo     = $pdo ? geoip_country($geo_ips) : [];
   <span class="admin-bar-user">Signed in as <span><?= htmlspecialchars($email) ?></span></span>
   <a href="<?= ADMIN_LOGIN_URL ?>?logout=1" class="admin-bar-logout">Sign out</a>
 </div>
+<nav class="tab-nav">
+  <a href="?" class="<?= $tab === 'activity' ? 'active' : '' ?>">Activity</a>
+  <a href="?tab=users" class="<?= $tab === 'users' ? 'active' : '' ?>">Users</a>
+</nav>
 
 <div class="wrap">
 
+  <?php if ($tab === 'activity'): ?>
   <!-- ── Header ──────────────────────────────────────────────────────────────── -->
   <div class="page-hd">
     <h1>Site Activity</h1>
@@ -494,6 +581,138 @@ $geo     = $pdo ? geoip_country($geo_ips) : [];
     <?php endif; ?>
   </div>
 
+  <?php endif; /* $tab === 'activity' */ ?>
+
+  <?php if ($tab === 'users'): ?>
+
+  <?php if ($u_flash): ?>
+  <div class="flash flash--<?= $u_flash_ok ? 'ok' : 'err' ?>"><?= $u_flash ?></div>
+  <?php endif; ?>
+
+  <div class="users-hd">
+    <h1>Users</h1>
+    <button class="btn-sm" onclick="document.getElementById('modal-add').hidden=false">+ Add User</button>
+  </div>
+
+  <div class="card">
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Name</th><th>Email</th><th>Status</th><th>Role</th><th>Attributes</th><th>Created</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+        <?php if ($users): ?>
+        <?php foreach ($users as $u): ?>
+        <tr>
+          <td><?= htmlspecialchars($u['name'] ?: '—') ?></td>
+          <td><span class="ip-link" style="color:var(--text)"><?= htmlspecialchars($u['email']) ?></span></td>
+          <td><?= $u['is_disabled'] ? '<span class="badge--disabled">Disabled</span>' : '<span class="badge--active">Active</span>' ?></td>
+          <td><?= $u['is_root'] ? '<span class="badge--root">Root Admin</span>' : '<span class="muted">User</span>' ?></td>
+          <td>
+            <?php if ($u['attributes']): ?>
+            <span class="muted" style="font-family:var(--mono);font-size:.65rem;cursor:default" title="<?= htmlspecialchars($u['attributes']) ?>">{…}</span>
+            <?php else: ?><span class="muted">—</span><?php endif; ?>
+          </td>
+          <td><span class="ts"><?= htmlspecialchars(substr($u['created_at'], 0, 10)) ?></span></td>
+          <td style="white-space:nowrap">
+            <?php if ($u['is_root']): ?>
+            <span class="muted" style="font-size:.65rem;font-family:var(--mono)">protected</span>
+            <?php else: ?>
+            <button class="btn-act primary"
+              onclick="openEditModal(<?= (int)$u['id'] ?>,<?= json_encode($u['name']) ?>,<?= json_encode($u['email']) ?>,<?= json_encode($u['attributes'] ?? '') ?>)">Edit</button>
+            <form method="POST" style="display:inline"
+              onsubmit="return confirm('<?= $u['is_disabled'] ? 'Enable' : 'Disable' ?> this user?')">
+              <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+              <input type="hidden" name="action" value="toggle_user">
+              <input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
+              <button type="submit" class="btn-act <?= $u['is_disabled'] ? '' : 'warn-act' ?>"><?= $u['is_disabled'] ? 'Enable' : 'Disable' ?></button>
+            </form>
+            <form method="POST" style="display:inline"
+              onsubmit="return confirm('Delete this user? This cannot be undone.')">
+              <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+              <input type="hidden" name="action" value="delete_user">
+              <input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
+              <button type="submit" class="btn-act danger">Delete</button>
+            </form>
+            <?php endif; ?>
+          </td>
+        </tr>
+        <?php endforeach; ?>
+        <?php else: ?>
+        <tr><td colspan="7" class="empty-state">No users found.</td></tr>
+        <?php endif; ?>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Add User Modal -->
+  <div class="modal-overlay" id="modal-add" hidden onclick="if(event.target===this)this.hidden=true">
+    <div class="modal-card">
+      <div class="modal-hd">
+        <h3>Add User</h3>
+        <button class="modal-close" onclick="document.getElementById('modal-add').hidden=true">×</button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+        <input type="hidden" name="action" value="add_user">
+        <div class="modal-body">
+          <div class="form-row">
+            <label>Name</label>
+            <input type="text" name="name" placeholder="Full name">
+          </div>
+          <div class="form-row">
+            <label>Email</label>
+            <input type="email" name="email" required placeholder="user@example.com">
+          </div>
+          <div class="form-row">
+            <label>Attributes <span style="text-transform:none;color:var(--muted)">(optional JSON)</span></label>
+            <textarea name="attributes" rows="3" placeholder='{"department":"engineering"}'></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-sm clear" onclick="document.getElementById('modal-add').hidden=true">Cancel</button>
+          <button type="submit" class="btn-sm">Add User</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit User Modal -->
+  <div class="modal-overlay" id="modal-edit" hidden onclick="if(event.target===this)this.hidden=true">
+    <div class="modal-card">
+      <div class="modal-hd">
+        <h3>Edit User</h3>
+        <button class="modal-close" onclick="document.getElementById('modal-edit').hidden=true">×</button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+        <input type="hidden" name="action" value="update_user">
+        <input type="hidden" name="id" id="edit-id">
+        <div class="modal-body">
+          <div class="form-row">
+            <label>Name</label>
+            <input type="text" name="name" id="edit-name" placeholder="Full name">
+          </div>
+          <div class="form-row">
+            <label>Email</label>
+            <input type="email" name="email" id="edit-email" required placeholder="user@example.com">
+          </div>
+          <div class="form-row">
+            <label>Attributes <span style="text-transform:none;color:var(--muted)">(optional JSON)</span></label>
+            <textarea name="attributes" id="edit-attrs" rows="3" placeholder='{"department":"engineering"}'></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-sm clear" onclick="document.getElementById('modal-edit').hidden=true">Cancel</button>
+          <button type="submit" class="btn-sm">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <?php endif; /* $tab === 'users' */ ?>
+
 </div><!-- .wrap -->
 
 <script>
@@ -508,6 +727,14 @@ document.querySelectorAll('.ts').forEach(function(el) {
 document.querySelectorAll('.filter-bar select').forEach(function(s) {
   s.addEventListener('change', function() { this.closest('form').submit(); });
 });
+// User edit modal
+function openEditModal(id, name, email, attrs) {
+  document.getElementById('edit-id').value    = id;
+  document.getElementById('edit-name').value  = name;
+  document.getElementById('edit-email').value = email;
+  document.getElementById('edit-attrs').value = attrs;
+  document.getElementById('modal-edit').hidden = false;
+}
 </script>
 
 </body>

@@ -94,7 +94,7 @@ if (isset($_GET['initiate'])) {
         $tokens = _google_token_exchange($code);
         $info   = $tokens ? _google_userinfo($tokens['access_token'] ?? '') : null;
 
-        if (!$info || empty($info['email_verified']) || $info['email'] !== ADMIN_ALLOWED_EMAIL) {
+        if (!$info || empty($info['email_verified']) || !user_by_email($info['email'])) {
             $error = 'Access denied.';
         } else {
             $tok = admin_create_session($info['email']);

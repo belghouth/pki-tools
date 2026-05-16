@@ -92,6 +92,25 @@ function _admin_schema(PDO $pdo): void {
         user_agent   TEXT,
         INDEX idx_last_seen (last_seen)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS users (
+        id            BIGINT UNSIGNED  AUTO_INCREMENT PRIMARY KEY,
+        email         VARCHAR(255)     NOT NULL UNIQUE,
+        name          VARCHAR(255)     NOT NULL DEFAULT '',
+        is_root       TINYINT(1)       NOT NULL DEFAULT 0,
+        is_disabled   TINYINT(1)       NOT NULL DEFAULT 0,
+        attributes    JSON,
+        password_hash VARCHAR(255)     DEFAULT NULL,
+        mfa_secret    VARCHAR(128)     DEFAULT NULL,
+        created_at    DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at    DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_email    (email),
+        INDEX idx_disabled (is_disabled)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    // Seed immutable root admin — no-op if already present
+    $pdo->prepare("INSERT IGNORE INTO users (email, name, is_root) VALUES (?, 'Thameur Belghith', 1)")
+        ->execute([ADMIN_ALLOWED_EMAIL]);
 }
 
 // Validate admin cookie; returns email on success or null.
@@ -247,6 +266,69 @@ function geoip_cache_store(string $ip, string $cc): void {
 function _geoip_is_private(string $ip): bool {
     if ($ip === '' || $ip === '::1') return true;
     return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false;
+}
+
+// ── CSRF helpers (tied to the admin session cookie) ───────────────────────────
+function _admin_csrf_token(): string {
+    return substr(hash_hmac('sha256', 'csrf', $_COOKIE['mkt_adm'] ?? ''), 0, 32);
+}
+function _admin_csrf_ok(): bool {
+    return hash_equals(_admin_csrf_token(), (string)($_POST['_csrf'] ?? ''));
+}
+
+// ── User management ───────────────────────────────────────────────────────────
+function user_by_email(string $email): ?array {
+    try {
+        $st = admin_pdo()?->prepare("SELECT * FROM users WHERE email=? AND is_disabled=0 LIMIT 1");
+        $st?->execute([$email]);
+        return $st?->fetch() ?: null;
+    } catch (Throwable) { return null; }
+}
+
+function user_list(): array {
+    try {
+        return admin_pdo()?->query(
+            "SELECT id,email,name,is_root,is_disabled,attributes,created_at
+             FROM users ORDER BY is_root DESC, created_at ASC"
+        )?->fetchAll() ?? [];
+    } catch (Throwable) { return []; }
+}
+
+function user_create(string $email, string $name, ?string $attrs): string {
+    try {
+        admin_pdo()?->prepare("INSERT INTO users (email,name,attributes) VALUES (?,?,?)")
+            ->execute([$email, $name, $attrs]);
+        return '';
+    } catch (Throwable $e) {
+        return str_contains($e->getMessage(), 'Duplicate') ? 'Email already exists.' : 'Failed to create user.';
+    }
+}
+
+function user_update(int $id, string $email, string $name, ?string $attrs): string {
+    try {
+        admin_pdo()?->prepare(
+            "UPDATE users SET email=?,name=?,attributes=? WHERE id=? AND is_root=0"
+        )->execute([$email, $name, $attrs, $id]);
+        return '';
+    } catch (Throwable $e) {
+        return str_contains($e->getMessage(), 'Duplicate') ? 'Email already exists.' : 'Failed to update user.';
+    }
+}
+
+function user_delete(int $id): string {
+    try {
+        admin_pdo()?->prepare("DELETE FROM users WHERE id=? AND is_root=0")->execute([$id]);
+        return '';
+    } catch (Throwable) { return 'Failed to delete user.'; }
+}
+
+function user_toggle_disabled(int $id): string {
+    try {
+        admin_pdo()?->prepare(
+            "UPDATE users SET is_disabled = IF(is_disabled,0,1) WHERE id=? AND is_root=0"
+        )->execute([$id]);
+        return '';
+    } catch (Throwable) { return 'Failed to update user.'; }
 }
 
 // Auto-register visit logger + PHP error capture (skipped on admin pages)
