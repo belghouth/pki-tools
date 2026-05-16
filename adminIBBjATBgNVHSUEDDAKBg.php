@@ -30,10 +30,24 @@ if ($tab === 'users' && $_SERVER['REQUEST_METHOD'] === 'POST' && _admin_csrf_ok(
         else $err = user_update($u_id, $u_em, $u_nm, $u_at !== '' ? $u_at : null);
     } elseif ($act === 'delete_user') {
         $u_id = (int)($_POST['id'] ?? 0);
-        $err = $u_id > 0 ? user_delete($u_id) : 'Invalid user.';
+        if ($u_id < 1) { $err = 'Invalid user.'; }
+        else {
+            $tgt = admin_pdo()?->prepare("SELECT email FROM users WHERE id=? LIMIT 1");
+            $tgt?->execute([$u_id]);
+            $tgt_email = (string)($tgt?->fetchColumn() ?? '');
+            if ($tgt_email === $email) $err = 'You cannot delete your own account.';
+            else $err = user_delete($u_id);
+        }
     } elseif ($act === 'toggle_user') {
         $u_id = (int)($_POST['id'] ?? 0);
-        $err = $u_id > 0 ? user_toggle_disabled($u_id) : 'Invalid user.';
+        if ($u_id < 1) { $err = 'Invalid user.'; }
+        else {
+            $tgt = admin_pdo()?->prepare("SELECT email FROM users WHERE id=? LIMIT 1");
+            $tgt?->execute([$u_id]);
+            $tgt_email = (string)($tgt?->fetchColumn() ?? '');
+            if ($tgt_email === $email) $err = 'You cannot disable your own account.';
+            else $err = user_toggle_disabled($u_id);
+        }
     }
     header('Location: ?tab=users' . ($err ? '&err=' . urlencode($err) : '&ok=1'));
     exit;
@@ -621,6 +635,7 @@ $users = $tab === 'users' ? user_list() : [];
             <?php else: ?>
             <button class="btn-act primary"
               onclick="openEditModal(<?= (int)$u['id'] ?>,<?= json_encode($u['name']) ?>,<?= json_encode($u['email']) ?>,<?= json_encode($u['attributes'] ?? '') ?>)">Edit</button>
+            <?php if ($u['email'] !== $email): ?>
             <form method="POST" style="display:inline"
               onsubmit="return confirm('<?= $u['is_disabled'] ? 'Enable' : 'Disable' ?> this user?')">
               <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
@@ -635,6 +650,9 @@ $users = $tab === 'users' ? user_list() : [];
               <input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
               <button type="submit" class="btn-act danger">Delete</button>
             </form>
+            <?php else: ?>
+            <span class="muted" style="font-size:.65rem;font-family:var(--mono)">you</span>
+            <?php endif; ?>
             <?php endif; ?>
           </td>
         </tr>

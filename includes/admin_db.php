@@ -126,6 +126,14 @@ function admin_auth_check(): ?string {
         $st->execute([$token]);
         $row = $st->fetch();
         if (!$row) return null;
+        // Verify the user still exists and is not disabled — log out immediately if not
+        $us = $pdo->prepare("SELECT id FROM users WHERE email=? AND is_disabled=0 LIMIT 1");
+        $us->execute([$row['email']]);
+        if (!$us->fetch()) {
+            $pdo->prepare("DELETE FROM admin_sessions WHERE token=?")->execute([$token]);
+            setcookie('mkt_adm', '', ['expires' => time() - 3600, 'path' => '/', 'secure' => true, 'httponly' => true, 'samesite' => 'Lax']);
+            return null;
+        }
         $pdo->prepare("UPDATE admin_sessions SET last_seen=NOW(), ip=?, user_agent=? WHERE token=?")
             ->execute([$_SERVER['REMOTE_ADDR'] ?? '', substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 500), $token]);
         return $row['email'];
