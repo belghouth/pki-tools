@@ -411,13 +411,16 @@ $navLabel = 'Meerkat e-Seal';
     <div class="code-block"><span class="comment"># Download the e-Seal CA chain</span>
 <span class="cmd">curl -s -o eseal_chain.pem <?= htmlspecialchars(ESEAL_CHAIN_URL) ?></span>
 
-<span class="comment"># Verify the CMS signature (content is embedded in the token)</span>
+<span class="comment"># Verify the CMS signature (content is embedded — no -content flag needed)
+# -purpose any is required because the e-Seal cert carries id-kp-documentSigning
+# (RFC 9336, OID 1.3.6.1.5.5.7.3.36), not emailProtection; OpenSSL's default
+# smimesign purpose check would otherwise reject it as "unsuitable certificate purpose".</span>
 <span class="cmd">openssl cms -verify -inform DER -in signature.cms \
-  -CAfile eseal_chain.pem -noverify -noout</span>
+  -CAfile eseal_chain.pem -purpose any -noout</span>
 
 <span class="comment"># Extract the signed content (should match your original hash bytes)</span>
 <span class="cmd">openssl cms -verify -inform DER -in signature.cms \
-  -CAfile eseal_chain.pem -noverify | xxd</span></div>
+  -CAfile eseal_chain.pem -purpose any | xxd</span></div>
 
     <h3>One-liner (hash + e-seal in one step)</h3>
     <div class="code-block"><span class="cmd">curl -s -X POST <?= htmlspecialchars(MPCA_ESEAL_URL) ?> \
