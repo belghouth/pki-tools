@@ -1,6 +1,6 @@
 <?php
 // ── Meerkat TimeStampIt ────────────────────────────────────────────────────────
-// Upload or paste content → hash → sign with Meerkat TSA → download .tsr
+// Paste a hash digest → sign with Meerkat TSA → download .tsr
 //
 // Reuses ARTIFACT_PARSER infrastructure (x509parse + mod_tsr) for inline rendering.
 
@@ -13,23 +13,19 @@ require_once __DIR__ . '/modules/_base.php';
 require_once __DIR__ . '/modules/mod_tsr.php';
 require_once __DIR__ . '/recaptcha.php';
 
-define('TIT_SIGN_DIR',  MPCA_CA_DIR . '/tsa_sign');
-define('TIT_TSA_CNF',   TIT_SIGN_DIR . '/tsa.cnf');
-define('TIT_TSA_CERT',  TIT_SIGN_DIR . '/tsa_signing.crt');
-define('TIT_MAX_PASTE', 65536);         // 64 KB — pasted text
-define('TIT_MAX_FILE',  10 * 1048576);  // 10 MB — file upload
+define('TIT_SIGN_DIR', MPCA_CA_DIR . '/tsa_sign');
+define('TIT_TSA_CNF',  TIT_SIGN_DIR . '/tsa.cnf');
+define('TIT_TSA_CERT', TIT_SIGN_DIR . '/tsa_signing.crt');
 
-$algo_opts = ['sha256' => 'SHA-256', 'sha384' => 'SHA-384', 'sha512' => 'SHA-512'];
-$hash_alg  = 'sha256';
+$error         = null;
+$tsr_b64       = null;
+$dl_name       = 'timestamp.tsr';
+$rendered      = null;
+$ts_label      = null;
+$hash_detected = null;
+$hash_input    = '';
 
-$error    = null;
-$tsr_b64  = null;
-$dl_name  = 'timestamp.tsr';
-$rendered = null;
-$ts_label = null;
-$src_name = null;
-
-// ── Process submission ────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function tit_run(array $cmd): array {
     $spec = [0 => ['file', '/dev/null', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
@@ -43,6 +39,61 @@ function tit_run(array $cmd): array {
     return ['ok' => $code === 0, 'out' => (string) $out, 'err' => (string) $err];
 }
 
+/**
+ * Normalize a user-supplied hash string to canonical lowercase hex.
+ *
+ * Accepts:
+ *   • hex — upper or lowercase, optionally separated by spaces / colons / dashes
+ *   • base64 — standard (+/) or URL-safe (-_), with or without padding
+ *
+ * Hash sizes accepted: 32 bytes (SHA-256), 48 bytes (SHA-384), 64 bytes (SHA-512).
+ *
+ * Returns ['hex' => string, 'alg' => string, 'bits' => int]
+ *      or ['error' => string]
+ */
+function tit_normalize_hash(string $input): array {
+    $clean = preg_replace('/[\s:\-]+/', '', $input);
+    if ($clean === '') {
+        return ['error' => 'No hash provided.'];
+    }
+
+    // ── Try hex first (only 0-9 a-f A-F) ────────────────────────────────────────
+    if (preg_match('/^[0-9a-fA-F]+$/', $clean)) {
+        $hex = strtolower($clean);
+        return match (strlen($hex)) {
+            64  => ['hex' => $hex, 'alg' => 'sha256', 'bits' => 256],
+            96  => ['hex' => $hex, 'alg' => 'sha384', 'bits' => 384],
+            128 => ['hex' => $hex, 'alg' => 'sha512', 'bits' => 512],
+            default => ['error' => sprintf(
+                'Hex string is %d bytes — expected 32 (SHA-256), 48 (SHA-384), or 64 (SHA-512).',
+                intdiv(strlen($hex), 2)
+            )],
+        };
+    }
+
+    // ── Try base64 (URL-safe → standard, pad to multiple of 4) ─────────────────
+    $b64     = str_replace(['-', '_'], ['+', '/'], $clean);
+    $b64     = $b64 . str_repeat('=', (4 - strlen($b64) % 4) % 4);
+    $decoded = base64_decode($b64, true);
+
+    if ($decoded !== false && $decoded !== '') {
+        $bytes = strlen($decoded);
+        return match ($bytes) {
+            32 => ['hex' => bin2hex($decoded), 'alg' => 'sha256', 'bits' => 256],
+            48 => ['hex' => bin2hex($decoded), 'alg' => 'sha384', 'bits' => 384],
+            64 => ['hex' => bin2hex($decoded), 'alg' => 'sha512', 'bits' => 512],
+            default => ['error' => sprintf(
+                'Base64 decodes to %d bytes — expected 32 (SHA-256), 48 (SHA-384), or 64 (SHA-512).',
+                $bytes
+            )],
+        };
+    }
+
+    return ['error' => 'Could not parse the hash — expected hex or base64 (SHA-256, SHA-384, or SHA-512).'];
+}
+
+// ── Process submission ────────────────────────────────────────────────────────
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (recaptcha_configured()) {
@@ -52,45 +103,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    $alg      = $_POST['hash_alg'] ?? 'sha256';
-    $hash_alg = array_key_exists($alg, $algo_opts) ? $alg : 'sha256';
-
-    $content = null;
+    $hash_input = trim($_POST['tit_hash'] ?? '');
 
     if ($error === null) {
-        $up = $_FILES['tit_file'] ?? null;
-        if ($up && ($up['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
-            if ($up['error'] !== UPLOAD_ERR_OK) {
-                $error = match ((int) $up['error']) {
-                    UPLOAD_ERR_INI_SIZE,
-                    UPLOAD_ERR_FORM_SIZE => 'File exceeds the server upload limit.',
-                    UPLOAD_ERR_PARTIAL   => 'File was only partially uploaded.',
-                    default              => 'Upload error (code ' . $up['error'] . ').',
-                };
-                @unlink($up['tmp_name'] ?? '');
-            } elseif ($up['size'] > TIT_MAX_FILE) {
-                $mb    = round($up['size'] / 1048576, 1);
-                $error = "File is too large ({$mb} MB). Maximum is 10 MB.";
-                @unlink($up['tmp_name']);
-            } else {
-                $content  = @file_get_contents($up['tmp_name']);
-                $src_name = basename($up['name']);
-                @unlink($up['tmp_name']);
-                if ($content === false || $content === '') {
-                    $error = 'Uploaded file is empty or could not be read.';
-                }
-            }
-        } elseif (isset($_POST['tit_text']) && $_POST['tit_text'] !== '') {
-            $text = $_POST['tit_text'];
-            if (strlen($text) > TIT_MAX_PASTE) {
-                $kb    = round(strlen($text) / 1024, 1);
-                $error = "Pasted text is too large ({$kb} KB). Maximum is 64 KB.";
-            } else {
-                $content  = $text;
-                $src_name = 'text';
-            }
+        if ($hash_input === '') {
+            $error = 'No hash provided — paste a SHA-256, SHA-384, or SHA-512 digest.';
         } else {
-            $error = 'No input provided — paste text or upload a file.';
+            $hash_info = tit_normalize_hash($hash_input);
+            if (isset($hash_info['error'])) {
+                $error = $hash_info['error'];
+            }
         }
     }
 
@@ -98,16 +120,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'TSA not initialized on this server. Run <code>scripts/mpca_init.sh</code> first.';
     }
 
-    if ($error === null && $content !== null) {
-        $tmpData = tempnam(sys_get_temp_dir(), 'tit_d_');
-        $tmpTsq  = tempnam(sys_get_temp_dir(), 'tit_q_');
-        $tmpTsr  = tempnam(sys_get_temp_dir(), 'tit_r_');
+    if ($error === null && isset($hash_info) && !isset($hash_info['error'])) {
+        $hash_detected = 'SHA-' . $hash_info['bits'];
+        $tmpTsq = tempnam(sys_get_temp_dir(), 'tit_q_');
+        $tmpTsr = tempnam(sys_get_temp_dir(), 'tit_r_');
         try {
-            file_put_contents($tmpData, $content);
-
             $r = tit_run([OPENSSL_BIN, 'ts', '-query',
-                '-data', $tmpData,
-                '-' . $hash_alg,
+                '-digest', $hash_info['hex'],
+                '-' . $hash_info['alg'],
                 '-cert',
                 '-out', $tmpTsq,
             ]);
@@ -129,8 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $error = 'TSA produced an empty response.';
                     } else {
                         $tsr_b64  = base64_encode($tsrBytes);
-                        $stem     = $src_name ? pathinfo($src_name, PATHINFO_FILENAME) : 'content';
-                        $dl_name  = $stem . '_' . date('Ymd_His') . '.tsr';
+                        $dl_name  = 'timestamp_' . substr($hash_info['hex'], 0, 12) . '_' . date('Ymd_His') . '.tsr';
                         $mod      = new TsrModule();
                         $parsed   = $mod->parse($tsrBytes);
                         $rendered = $mod->render($parsed);
@@ -139,7 +158,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         } finally {
-            @unlink($tmpData);
             @unlink($tmpTsq);
             @unlink($tmpTsr);
         }
@@ -156,14 +174,14 @@ $navLabel = 'Meerkat — TimeStampIt';
   require_once __DIR__ . '/includes/seo.php';
   seo_head([
     'title'       => 'Meerkat TimeStampIt — RFC 3161 Timestamp Tool | ' . SITE_DOMAIN,
-    'description' => 'Cryptographically timestamp any file or text using the Meerkat RFC 3161 TSA. Upload or paste content, download the signed .tsr token, and inspect the timestamp response inline.',
+    'description' => 'Paste a SHA-256, SHA-384, or SHA-512 hash digest to receive a cryptographically signed RFC 3161 timestamp token from the Meerkat TSA. Download the .tsr and inspect the response inline.',
     'url'         => SITE_BASE_URL . '/timestamp_it.php',
     'jsonld'      => json_encode([
       '@context'            => 'https://schema.org',
       '@type'               => 'WebApplication',
       'name'                => 'Meerkat TimeStampIt',
       'url'                 => SITE_BASE_URL . '/timestamp_it.php',
-      'description'         => 'RFC 3161 timestamp tool. Upload or paste content, get a signed TimeStampResp from the Meerkat TSA, download the .tsr token.',
+      'description'         => 'RFC 3161 timestamp tool. Paste a hash digest, get a signed TimeStampResp from the Meerkat TSA, download the .tsr token.',
       'applicationCategory' => 'SecurityApplication',
       'operatingSystem'     => 'Any',
       'isAccessibleForFree' => true,
@@ -183,7 +201,7 @@ $navLabel = 'Meerkat — TimeStampIt';
     :root {
       --bg: #0e1014; --surface: #13171e; --border: #2a3040;
       --accent: #00d4aa; --text: #d4dae6; --muted: #6b7a90;
-      --danger: #e05c5c; --warn: #f5a623; --amber: #f59e0b;
+      --danger: #e05c5c; --amber: #f59e0b;
       --sans: 'IBM Plex Sans', sans-serif; --mono: 'IBM Plex Mono', monospace;
       --radius: 8px;
     }
@@ -213,58 +231,25 @@ $navLabel = 'Meerkat — TimeStampIt';
     /* ── Form card ── */
     .tit-form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 1.5rem; }
 
-    /* Algorithm row */
-    .tit-algo-row {
-      display: flex; align-items: center; gap: 1rem;
-      padding: .8rem 1.4rem; border-bottom: 1px solid var(--border);
-      background: rgba(0,0,0,.1);
-    }
-    .tit-algo-row label { font-family: var(--mono); font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); white-space: nowrap; }
-    .tit-algo-select {
-      font-family: var(--mono); font-size: .76rem; color: var(--text);
-      background: rgba(0,0,0,.3); border: 1px solid var(--border); border-radius: 4px;
-      padding: .3em .7em; outline: none; cursor: pointer;
-    }
-    .tit-algo-select:focus { border-color: var(--amber); }
-
-    /* Tabs */
-    .tit-tabs { display: flex; border-bottom: 1px solid var(--border); }
-    .tit-tab {
-      flex: 1; padding: .7rem 1rem; font-family: var(--mono); font-size: .72rem; text-transform: uppercase;
-      letter-spacing: .07em; color: var(--muted); background: none; border: none; cursor: pointer;
-      border-bottom: 2px solid transparent; transition: all .15s;
-    }
-    .tit-tab:hover { color: var(--text); }
-    .tit-tab.active { color: var(--amber); border-bottom-color: var(--amber); background: rgba(245,158,11,.04); }
-
-    .tit-panel { padding: 1.2rem 1.4rem; }
-    .tit-panel[hidden] { display: none; }
-
-    /* Textarea */
-    .tit-textarea {
-      width: 100%; min-height: 160px; resize: vertical;
+    /* ── Hash input area ── */
+    .tit-hash-wrap { padding: 1.2rem 1.4rem; }
+    .tit-hash-input {
+      width: 100%; resize: vertical; min-height: 80px;
       background: rgba(0,0,0,.25); border: 1px solid var(--border); border-radius: var(--radius);
-      color: #a8c0e8; font-family: var(--mono); font-size: .72rem; line-height: 1.6;
-      padding: .75rem; outline: none; transition: border-color .15s;
+      color: #a8c0e8; font-family: var(--mono); font-size: .78rem; line-height: 1.7;
+      padding: .75rem 1rem; outline: none; transition: border-color .15s;
+      word-break: break-all;
     }
-    .tit-textarea:focus { border-color: var(--amber); }
-    .tit-textarea::placeholder { color: #3a4a5e; }
-    .tit-limit-note { font-size: .7rem; color: var(--muted); margin-top: .4rem; }
+    .tit-hash-input:focus { border-color: var(--amber); }
+    .tit-hash-input::placeholder { color: #3a4a5e; }
+    .tit-detect-row { display: flex; align-items: center; justify-content: space-between; margin-top: .5rem; min-height: 1.4rem; }
+    .tit-detect { font-family: var(--mono); font-size: .68rem; }
+    .tit-detect.detected { color: var(--amber); }
+    .tit-detect.invalid  { color: var(--danger); }
+    .tit-detect.empty    { color: #3a4a5e; }
+    .tit-hint { font-size: .72rem; color: var(--muted); }
 
-    /* Drop zone */
-    .tit-drop {
-      border: 2px dashed var(--border); border-radius: var(--radius);
-      padding: 2.5rem 1.5rem; text-align: center; cursor: pointer;
-      transition: border-color .15s, background .15s; position: relative;
-    }
-    .tit-drop.dragover { border-color: var(--amber); background: rgba(245,158,11,.04); }
-    .tit-drop input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
-    .tit-drop .dz-icon { font-size: 2rem; margin-bottom: .5rem; }
-    .tit-drop p { font-size: .82rem; color: var(--muted); margin: 0; }
-    .tit-drop .dz-hint { font-family: var(--mono); font-size: .65rem; color: #3d4f68; margin-top: .4rem; }
-    .tit-drop .dz-sel  { font-family: var(--mono); font-size: .78rem; color: var(--amber); margin-top: .5rem; }
-
-    /* Submit bar */
+    /* ── Submit bar ── */
     .tit-submit {
       display: flex; justify-content: flex-end; align-items: center; gap: .75rem;
       padding: .9rem 1.4rem; border-top: 1px solid var(--border); background: rgba(0,0,0,.1);
@@ -312,6 +297,17 @@ $navLabel = 'Meerkat — TimeStampIt';
     }
     .tit-btn-dl:hover { opacity: .85; color: #0e1014; }
 
+    /* ── Base64 block ── */
+    .tit-b64-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 1.5rem; }
+    .tit-b64-header { display: flex; align-items: center; justify-content: space-between; padding: .55rem 1rem; border-bottom: 1px solid var(--border); background: rgba(0,0,0,.1); }
+    .tit-b64-label { font-family: var(--mono); font-size: .63rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+    .tit-b64-label a { color: var(--amber); text-decoration: none; }
+    .tit-b64-label a:hover { color: #fff; }
+    .tit-b64-copy { font-family: var(--mono); font-size: .68rem; color: var(--amber); background: none; border: 1px solid rgba(245,158,11,.3); border-radius: 3px; padding: .2em .75em; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
+    .tit-b64-copy:hover { background: rgba(245,158,11,.08); }
+    .tit-b64-copy.copied { color: #3ddc7a; border-color: rgba(0,212,100,.3); }
+    .tit-b64-textarea { display: block; width: 100%; background: rgba(0,0,0,.2); border: none; color: #8899aa; font-family: var(--mono); font-size: .63rem; line-height: 1.7; padding: .75rem 1rem; resize: none; outline: none; }
+
     /* ── xp-* styles (shared renderer output) ── */
     .xp-wrap { font-family: 'IBM Plex Mono',monospace; font-size: .72rem; display: flex; flex-direction: column; gap: 1rem; animation: fadein .35s ease; }
     .xp-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
@@ -338,20 +334,8 @@ $navLabel = 'Meerkat — TimeStampIt';
     .site-footer a:hover { color: var(--accent); }
     .site-footer-links { display: flex; gap: 1.5rem; }
 
-    /* ── Base64 block ── */
-    .tit-b64-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 1.5rem; }
-    .tit-b64-header { display: flex; align-items: center; justify-content: space-between; padding: .55rem 1rem; border-bottom: 1px solid var(--border); background: rgba(0,0,0,.1); }
-    .tit-b64-label { font-family: var(--mono); font-size: .63rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
-    .tit-b64-label a { color: var(--amber); text-decoration: none; }
-    .tit-b64-label a:hover { color: #fff; }
-    .tit-b64-copy { font-family: var(--mono); font-size: .68rem; color: var(--amber); background: none; border: 1px solid rgba(245,158,11,.3); border-radius: 3px; padding: .2em .75em; cursor: pointer; transition: background .15s, color .15s, border-color .15s; }
-    .tit-b64-copy:hover { background: rgba(245,158,11,.08); }
-    .tit-b64-copy.copied { color: #3ddc7a; border-color: rgba(0,212,100,.3); }
-    .tit-b64-textarea { display: block; width: 100%; background: rgba(0,0,0,.2); border: none; color: #8899aa; font-family: var(--mono); font-size: .63rem; line-height: 1.7; padding: .75rem 1rem; resize: none; outline: none; }
-
     @media (max-width: 600px) {
       .tit-page { padding: 2rem 1rem 4rem; }
-      .tit-algo-row { flex-wrap: wrap; }
       .tit-success { flex-direction: column; align-items: flex-start; }
       .xp-label { width: 100%; }
       .xp-value { width: 100%; flex: none; }
@@ -367,15 +351,13 @@ $navLabel = 'Meerkat — TimeStampIt';
 
   <div class="tit-header">
     <h1>🕰️ Meerkat TimeStampIt</h1>
-    <p>Upload any file or paste text to receive a cryptographically signed RFC 3161 timestamp token. Download the <code>.tsr</code> and inspect the response inline.</p>
+    <p>Paste a SHA-256, SHA-384, or SHA-512 hash digest to receive a cryptographically signed RFC 3161 timestamp token. Download the <code>.tsr</code> and inspect the response inline.</p>
   </div>
 
   <div class="tit-sec-note">
     <span class="icon">🔒</span>
     <span>
-      Your content is hashed server-side using the selected algorithm.
-      Only the hash — never the raw content — reaches the TSA signing key.
-      Temporary files are deleted immediately after timestamping and are never stored or logged.
+      The hash you provide becomes the <code>messageImprint</code> in the TSQ — your original content never leaves your machine.
       The issued token is signed by the <a href="/tsa_doc.php">Meerkat Testing TSA</a> (not a qualified or accredited TSA — for testing only).
     </span>
   </div>
@@ -387,50 +369,24 @@ $navLabel = 'Meerkat — TimeStampIt';
   </div>
   <?php endif; ?>
 
-  <form method="post" enctype="multipart/form-data" id="titForm">
+  <form method="post" id="titForm">
 
     <div class="tit-form">
 
-      <!-- Algorithm selector -->
-      <div class="tit-algo-row">
-        <label for="titAlgo">Hash Algorithm</label>
-        <select name="hash_alg" id="titAlgo" class="tit-algo-select">
-          <?php foreach ($algo_opts as $val => $label): ?>
-          <option value="<?= $val ?>"<?= $hash_alg === $val ? ' selected' : '' ?>><?= $label ?></option>
-          <?php endforeach; ?>
-        </select>
-        <span style="font-size:.72rem;color:var(--muted)">SHA-256 recommended for most use cases</span>
-      </div>
-
-      <!-- Tabs -->
-      <div class="tit-tabs" role="tablist">
-        <button type="button" class="tit-tab active" id="tab-paste"  role="tab" aria-controls="panel-paste"  aria-selected="true">Paste Text</button>
-        <button type="button" class="tit-tab"        id="tab-upload" role="tab" aria-controls="panel-upload" aria-selected="false">Upload File</button>
-      </div>
-
-      <!-- Paste panel -->
-      <div class="tit-panel" id="panel-paste" role="tabpanel">
-        <textarea class="tit-textarea" name="tit_text" id="titText"
-                  placeholder="Paste any text content to timestamp…"
-                  spellcheck="false" autocomplete="off"></textarea>
-        <p class="tit-limit-note">Maximum 64 KB · any plain text, source code, JSON, XML…</p>
-      </div>
-
-      <!-- Upload panel -->
-      <div class="tit-panel" id="panel-upload" role="tabpanel" hidden>
-        <div class="tit-drop" id="titDrop">
-          <input type="file" name="tit_file" id="titFile">
-          <div class="dz-icon">📂</div>
-          <p>Drop any file here, or click to browse</p>
-          <p class="dz-hint">PDF, DOCX, source files, binaries… · Max 10 MB</p>
-          <p class="dz-sel" id="titSel" hidden></p>
+      <div class="tit-hash-wrap">
+        <textarea class="tit-hash-input" name="tit_hash" id="titHash" rows="3"
+                  placeholder="SHA-256 / SHA-384 / SHA-512 — hex or base64, spaces and colons OK"
+                  spellcheck="false" autocomplete="off"><?= htmlspecialchars($hash_input, ENT_NOQUOTES) ?></textarea>
+        <div class="tit-detect-row">
+          <span class="tit-detect empty" id="titDetect">—</span>
+          <span class="tit-hint">hex · BASE64 · with spaces · uppercase — all accepted</span>
         </div>
       </div>
 
       <input type="hidden" name="g_recaptcha_token" id="tit_recaptcha_token">
       <div class="tit-submit">
-        <button type="reset" class="tit-btn-clear" id="titClear">Clear</button>
-        <button type="button" class="tit-btn" onclick="doTimestamp()">Timestamp →</button>
+        <button type="button" class="tit-btn-clear" id="titClear">Clear</button>
+        <button type="button" class="tit-btn" id="titSubmitBtn" onclick="doTimestamp()">Timestamp →</button>
       </div>
 
     </div><!-- .tit-form -->
@@ -446,14 +402,13 @@ $navLabel = 'Meerkat — TimeStampIt';
         <div class="tit-success-eyebrow">Timestamp Issued</div>
         <div class="tit-success-title"><?= $ts_label ? htmlspecialchars($ts_label) : 'Token signed successfully' ?></div>
         <div class="tit-success-sub">
-          <?= htmlspecialchars(strtoupper($hash_alg)) ?> &nbsp;·&nbsp;
+          <?= htmlspecialchars($hash_detected) ?> &nbsp;·&nbsp;
           Meerkat TSA &nbsp;·&nbsp;
           <?= htmlspecialchars($dl_name) ?>
         </div>
       </div>
     </div>
-    <a id="titDownloadLink"
-       href="data:application/timestamp-reply;base64,<?= htmlspecialchars($tsr_b64, ENT_QUOTES) ?>"
+    <a href="data:application/timestamp-reply;base64,<?= htmlspecialchars($tsr_b64, ENT_QUOTES) ?>"
        download="<?= htmlspecialchars($dl_name, ENT_QUOTES) ?>"
        class="tit-btn-dl">⬇ Download .tsr</a>
   </div>
@@ -461,7 +416,7 @@ $navLabel = 'Meerkat — TimeStampIt';
   <!-- Base64 token -->
   <div class="tit-b64-card">
     <div class="tit-b64-header">
-      <span class="tit-b64-label">Base64 Token &mdash; paste into <a href="/artifact_parser.php">Artifact Parser</a></span>
+      <span class="tit-b64-label">Base64 Token</span>
       <button type="button" class="tit-b64-copy" id="titCopyB64">Copy</button>
     </div>
     <textarea class="tit-b64-textarea" id="titB64" rows="6" readonly spellcheck="false"><?= htmlspecialchars(chunk_split($tsr_b64, 64, "\n"), ENT_NOQUOTES) ?></textarea>
@@ -501,76 +456,76 @@ function getRecaptchaToken(action) {
 }
 
 async function doTimestamp() {
-  var text   = document.getElementById('titText').value.trim();
-  var file   = document.getElementById('titFile');
-  if (!text && file && file.files.length) {
-    document.getElementById('tab-upload').click();
-  }
   var token = await getRecaptchaToken('timestamp_it');
   document.getElementById('tit_recaptcha_token').value = token;
   document.getElementById('titForm').submit();
 }
 
 (function () {
-  // ── Tab switching ────────────────────────────────────────────────────────────
-  var tabs = document.querySelectorAll('.tit-tab');
-  tabs.forEach(function (tab) {
-    tab.addEventListener('click', function () {
-      tabs.forEach(function (t) {
-        t.classList.remove('active');
-        t.setAttribute('aria-selected', 'false');
-        document.getElementById(t.getAttribute('aria-controls')).hidden = true;
-      });
-      tab.classList.add('active');
-      tab.setAttribute('aria-selected', 'true');
-      document.getElementById(tab.getAttribute('aria-controls')).hidden = false;
-    });
-  });
 
-  // ── Drag and drop ────────────────────────────────────────────────────────────
-  var dz   = document.getElementById('titDrop');
-  var inp  = document.getElementById('titFile');
-  var sel  = document.getElementById('titSel');
-  var MAX  = <?= TIT_MAX_FILE ?>;
+  // ── Real-time algorithm detection ─────────────────────────────────────────────
+  var hashEl   = document.getElementById('titHash');
+  var detectEl = document.getElementById('titDetect');
 
-  function showFile(name) {
-    sel.textContent = '📄 ' + name;
-    sel.hidden = false;
+  function detectAlgo(raw) {
+    var s = raw.replace(/[\s:\-]/g, '');
+    if (!s) return null;
+
+    // Hex: only 0-9 a-f A-F
+    if (/^[0-9a-fA-F]+$/.test(s)) {
+      if (s.length === 64)  return { label: 'SHA-256 (hex)', ok: true };
+      if (s.length === 96)  return { label: 'SHA-384 (hex)', ok: true };
+      if (s.length === 128) return { label: 'SHA-512 (hex)', ok: true };
+      return { label: 'hex — wrong length (' + Math.floor(s.length / 2) + ' bytes)', ok: false };
+    }
+
+    // Base64: noPad length determines algorithm
+    // SHA-256: 32 bytes → 43 noPad chars (1 padding)
+    // SHA-384: 48 bytes → 64 noPad chars (no padding)
+    // SHA-512: 64 bytes → 86 noPad chars (2 padding)
+    if (/^[A-Za-z0-9+/\-_=]+$/.test(s)) {
+      var noPad = s.replace(/=/g, '');
+      if (noPad.length === 43 || noPad.length === 44) return { label: 'SHA-256 (base64)', ok: true };
+      if (noPad.length === 64)                        return { label: 'SHA-384 (base64)', ok: true };
+      if (noPad.length === 86 || noPad.length === 88) return { label: 'SHA-512 (base64)', ok: true };
+      return { label: 'base64 — wrong length', ok: false };
+    }
+
+    return { label: 'unrecognised format', ok: false };
   }
 
-  function checkSize(f) {
-    if (f.size > MAX) {
-      alert('File is too large (' + (f.size / 1048576).toFixed(1) + ' MB). Maximum is 10 MB.');
-      inp.value = '';
-      return false;
+  function updateDetect() {
+    var val = hashEl.value.trim();
+    if (!val) {
+      detectEl.textContent = '—';
+      detectEl.className   = 'tit-detect empty';
+      return;
     }
-    return true;
+    var r = detectAlgo(val);
+    if (!r) {
+      detectEl.textContent = '—';
+      detectEl.className   = 'tit-detect empty';
+    } else if (r.ok) {
+      detectEl.textContent = '✓ ' + r.label;
+      detectEl.className   = 'tit-detect detected';
+    } else {
+      detectEl.textContent = '✗ ' + r.label;
+      detectEl.className   = 'tit-detect invalid';
+    }
   }
 
-  inp.addEventListener('change', function () {
-    if (inp.files.length && checkSize(inp.files[0])) showFile(inp.files[0].name);
-  });
-  dz.addEventListener('dragover',  function (e) { e.preventDefault(); dz.classList.add('dragover'); });
-  dz.addEventListener('dragleave', function ()  { dz.classList.remove('dragover'); });
-  dz.addEventListener('drop', function (e) {
-    e.preventDefault();
-    dz.classList.remove('dragover');
-    var files = e.dataTransfer.files;
-    if (files.length && checkSize(files[0])) {
-      inp.files = files;
-      showFile(files[0].name);
-      document.getElementById('tab-upload').click();
-    }
-  });
+  hashEl.addEventListener('input',  updateDetect);
+  hashEl.addEventListener('paste',  function () { setTimeout(updateDetect, 0); });
+  updateDetect();
 
-  // ── Clear ────────────────────────────────────────────────────────────────────
+  // ── Clear ─────────────────────────────────────────────────────────────────────
   document.getElementById('titClear').addEventListener('click', function () {
-    document.getElementById('titText').value = '';
-    sel.hidden = true;
-    inp.value  = '';
+    hashEl.value = '';
+    updateDetect();
+    hashEl.focus();
   });
 
-  // ── Base64 copy ──────────────────────────────────────────────────────────────
+  // ── Base64 copy ───────────────────────────────────────────────────────────────
   var copyBtn = document.getElementById('titCopyB64');
   if (copyBtn) {
     copyBtn.addEventListener('click', function () {
@@ -585,6 +540,7 @@ async function doTimestamp() {
       });
     });
   }
+
 }());
 </script>
 </body>
