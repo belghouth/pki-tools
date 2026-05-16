@@ -1241,6 +1241,9 @@ function dlText(id, filename) {
 }
 function parseIt() {
   var csr = document.getElementById('csrPem').value;
+  sessionStorage.removeItem('pki_prefill_cert');
+  sessionStorage.removeItem('mkt_eseal_cms');
+  sessionStorage.removeItem('mkt_eseal_xades');
   sessionStorage.setItem('meerkat_pem', csr);
   window.open('artifact_parser.php', '_blank');
 }
