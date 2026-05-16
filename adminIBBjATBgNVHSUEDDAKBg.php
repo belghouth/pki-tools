@@ -249,7 +249,13 @@ $fip     = preg_replace('/[^\d\.:a-fA-F]/', '', $_GET['ip']     ?? '');
 $fstatus = $_GET['status'] ?? '';
 $fmethod = strtoupper(preg_replace('/[^A-Za-z]/', '', $_GET['method'] ?? ''));
 $page    = max(1, (int)($_GET['page'] ?? 1));
-$pp      = 50;
+$_pp_opts = [50, 100, 200];
+$pp = in_array((int)($_GET['pp'] ?? 0), $_pp_opts) ? (int)$_GET['pp']
+    : (in_array((int)($_COOKIE['mkt_pp'] ?? 0), $_pp_opts) ? (int)$_COOKIE['mkt_pp'] : 50);
+if (isset($_GET['pp']) && in_array($pp, $_pp_opts)) {
+    setcookie('mkt_pp', (string)$pp, ['path' => '/', 'secure' => true, 'httponly' => true, 'samesite' => 'Lax']);
+}
+unset($_pp_opts);
 
 if (!in_array($fmethod, ['', 'GET', 'POST', 'DELETE', 'PUT', 'HEAD', 'OPTIONS'])) $fmethod = '';
 if (!preg_match('/^(\d{3}|\dxx)$/', $fstatus)) $fstatus = '';
@@ -653,6 +659,14 @@ $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fet
             <option value="">All</option>
             <?php foreach (['GET','POST','HEAD','OPTIONS','DELETE','PUT'] as $m): ?>
             <option value="<?= $m ?>" <?= $fmethod === $m ? 'selected' : '' ?>><?= $m ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div class="flt">
+          <label>Display</label>
+          <select name="pp" style="width:80px">
+            <?php foreach ([50, 100, 200] as $opt): ?>
+            <option value="<?= $opt ?>" <?= $pp === $opt ? 'selected' : '' ?>><?= $opt ?></option>
             <?php endforeach; ?>
           </select>
         </div>
