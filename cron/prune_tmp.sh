@@ -14,6 +14,7 @@
 #  /tmp/revoc_ee_* revoc_is_* …        revocation.php
 #  /tmp/cf_csr_* cf_cert_* cf_ext_* …  cert_factory.php           (highest orphan risk)
 #  /tmp/ct_iss_*                       ct_log.php
+#  /tmp/tsa_tsq_* tsa_tsr_*           tsa.php                    (TSQ/TSR temp files)
 #  /tmp/????????????????.pdf           cps_to_br_assessor.php     (URL fetch + upload)
 #  /tmp/????????????????.upload        cps_to_br_assessor.php     (non-PDF upload)
 #  /tmp/meerkat_csr_*/                 csr_generator.php          (subdirectory)
@@ -103,6 +104,10 @@ prune_flat 'cf_cert_*'
 
 # ── ct_log.php ────────────────────────────────────────────────────────────────
 prune_flat 'ct_iss_*'
+
+# ── tsa.php ───────────────────────────────────────────────────────────────────
+prune_flat 'tsa_tsq_*'
+prune_flat 'tsa_tsr_*'
 
 # ── csr_generator.php — subdirectories created with mkdir() ──────────────────
 prune_dirs 'meerkat_csr_*'
