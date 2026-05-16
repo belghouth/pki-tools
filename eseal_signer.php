@@ -182,7 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             file_put_contents($tmpIn, hex2bin($hash_info['hex']));
             $cmd = [OPENSSL_BIN, 'cms', '-sign',
-                '-binary', '-signer', EIT_CERT, '-inkey', EIT_KEY,
+                '-binary', '-nodetach', '-signer', EIT_CERT, '-inkey', EIT_KEY,
                 '-md', $hash_info['alg'],
                 '-outform', 'DER', '-out', $tmpCms, '-in', $tmpIn,
             ];

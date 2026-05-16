@@ -292,7 +292,7 @@ try {
     // to avoid "certificate already present" when chain.pem includes the signer cert.
     $cmd = [
         OPENSSL_BIN, 'cms', '-sign',
-        '-binary',
+        '-binary', '-nodetach',
         '-signer',  ESEAL_CERT,
         '-inkey',   ESEAL_KEY,
         '-md',      $hashInfo['alg'],
