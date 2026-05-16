@@ -707,6 +707,9 @@ function sendToParser() {
   var b64 = document.getElementById('eitB64').value.replace(/\s+/g, '');
   if (!b64) return;
   var pem = '-----BEGIN PKCS7-----\n' + b64.match(/.{1,64}/g).join('\n') + '\n-----END PKCS7-----\n';
+  sessionStorage.removeItem('pki_prefill_cert');
+  sessionStorage.removeItem('mkt_eseal_xades');
+  sessionStorage.removeItem('meerkat_pem');
   sessionStorage.setItem('mkt_eseal_cms', pem);
   window.open('/artifact_parser.php', '_blank');
 }
@@ -714,6 +717,9 @@ function sendToParser() {
 function sendXadesToParser() {
   var xml = document.getElementById('eitXml').value;
   if (!xml) return;
+  sessionStorage.removeItem('pki_prefill_cert');
+  sessionStorage.removeItem('mkt_eseal_cms');
+  sessionStorage.removeItem('meerkat_pem');
   sessionStorage.setItem('mkt_eseal_xades', xml);
   window.open('/artifact_parser.php', '_blank');
 }
