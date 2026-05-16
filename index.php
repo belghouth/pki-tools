@@ -793,23 +793,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
         <div class="tools-grid">
 
           <div class="tool-card">
-            <div class="tool-card-bar tool-card-bar--teal"></div>
-            <div class="tool-card-body">
-              <div class="tool-card-icon">🔬</div>
-              <div class="tool-card-name">ACME Endpoint Tester</div>
-              <div class="tool-card-desc">Validate any RFC 8555 ACME endpoint end-to-end: directory field checks, account creation (with optional EAB), order placement, http-01 and dns-01 challenges, certificate issuance, revocation, and ARI. Captures all raw protocol exchanges for a downloadable evidence report.</div>
-              <div class="tool-card-tags">
-                <span class="tag">ACME</span>
-                <span class="tag">RFC 8555</span>
-                <span class="tag">http-01</span>
-                <span class="tag">dns-01</span>
-                <span class="tag">ARI</span>
-              </div>
-              <a href="/acme_tester.php" class="tool-card-link">Open Tool →</a>
-            </div>
-          </div>
-
-          <div class="tool-card">
             <div class="tool-card-bar tool-card-bar--amber"></div>
             <div class="tool-card-body">
               <div class="tool-card-icon">🕰️</div>
@@ -851,6 +834,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
           <div class="tool-group-line"></div>
         </div>
         <div class="tools-grid">
+
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--teal"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">🔬</div>
+              <div class="tool-card-name">ACME Endpoint Tester</div>
+              <div class="tool-card-desc">Validate any RFC 8555 ACME endpoint end-to-end: directory field checks, account creation (with optional EAB), order placement, http-01 and dns-01 challenges, certificate issuance, revocation, and ARI. Captures all raw protocol exchanges for a downloadable evidence report.</div>
+              <div class="tool-card-tags">
+                <span class="tag">ACME</span>
+                <span class="tag">RFC 8555</span>
+                <span class="tag">http-01</span>
+                <span class="tag">dns-01</span>
+                <span class="tag">ARI</span>
+              </div>
+              <a href="/acme_tester.php" class="tool-card-link">Open Tool →</a>
+            </div>
+          </div>
 
           <div class="tool-card">
             <div class="tool-card-bar tool-card-bar--blue"></div>
