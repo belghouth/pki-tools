@@ -13,19 +13,20 @@ session_set_cookie_params([
 ]);
 session_start();
 
-// Already authenticated?
-if (admin_auth_check()) {
-    header('Location: ' . ADMIN_PANEL_URL, true, 302);
-    exit;
-}
-
-// Logout
+// Logout must be checked before the auth redirect, otherwise an authenticated
+// user hitting ?logout=1 would be bounced back to the panel without signing out.
 if (isset($_GET['logout'])) {
     $t = $_COOKIE['mkt_adm'] ?? '';
     if (strlen($t) === 64 && ctype_xdigit($t)) admin_destroy_session($t);
     setcookie('mkt_adm', '', ['expires' => time() - 3600, 'path' => '/', 'secure' => true, 'httponly' => true, 'samesite' => 'Lax']);
     session_destroy();
     header('Location: ' . ADMIN_LOGIN_URL, true, 302);
+    exit;
+}
+
+// Already authenticated?
+if (admin_auth_check()) {
+    header('Location: ' . ADMIN_PANEL_URL, true, 302);
     exit;
 }
 

@@ -350,7 +350,8 @@ $users = $tab === 'users' ? user_list() : [];
     .badge--active   { background: rgba(34,197,94,.08);  border: 1px solid rgba(34,197,94,.2);  color: var(--ok);     font-size: .62rem; padding: .1rem .4rem; border-radius: 3px; font-family: var(--mono); }
     .badge--disabled { background: rgba(239,68,68,.08);  border: 1px solid rgba(239,68,68,.2);  color: #fca5a5;       font-size: .62rem; padding: .1rem .4rem; border-radius: 3px; font-family: var(--mono); }
 
-    /* modal */
+    /* modal — [hidden] must win over display:flex */
+    [hidden] { display: none !important; }
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.72); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
     .modal-card { background: var(--surface); border: 1px solid var(--border2); border-radius: 8px; width: 100%; max-width: 440px; }
     .modal-hd { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
