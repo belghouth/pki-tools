@@ -196,12 +196,11 @@ function handle_mpca_revoke(): array
     }
 
     try {
-        $r = run_cmd([OPENSSL_BIN, 'ca',
-            '-config',     $ca['cnf'],
-            '-revoke',     $tmpCert,
-            '-crl_reason', $reason,
-            '-batch',
-        ]);
+        $cmd = [OPENSSL_BIN, 'ca', '-config', $ca['cnf'], '-revoke', $tmpCert, '-batch'];
+        if ($reason !== 'unspecified') {
+            array_push($cmd, '-crl_reason', $reason);
+        }
+        $r = run_cmd($cmd);
 
         $alreadyRevoked = str_contains($r['err'] ?? '', 'already revoked');
         if (!$r['ok'] && !$alreadyRevoked) {
