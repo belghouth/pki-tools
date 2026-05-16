@@ -16,12 +16,12 @@
 
 require_once __DIR__ . '/config.php';
 
-define('ESEAL_SIGN_DIR', MPCA_CA_DIR   . '/eseal_sign');
-define('ESEAL_KEY',      ESEAL_SIGN_DIR . '/eseal_signing.key');
-define('ESEAL_CERT',     ESEAL_SIGN_DIR . '/eseal_signing.crt');
-define('ESEAL_CHAIN',    ESEAL_SIGN_DIR . '/chain.pem');
-define('TSA_SIGN_DIR',   MPCA_CA_DIR    . '/tsa_sign');
-define('TSA_CNF',        TSA_SIGN_DIR   . '/tsa.cnf');
+define('ESEAL_SIGN_DIR',  MPCA_CA_DIR    . '/eseal_sign');
+define('ESEAL_KEY',       ESEAL_SIGN_DIR . '/eseal_signing.key');
+define('ESEAL_CERT',      ESEAL_SIGN_DIR . '/eseal_signing.crt');
+define('ESEAL_CA_CHAIN',  ESEAL_SIGN_DIR . '/ca_chain.pem');  // CA + Root only (no signer cert)
+define('TSA_SIGN_DIR',    MPCA_CA_DIR    . '/tsa_sign');
+define('TSA_CNF',         TSA_SIGN_DIR   . '/tsa.cnf');
 
 // ── DER helpers ───────────────────────────────────────────────────────────────
 
@@ -288,19 +288,22 @@ $tmpTsr = tempnam(sys_get_temp_dir(), 'eseal_tsr_');
 try {
     file_put_contents($tmpIn, hex2bin($hashInfo['hex']));
 
-    $certfile = file_exists(ESEAL_CHAIN) ? ESEAL_CHAIN : ESEAL_CERT;
-
-    $r = eseal_run([
+    // -signer adds the signer cert automatically; -certfile must be CA+Root only
+    // to avoid "certificate already present" when chain.pem includes the signer cert.
+    $cmd = [
         OPENSSL_BIN, 'cms', '-sign',
         '-binary',
-        '-signer',   ESEAL_CERT,
-        '-inkey',    ESEAL_KEY,
-        '-certfile', $certfile,
-        '-md',       $hashInfo['alg'],
-        '-outform',  'DER',
-        '-out',      $tmpCms,
-        '-in',       $tmpIn,
-    ]);
+        '-signer',  ESEAL_CERT,
+        '-inkey',   ESEAL_KEY,
+        '-md',      $hashInfo['alg'],
+        '-outform', 'DER',
+        '-out',     $tmpCms,
+        '-in',      $tmpIn,
+    ];
+    if (file_exists(ESEAL_CA_CHAIN)) {
+        array_splice($cmd, 3, 0, ['-certfile', ESEAL_CA_CHAIN]);
+    }
+    $r = eseal_run($cmd);
 
     if (!$r['ok']) {
         eseal_error(500, 'CMS signing failed: ' . trim($r['err']));

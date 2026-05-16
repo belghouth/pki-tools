@@ -11,7 +11,7 @@ require_once __DIR__ . '/recaptcha.php';
 define('EIT_SIGN_DIR',  MPCA_CA_DIR   . '/eseal_sign');
 define('EIT_KEY',       EIT_SIGN_DIR  . '/eseal_signing.key');
 define('EIT_CERT',      EIT_SIGN_DIR  . '/eseal_signing.crt');
-define('EIT_CHAIN',     EIT_SIGN_DIR  . '/chain.pem');
+define('EIT_CA_CHAIN',  EIT_SIGN_DIR  . '/ca_chain.pem');  // CA + Root only (no signer cert)
 define('EIT_TSA_DIR',   MPCA_CA_DIR   . '/tsa_sign');
 define('EIT_TSA_CNF',   EIT_TSA_DIR   . '/tsa.cnf');
 
@@ -181,13 +181,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $tmpTsr = tempnam(sys_get_temp_dir(), 'eit_tsr_');
         try {
             file_put_contents($tmpIn, hex2bin($hash_info['hex']));
-            $certfile = file_exists(EIT_CHAIN) ? EIT_CHAIN : EIT_CERT;
-
-            $r = eit_run([OPENSSL_BIN, 'cms', '-sign',
+            $cmd = [OPENSSL_BIN, 'cms', '-sign',
                 '-binary', '-signer', EIT_CERT, '-inkey', EIT_KEY,
-                '-certfile', $certfile, '-md', $hash_info['alg'],
+                '-md', $hash_info['alg'],
                 '-outform', 'DER', '-out', $tmpCms, '-in', $tmpIn,
-            ]);
+            ];
+            if (file_exists(EIT_CA_CHAIN)) {
+                array_splice($cmd, 3, 0, ['-certfile', EIT_CA_CHAIN]);
+            }
+            $r = eit_run($cmd);
 
             if (!$r['ok']) {
                 $error = 'CMS signing failed: ' . trim($r['err']);

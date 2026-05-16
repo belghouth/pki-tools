@@ -368,6 +368,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     }
 
     /* ── Tools grid ─────────────────────────────────────────────────────────── */
+    .tool-group { margin-bottom: 3rem; }
+    .tool-group:last-child { margin-bottom: 0; }
+
+    .tool-group-header {
+      display: flex; align-items: center; gap: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    .tool-group-label {
+      font-family: var(--mono);
+      font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .tool-group-line {
+      flex: 1; height: 1px;
+      background: var(--border);
+    }
+
     .tools-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -632,202 +650,259 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       <h2 class="section-heading">PKI Tools</h2>
       <p class="section-sub">Free, browser-based tools for PKI practitioners, CA auditors, and security engineers.</p>
 
-      <div class="tools-grid">
-
-        <div class="tool-card">
-          <div class="tool-card-bar tool-card-bar--blue"></div>
-          <div class="tool-card-body">
-            <div class="tool-card-icon">🧾</div>
-            <div class="tool-card-name">Meerkat Multi-Linter</div>
-            <div class="tool-card-desc">Run a certificate through zlint, pkilint, and x509lint simultaneously. Flags policy violations and RFC 5280 issues with direct references to the failing requirements.</div>
-            <div class="tool-card-tags">
-              <span class="tag">zlint</span>
-              <span class="tag">pkilint</span>
-              <span class="tag">x509lint</span>
-            </div>
-            <a href="/linters.php" class="tool-card-link">Open Tool →</a>
-          </div>
+      <!-- ── Certificate Issuance & Test CAs ──────────────────────────────── -->
+      <div class="tool-group">
+        <div class="tool-group-header">
+          <span class="tool-group-label">Certificate Issuance &amp; Test CAs</span>
+          <div class="tool-group-line"></div>
         </div>
+        <div class="tools-grid">
 
-        <div class="tool-card">
-          <div class="tool-card-bar tool-card-bar--teal"></div>
-          <div class="tool-card-body">
-            <div class="tool-card-icon">⚡</div>
-            <div class="tool-card-name">ACME Automation Testing Endpoint</div>
-            <div class="tool-card-desc">A live reference implementation of an automated certificate renewal endpoint as required by the Chrome Root Program and validated by Mozilla. Demonstrates RFC 8555 renewal verification in a production environment.</div>
-            <div class="tool-card-tags">
-              <span class="tag">ACME</span>
-              <span class="tag">RFC 8555</span>
-              <span class="tag">Chrome Root</span>
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--teal"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">🔑</div>
+              <div class="tool-card-name">CSR Generator</div>
+              <div class="tool-card-desc">Build a Certificate Signing Request with full control over the key algorithm (RSA, ECDSA, Ed25519), curve or key size, and signature hash. Compose the Subject DN field-by-field from a complete OID-annotated list — deprecated attributes flagged — with SAN support for DNS, IP, email, and URI.</div>
+              <div class="tool-card-tags">
+                <span class="tag">CSR</span>
+                <span class="tag">RSA</span>
+                <span class="tag">ECDSA</span>
+                <span class="tag">Ed25519</span>
+                <span class="tag">SAN</span>
+              </div>
+              <a href="/csr_generator.php" class="tool-card-link">Open Tool →</a>
             </div>
-            <a href="/acme-endpoint.php" class="tool-card-link">View Demo →</a>
           </div>
-        </div>
 
-        <div class="tool-card">
-          <div class="tool-card-bar tool-card-bar--teal"></div>
-          <div class="tool-card-body">
-            <div class="tool-card-icon">🔬</div>
-            <div class="tool-card-name">ACME Endpoint Tester</div>
-            <div class="tool-card-desc">Validate any RFC 8555 ACME endpoint end-to-end: directory field checks, account creation (with optional EAB), order placement, http-01 and dns-01 challenges, certificate issuance, revocation, and ARI. Captures all raw protocol exchanges for a downloadable evidence report.</div>
-            <div class="tool-card-tags">
-              <span class="tag">ACME</span>
-              <span class="tag">RFC 8555</span>
-              <span class="tag">http-01</span>
-              <span class="tag">dns-01</span>
-              <span class="tag">ARI</span>
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--orange"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">🏭</div>
+              <div class="tool-card-name">Meerkat TLS Certificate Factory</div>
+              <div class="tool-card-desc">Issue BR-compliant DV TLS certificates from the Meerkat Test CA. Accepts a CSR or generates one on-the-fly from a list of domains. Only DNS SANs accepted — no IPs, no email. Subject CN is derived from the first SAN; all other CSR fields are stripped.</div>
+              <div class="tool-card-tags">
+                <span class="tag">Test CA</span>
+                <span class="tag">BR Compliance</span>
+                <span class="tag">DV TLS</span>
+                <span class="tag">RSA</span>
+              </div>
+              <a href="/cert_factory.php" class="tool-card-link">Open Tool →</a>
             </div>
-            <a href="/acme_tester.php" class="tool-card-link">Open Tool →</a>
           </div>
-        </div>
 
-        <div class="tool-card">
-          <div class="tool-card-bar tool-card-bar--amber"></div>
-          <div class="tool-card-body">
-            <div class="tool-card-icon">🔍</div>
-            <div class="tool-card-name">Meerkat Artifact Parser</div>
-            <div class="tool-card-desc">Paste or upload any PKI artifact — certificate, CSR, CRL, OCSP response, public key, PKCS#7, or timestamp token — and get an instant structured breakdown. Supports PEM and DER. Private key material is detected and rejected server-side.</div>
-            <div class="tool-card-tags">
-              <span class="tag">X.509</span>
-              <span class="tag">CSR</span>
-              <span class="tag">CRL</span>
-              <span class="tag">PKCS#7</span>
-              <span class="tag">RFC 3161</span>
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--purple"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">🏛️</div>
+              <div class="tool-card-name">Meerkat MPCA Factory</div>
+              <div class="tool-card-desc">Issue multi-purpose test certificates from the Meerkat private CA hierarchy. Supports S/MIME (MV Multipurpose &amp; Signing), Client Authentication, Document Signing (AdES/RFC 9336), and Code Signing OV. Profile-driven — extensions, policies, and validity are enforced per CA/B Forum requirements.</div>
+              <div class="tool-card-tags">
+                <span class="tag">S/MIME</span>
+                <span class="tag">Code Signing</span>
+                <span class="tag">Client Auth</span>
+                <span class="tag">AdES</span>
+              </div>
+              <a href="/mpca_factory.php" class="tool-card-link">Open Tool →</a>
             </div>
-            <a href="/artifact_parser.php" class="tool-card-link">Open Tool →</a>
           </div>
-        </div>
 
-        <div class="tool-card">
-          <div class="tool-card-bar tool-card-bar--teal"></div>
-          <div class="tool-card-body">
-            <div class="tool-card-icon">🔑</div>
-            <div class="tool-card-name">CSR Generator</div>
-            <div class="tool-card-desc">Build a Certificate Signing Request with full control over the key algorithm (RSA, ECDSA, Ed25519), curve or key size, and signature hash. Compose the Subject DN field-by-field from a complete OID-annotated list — deprecated attributes flagged — with SAN support for DNS, IP, email, and URI. UTF-8 encoding enabled throughout for international characters.</div>
-            <div class="tool-card-tags">
-              <span class="tag">CSR</span>
-              <span class="tag">RSA</span>
-              <span class="tag">ECDSA</span>
-              <span class="tag">Ed25519</span>
-              <span class="tag">SAN</span>
-            </div>
-            <a href="/csr_generator.php" class="tool-card-link">Open Tool →</a>
-          </div>
         </div>
-
-        <div class="tool-card">
-          <div class="tool-card-bar tool-card-bar--orange"></div>
-          <div class="tool-card-body">
-            <div class="tool-card-icon">🏭</div>
-            <div class="tool-card-name">Meerkat TLS Test Certificate Factory</div>
-            <div class="tool-card-desc">Issue BR-compliant DV TLS certificates from the Meerkat Test CA. Accepts a CSR or generates one on-the-fly from a list of domains. Only DNS SANs accepted — no IPs, no email. Subject CN is derived from the first SAN; all other CSR fields are stripped.</div>
-            <div class="tool-card-tags">
-              <span class="tag">Test CA</span>
-              <span class="tag">BR Compliance</span>
-              <span class="tag">DV</span>
-              <span class="tag">RSA</span>
-            </div>
-            <a href="/cert_factory.php" class="tool-card-link">Open Tool →</a>
-          </div>
-        </div>
-
-        <div class="tool-card">
-          <div class="tool-card-bar tool-card-bar--green"></div>
-          <div class="tool-card-body">
-            <div class="tool-card-icon">🌳</div>
-            <div class="tool-card-name">Meerkat Testing CT Log</div>
-            <div class="tool-card-desc">An RFC 6962-compliant Certificate Transparency log for testing. Accepts precertificate chains and returns cryptographically valid SCTs signed by one of 8 randomised fake log identities. Ephemeral — no entries are stored. Includes full API reference and integration guide.</div>
-            <div class="tool-card-tags">
-              <span class="tag">RFC 6962</span>
-              <span class="tag">CT Log</span>
-              <span class="tag">SCT</span>
-              <span class="tag">Precertificate</span>
-            </div>
-            <a href="/ct_log_doc.php" class="tool-card-link">Open Tool →</a>
-          </div>
-        </div>
-
-        <div class="tool-card">
-          <div class="tool-card-bar tool-card-bar--amber"></div>
-          <div class="tool-card-body">
-            <div class="tool-card-icon">🕰️</div>
-            <div class="tool-card-name">Meerkat TimeStampIt</div>
-            <div class="tool-card-desc">Upload any file or paste text to receive a cryptographically signed RFC 3161 timestamp token from the Meerkat TSA. Download the signed <code>.tsr</code> and inspect the full timestamp response inline — no CLI required.</div>
-            <div class="tool-card-tags">
-              <span class="tag">RFC 3161</span>
-              <span class="tag">TSA</span>
-              <span class="tag">Timestamp</span>
-              <span class="tag">IETF</span>
-            </div>
-            <a href="/timestamp_it.php" class="tool-card-link">Open Tool →</a>
-          </div>
-        </div>
-
-        <div class="tool-card">
-          <div class="tool-card-bar tool-card-bar--amber"></div>
-          <div class="tool-card-body">
-            <div class="tool-card-icon">⏱</div>
-            <div class="tool-card-name">Meerkat Testing TSA</div>
-            <div class="tool-card-desc">A fully RFC 3161-compliant Time Stamping Authority for testing. Submit a DER-encoded timestamp request and receive a cryptographically valid TimeStampResp signed by the Meerkat TSA. Supports SHA-256, SHA-384, and SHA-512. Includes integration guide and verification instructions.</div>
-            <div class="tool-card-tags">
-              <span class="tag">RFC 3161</span>
-              <span class="tag">TSA</span>
-              <span class="tag">IETF</span>
-              <span class="tag">Timestamp</span>
-            </div>
-            <a href="/tsa_doc.php" class="tool-card-link">Open Tool →</a>
-          </div>
-        </div>
-
-        <div class="tool-card">
-          <div class="tool-card-bar tool-card-bar--purple"></div>
-          <div class="tool-card-body">
-            <div class="tool-card-icon">🔏</div>
-            <div class="tool-card-name">Meerkat e-Seal Signer</div>
-            <div class="tool-card-desc">Paste a SHA-256, SHA-384, or SHA-512 hash digest to receive a CAdES-T CMS signature from the Meerkat e-Seal authority (eIDAS / ETSI EN 319 412-3). An RFC 3161 signature timestamp is automatically embedded via the Meerkat TSA. Download the <code>.cms</code> token and inspect the ASN.1 structure inline.</div>
-            <div class="tool-card-tags">
-              <span class="tag">eIDAS</span>
-              <span class="tag">CAdES-T</span>
-              <span class="tag">CMS</span>
-              <span class="tag">ETSI</span>
-            </div>
-            <a href="/eseal_signer.php" class="tool-card-link">Open Tool →</a>
-          </div>
-        </div>
-
-        <div class="tool-card">
-          <div class="tool-card-bar tool-card-bar--purple"></div>
-          <div class="tool-card-body">
-            <div class="tool-card-icon">🏛️</div>
-            <div class="tool-card-name">Meerkat MPCA Factory</div>
-            <div class="tool-card-desc">Issue multi-purpose test certificates from the Meerkat private CA hierarchy. Supports S/MIME (MV Multipurpose &amp; Signing), Client Authentication, Document Signing (AdES/RFC 9336), and Code Signing OV. Profile-driven — extensions, policies, and validity are enforced per CA/B Forum requirements.</div>
-            <div class="tool-card-tags">
-              <span class="tag">S/MIME</span>
-              <span class="tag">Code Signing</span>
-              <span class="tag">Client Auth</span>
-              <span class="tag">AdES</span>
-            </div>
-            <a href="/mpca_factory.php" class="tool-card-link">Open Tool →</a>
-          </div>
-        </div>
-
-        <div class="tool-card">
-          <div class="tool-card-bar tool-card-bar--purple"></div>
-          <div class="tool-card-body">
-            <div class="tool-card-icon">📋</div>
-            <div class="tool-card-name">CPS-to-BR Assessor</div>
-            <div class="tool-card-desc">Upload or link to a CP/CPS document and get an automated section-by-section coverage analysis against the CA/Browser Forum Baseline Requirements.</div>
-            <div class="tool-card-tags">
-              <span class="tag tag--experimental">Experimental</span>
-              <span class="tag">CPS</span>
-              <span class="tag">BR</span>
-              <span class="tag">CABF</span>
-            </div>
-            <a href="/cps_to_br_assessor.php" class="tool-card-link">Open Tool →</a>
-          </div>
-        </div>
-
       </div>
+
+      <!-- ── Trust Service Endpoints ───────────────────────────────────────── -->
+      <div class="tool-group">
+        <div class="tool-group-header">
+          <span class="tool-group-label">Trust Service Endpoints</span>
+          <div class="tool-group-line"></div>
+        </div>
+        <div class="tools-grid">
+
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--teal"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">⚡</div>
+              <div class="tool-card-name">Meerkat ACME Endpoint</div>
+              <div class="tool-card-desc">A live reference implementation of an automated certificate renewal endpoint as required by the Chrome Root Program and validated by Mozilla. Demonstrates RFC 8555 renewal verification in a production environment.</div>
+              <div class="tool-card-tags">
+                <span class="tag">ACME</span>
+                <span class="tag">RFC 8555</span>
+                <span class="tag">Chrome Root</span>
+              </div>
+              <a href="/acme-endpoint.php" class="tool-card-link">View Endpoint →</a>
+            </div>
+          </div>
+
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--green"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">🌳</div>
+              <div class="tool-card-name">Meerkat CT Log</div>
+              <div class="tool-card-desc">An RFC 6962-compliant Certificate Transparency log for testing. Accepts precertificate chains and returns cryptographically valid SCTs signed by one of 8 randomised fake log identities. Ephemeral — no entries are stored. Includes full API reference and integration guide.</div>
+              <div class="tool-card-tags">
+                <span class="tag">RFC 6962</span>
+                <span class="tag">CT Log</span>
+                <span class="tag">SCT</span>
+                <span class="tag">Precertificate</span>
+              </div>
+              <a href="/ct_log_doc.php" class="tool-card-link">View Endpoint →</a>
+            </div>
+          </div>
+
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--amber"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">⏱</div>
+              <div class="tool-card-name">Meerkat TSA</div>
+              <div class="tool-card-desc">A fully RFC 3161-compliant Time Stamping Authority for testing. Submit a DER-encoded timestamp request and receive a cryptographically valid TimeStampResp signed by the Meerkat TSA. Supports SHA-256, SHA-384, and SHA-512. Includes integration guide and verification instructions.</div>
+              <div class="tool-card-tags">
+                <span class="tag">RFC 3161</span>
+                <span class="tag">TSA</span>
+                <span class="tag">SHA-256</span>
+                <span class="tag">SHA-512</span>
+              </div>
+              <a href="/tsa_doc.php" class="tool-card-link">View Endpoint →</a>
+            </div>
+          </div>
+
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--purple"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">🖊️</div>
+              <div class="tool-card-name">Meerkat e-Seal API</div>
+              <div class="tool-card-desc">REST signing endpoint that produces a CAdES-T CMS SignedData from the Meerkat e-Seal authority (eIDAS / ETSI EN 319 412-3). An RFC 3161 signature timestamp is automatically embedded. Includes curl, Python, and JavaScript integration examples with full ASN.1 structure reference.</div>
+              <div class="tool-card-tags">
+                <span class="tag">eIDAS</span>
+                <span class="tag">CAdES-T</span>
+                <span class="tag">RFC 5652</span>
+                <span class="tag">ETSI</span>
+              </div>
+              <a href="/eseal_doc.php" class="tool-card-link">View Endpoint →</a>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── Service Clients & Signers ─────────────────────────────────────── -->
+      <div class="tool-group">
+        <div class="tool-group-header">
+          <span class="tool-group-label">Service Clients &amp; Signers</span>
+          <div class="tool-group-line"></div>
+        </div>
+        <div class="tools-grid">
+
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--teal"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">🔬</div>
+              <div class="tool-card-name">ACME Endpoint Tester</div>
+              <div class="tool-card-desc">Validate any RFC 8555 ACME endpoint end-to-end: directory field checks, account creation (with optional EAB), order placement, http-01 and dns-01 challenges, certificate issuance, revocation, and ARI. Captures all raw protocol exchanges for a downloadable evidence report.</div>
+              <div class="tool-card-tags">
+                <span class="tag">ACME</span>
+                <span class="tag">RFC 8555</span>
+                <span class="tag">http-01</span>
+                <span class="tag">dns-01</span>
+                <span class="tag">ARI</span>
+              </div>
+              <a href="/acme_tester.php" class="tool-card-link">Open Tool →</a>
+            </div>
+          </div>
+
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--amber"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">🕰️</div>
+              <div class="tool-card-name">Meerkat TimeStampIt</div>
+              <div class="tool-card-desc">Upload any file or paste text to receive a cryptographically signed RFC 3161 timestamp token from the Meerkat TSA. Download the signed <code>.tsr</code> and inspect the full timestamp response inline — no CLI required.</div>
+              <div class="tool-card-tags">
+                <span class="tag">RFC 3161</span>
+                <span class="tag">TSA</span>
+                <span class="tag">Timestamp</span>
+                <span class="tag">IETF</span>
+              </div>
+              <a href="/timestamp_it.php" class="tool-card-link">Open Tool →</a>
+            </div>
+          </div>
+
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--purple"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">🔏</div>
+              <div class="tool-card-name">Meerkat e-Seal Signer</div>
+              <div class="tool-card-desc">Paste a SHA-256, SHA-384, or SHA-512 hash digest to receive a CAdES-T CMS signature from the Meerkat e-Seal authority (eIDAS / ETSI EN 319 412-3). An RFC 3161 signature timestamp is automatically embedded via the Meerkat TSA. Download the <code>.cms</code> token and inspect the ASN.1 structure inline.</div>
+              <div class="tool-card-tags">
+                <span class="tag">eIDAS</span>
+                <span class="tag">CAdES-T</span>
+                <span class="tag">CMS</span>
+                <span class="tag">ETSI</span>
+              </div>
+              <a href="/eseal_signer.php" class="tool-card-link">Open Tool →</a>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── Inspection & Compliance ────────────────────────────────────────── -->
+      <div class="tool-group">
+        <div class="tool-group-header">
+          <span class="tool-group-label">Inspection &amp; Compliance</span>
+          <div class="tool-group-line"></div>
+        </div>
+        <div class="tools-grid">
+
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--blue"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">🧾</div>
+              <div class="tool-card-name">Meerkat Multi-Linter</div>
+              <div class="tool-card-desc">Run a certificate through zlint, pkilint, and x509lint simultaneously. Flags policy violations and RFC 5280 issues with direct references to the failing requirements.</div>
+              <div class="tool-card-tags">
+                <span class="tag">zlint</span>
+                <span class="tag">pkilint</span>
+                <span class="tag">x509lint</span>
+              </div>
+              <a href="/linters.php" class="tool-card-link">Open Tool →</a>
+            </div>
+          </div>
+
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--amber"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">🔍</div>
+              <div class="tool-card-name">Meerkat Artifact Parser</div>
+              <div class="tool-card-desc">Paste or upload any PKI artifact — certificate, CSR, CRL, OCSP response, public key, PKCS#7, or timestamp token — and get an instant structured breakdown. Supports PEM and DER. Private key material is detected and rejected server-side.</div>
+              <div class="tool-card-tags">
+                <span class="tag">X.509</span>
+                <span class="tag">CSR</span>
+                <span class="tag">CRL</span>
+                <span class="tag">PKCS#7</span>
+                <span class="tag">RFC 3161</span>
+              </div>
+              <a href="/artifact_parser.php" class="tool-card-link">Open Tool →</a>
+            </div>
+          </div>
+
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--purple"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">📋</div>
+              <div class="tool-card-name">CPS-to-BR Assessor</div>
+              <div class="tool-card-desc">Upload or link to a CP/CPS document and get an automated section-by-section coverage analysis against the CA/Browser Forum Baseline Requirements.</div>
+              <div class="tool-card-tags">
+                <span class="tag tag--experimental">Experimental</span>
+                <span class="tag">CPS</span>
+                <span class="tag">BR</span>
+                <span class="tag">CABF</span>
+              </div>
+              <a href="/cps_to_br_assessor.php" class="tool-card-link">Open Tool →</a>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
     </div>
   </section>
 

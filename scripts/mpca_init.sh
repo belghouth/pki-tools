@@ -580,6 +580,13 @@ init_eseal_signing() {
       "$ROOT_DIR/root.crt" \
     > "$ESEAL_SIGN_DIR/chain.pem"
 
+  # Issuing chain without the signer cert — used as -certfile in openssl cms -sign.
+  # Passing chain.pem directly causes "certificate already present" because -signer
+  # already adds the signing cert; ca_chain.pem contains only CA + Root.
+  cat "$ESEAL_CA_DIR/eseal_ca.crt" \
+      "$ROOT_DIR/root.crt" \
+    > "$ESEAL_SIGN_DIR/ca_chain.pem"
+
   ok "e-Seal Signing certificate initialized"
   openssl x509 -noout -subject -enddate -in "$ESEAL_SIGN_DIR/eseal_signing.crt"
 }
