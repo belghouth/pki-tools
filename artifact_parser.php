@@ -92,14 +92,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (strlen(trim((string)$raw)) === 0) {
             $error = 'No input provided.';
         } else {
-            $t0     = microtime(true);
-            $module = ArtifactRegistry::match((string)$raw, $ext);
+            $t0 = microtime(true);
+
+            // Normalize bare base64 (no PEM headers) → DER bytes so that
+            // module recognize() methods can match via artifact_is_der().
+            $bytes = (string) $raw;
+            if (!str_contains($bytes, '-----BEGIN')) {
+                $stripped = preg_replace('/\s+/', '', $bytes);
+                if (strlen($stripped) > 16 && preg_match('/^[A-Za-z0-9+\/]+=*$/', $stripped)) {
+                    $decoded = base64_decode($stripped, true);
+                    if ($decoded !== false && strlen($decoded) > 2 && ord($decoded[0]) === 0x30) {
+                        $bytes = $decoded;
+                    }
+                }
+            }
+
+            $module = ArtifactRegistry::match($bytes, $ext);
 
             if ($module === null) {
                 $error = 'Artifact type not recognised. Supported types: X.509 certificate, CSR/PKCS#10, CRL, public key, CMS/PKCS#7, OCSP response, RFC 3161 timestamp request (TSQ), RFC 3161 timestamp response (TSR).';
             } else {
                 try {
-                    $parsed  = $module->parse((string)$raw);
+                    $parsed  = $module->parse($bytes);
                     $ms      = round((microtime(true) - $t0) * 1000);
                     $result  = [
                         'label'    => $module->label(),
@@ -411,7 +425,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <img src="/img/meerkat_120.png" alt="">
       Meerkat Artifact Parser
     </h1>
-    <p>Identify and parse any PKI artifact — paste PEM or upload a file. No data is stored or logged.</p>
+    <p>Identify and parse any PKI artifact — paste Base64/PEM or upload a file. No data is stored or logged.</p>
   </div>
 
   <!-- Supported types -->
@@ -443,14 +457,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <form method="post" enctype="multipart/form-data" class="ap-form" id="apForm">
 
     <div class="ap-tabs" role="tablist">
-      <button type="button" class="ap-tab active" id="tab-paste"   role="tab" aria-selected="true"  aria-controls="panel-paste">Paste PEM / DER</button>
+      <button type="button" class="ap-tab active" id="tab-paste"   role="tab" aria-selected="true"  aria-controls="panel-paste">Paste Base64 / PEM</button>
       <button type="button" class="ap-tab"         id="tab-upload" role="tab" aria-selected="false" aria-controls="panel-upload">Upload File</button>
     </div>
 
     <!-- Paste panel -->
     <div class="ap-panel" id="panel-paste" role="tabpanel" aria-labelledby="tab-paste">
       <textarea class="ap-pem-area" name="ap_pem" id="apPem"
-                placeholder="-----BEGIN CERTIFICATE-----&#10;Paste any PEM, or base64-encoded DER...&#10;-----END CERTIFICATE-----"
+                placeholder="Paste Base64, PEM (-----BEGIN ...-----), or any PKI artifact…"
                 spellcheck="false" autocomplete="off"><?= htmlspecialchars($posted_pem, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8') ?></textarea>
     </div>
 
