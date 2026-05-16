@@ -255,7 +255,7 @@ function pg_url(int $p): string {
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────────
-$period  = in_array($_GET['period'] ?? '24h', ['24h', '7d', '30d']) ? $_GET['period'] : '24h';
+$period  = in_array($_GET['period'] ?? '24h', ['1h', '24h', '7d', '30d']) ? $_GET['period'] : '24h';
 $fip     = preg_replace('/[^\d\.:a-fA-F]/', '', $_GET['ip']     ?? '');
 $fstatus = $_GET['status'] ?? '';
 $fmethod = strtoupper(preg_replace('/[^A-Za-z]/', '', $_GET['method'] ?? ''));
@@ -272,6 +272,7 @@ if (!in_array($fmethod, ['', 'GET', 'POST', 'DELETE', 'PUT', 'HEAD', 'OPTIONS'])
 if (!preg_match('/^(\d{3}|\dxx)$/', $fstatus)) $fstatus = '';
 
 $pstart = match($period) {
+    '1h'  => 'DATE_SUB(NOW(), INTERVAL 1 HOUR)',
     '7d'  => 'DATE_SUB(NOW(), INTERVAL 7 DAY)',
     '30d' => 'DATE_SUB(NOW(), INTERVAL 30 DAY)',
     default => 'DATE_SUB(NOW(), INTERVAL 24 HOUR)',
@@ -538,7 +539,7 @@ $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fet
   <div class="page-hd">
     <h1>Site Activity</h1>
     <div class="period-tabs">
-      <?php foreach (['24h' => 'Last 24 h', '7d' => '7 days', '30d' => '30 days'] as $k => $lbl): ?>
+      <?php foreach (['1h' => 'Last hour', '24h' => 'Last 24 h', '7d' => '7 days', '30d' => '30 days'] as $k => $lbl): ?>
       <a href="<?= q(['period' => $k]) ?>" class="<?= $period === $k ? 'active' : '' ?>"><?= $lbl ?></a>
       <?php endforeach; ?>
     </div>
