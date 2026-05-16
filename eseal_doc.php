@@ -214,16 +214,16 @@ $navLabel = 'Meerkat e-Seal';
     <h1>Meerkat e-Seal</h1>
     <p class="sub">
       A testing e-Seal signing service based on eIDAS and ETSI EN 319 412-3.
-      Submit a hash digest and receive a cryptographically valid <code>CMS SignedData</code>
-      signed by the Meerkat e-Seal certificate. Supports SHA-256, SHA-384, and SHA-512 hash inputs.
+      Submit a hash digest and receive a <strong>CAdES</strong> (CMS) or <strong>XAdES</strong> (XML) signature
+      from the Meerkat e-Seal authority, with or without an RFC 3161 timestamp (T level).
+      Supports SHA-256, SHA-384, and SHA-512.
     </p>
   </div>
 
   <div class="tool-cta">
     <span class="tool-cta-text">
       <strong>Want to e-seal a file directly?</strong>
-      Use <strong>Meerkat e-Seal Signer</strong> — paste a hash, get a signed <code>.cms</code> token, and inspect it inline.
-      This page documents the raw HTTP API.
+      Use <strong>Meerkat e-Seal Signer</strong> — paste a hash, choose CAdES or XAdES format, and get a signed token with optional timestamp. This page documents the raw HTTP API.
     </span>
     <a href="/eseal_signer.php" class="tool-cta-btn">🔏 Open e-Seal Signer →</a>
   </div>
@@ -310,7 +310,7 @@ $navLabel = 'Meerkat e-Seal';
         <tr>
           <td><span class="method-post">POST</span></td>
           <td class="ep-path"><?= htmlspecialchars(MPCA_ESEAL_URL) ?></td>
-          <td>Submit a JSON request with a hash digest. Returns a DER-encoded <code>CMS SignedData</code>. <strong>Primary endpoint.</strong></td>
+          <td>Submit a JSON request with a hash digest. Returns a <code>CMS SignedData</code> (CAdES) or XML <code>ds:Signature</code> (XAdES) based on the <code>format</code> parameter. <strong>Primary endpoint.</strong></td>
         </tr>
         <tr>
           <td><span class="method-get">GET</span></td>
@@ -339,15 +339,40 @@ $navLabel = 'Meerkat e-Seal';
           <td><span class="optional">optional</span></td>
           <td>Hint for the hash algorithm (<code>sha256</code>, <code>sha384</code>, <code>sha512</code>). Ignored — algorithm is always inferred from hash length.</td>
         </tr>
+        <tr>
+          <td><code>format</code></td>
+          <td><span class="optional">optional</span></td>
+          <td><code>cms</code> (default) for CAdES/CMS SignedData output, or <code>xades</code> for XAdES XML output.</td>
+        </tr>
+        <tr>
+          <td><code>ts</code></td>
+          <td><span class="optional">optional</span></td>
+          <td>Boolean. <code>true</code> (default) to embed an RFC 3161 SignatureTimeStamp (T level); <code>false</code> for baseline level only (B level). If the TSA is unavailable, the timestamp is silently omitted regardless of this flag.</td>
+        </tr>
       </tbody>
     </table>
 
-    <h3>Request Body Example</h3>
-    <div class="code-block">{
+    <h3>Request Body Examples</h3>
+    <div class="code-block"><span class="comment">// CAdES-T (default — CMS + timestamp)</span>
+{
   <span class="key">"hash"</span>: <span class="str">"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"</span>
+}
+
+<span class="comment">// XAdES-B-T (XML + timestamp)</span>
+{
+  <span class="key">"hash"</span>:   <span class="str">"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"</span>,
+  <span class="key">"format"</span>: <span class="str">"xades"</span>,
+  <span class="key">"ts"</span>:     <span class="val">true</span>
+}
+
+<span class="comment">// CAdES-B (no timestamp)</span>
+{
+  <span class="key">"hash"</span>:   <span class="str">"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"</span>,
+  <span class="key">"format"</span>: <span class="str">"cms"</span>,
+  <span class="key">"ts"</span>:     <span class="val">false</span>
 }</div>
 
-    <h3>Success Response (HTTP 200)</h3>
+    <h3>Success Response — CAdES (HTTP 200)</h3>
     <table class="field-table">
       <thead><tr><th>Header / Body</th><th>Value</th></tr></thead>
       <tbody>
@@ -356,12 +381,43 @@ $navLabel = 'Meerkat e-Seal';
           <td><code>application/cms</code></td>
         </tr>
         <tr>
-          <td>X-Eseal-Timestamped</td>
-          <td><code>yes</code> if an RFC 3161 signature timestamp was successfully embedded (CAdES-T); <code>no</code> if the TSA was unavailable and only a basic CAdES-B was returned.</td>
+          <td>X-Eseal-Format</td>
+          <td><code>cms</code></td>
+        </tr>
+        <tr>
+          <td>X-Eseal-Level</td>
+          <td><code>CAdES-T</code> if timestamped; <code>CAdES-B</code> if the TSA was unavailable or <code>ts</code> was <code>false</code>.</td>
         </tr>
         <tr>
           <td>Body</td>
-          <td>DER-encoded <code>CMS SignedData</code> (RFC 5652) with an embedded <code>id-aa-signatureTimeStampToken</code> unsigned attribute (ETSI EN 319 122-1 §5.3.3 — CAdES-T). Contains the signed hash bytes as the encapsulated content, the signer certificate chain, and an RFC 3161 timestamp of the signature value from the Meerkat TSA.</td>
+          <td>DER-encoded <code>CMS SignedData</code> (RFC 5652). The signed content (hash bytes) is embedded (<code>eContent</code> — non-detached). When <code>X-Eseal-Level: CAdES-T</code>, an <code>id-aa-signatureTimeStampToken</code> unsigned attribute (OID <code>1.2.840.113549.1.9.16.2.14</code>) is included per ETSI EN 319 122-1 §5.3.3.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Success Response — XAdES (HTTP 200)</h3>
+    <table class="field-table">
+      <thead><tr><th>Header / Body</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Content-Type</td>
+          <td><code>application/xml; charset=utf-8</code></td>
+        </tr>
+        <tr>
+          <td>Content-Disposition</td>
+          <td><code>attachment; filename="eseal.xades"</code></td>
+        </tr>
+        <tr>
+          <td>X-Eseal-Format</td>
+          <td><code>xades</code></td>
+        </tr>
+        <tr>
+          <td>X-Eseal-Level</td>
+          <td><code>XAdES-B-T</code> if timestamped; <code>XAdES-B-B</code> if <code>ts</code> was <code>false</code> or the TSA was unavailable.</td>
+        </tr>
+        <tr>
+          <td>Body</td>
+          <td>UTF-8 XML document containing a detached <code>ds:Signature</code> per W3C XMLDSig + ETSI EN 319 132-2. The document digest is referenced via a <code>ds:Reference</code> (not embedded). When <code>X-Eseal-Level: XAdES-B-T</code>, a <code>xades:SignatureTimeStamp</code> unsigned attribute is present in <code>xades:UnsignedSignatureProperties</code> per ETSI EN 319 132-1 §5.3.4.</td>
         </tr>
       </tbody>
     </table>
@@ -491,6 +547,60 @@ fs.writeFileSync(<span class="str">'signature.cms'</span>, Buffer.from(await res
     </p>
   </div>
 
+  <!-- ── XAdES Signature Structure ──────────────────────────────────────────── -->
+  <div class="doc-section">
+    <h2>XAdES Signature Structure (ETSI EN 319 132-2)</h2>
+
+    <p>
+      When <code>format=xades</code>, the response is an XML document containing a detached
+      <code>ds:Signature</code> element with XAdES qualifying properties.
+      The signature covers the document's hash digest — the original document is not embedded.
+    </p>
+
+    <table class="field-table">
+      <thead><tr><th>Element</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td>ds:Signature</td><td>Root W3C XMLDSig signature element. Carries Id for internal cross-references.</td></tr>
+        <tr><td>ds:SignedInfo / ds:CanonicalizationMethod</td><td><code>http://www.w3.org/TR/2001/REC-xml-c14n-20010315</code> (inclusive C14N).</td></tr>
+        <tr><td>ds:SignedInfo / ds:SignatureMethod</td><td>ECDSA with the hash algorithm matching the input length (e.g. <code>ecdsa-sha256</code>).</td></tr>
+        <tr><td>ds:Reference[@Id="Ref-Content"]</td><td>References the signed document by digest only (detached, <code>URI=""</code>). <code>ds:DigestValue</code> is the base64-encoded hash bytes from the request.</td></tr>
+        <tr><td>ds:Reference[@Id="Ref-SignedProperties"]</td><td>References the <code>xades:SignedProperties</code> element after C14N. The DigestValue covers the canonicalized SignedProperties XML.</td></tr>
+        <tr><td>ds:SignatureValue</td><td>Raw ECDSA signature (r||s concatenation, 64 bytes for P-256) over the canonicalized <code>ds:SignedInfo</code>, base64-encoded.</td></tr>
+        <tr><td>ds:KeyInfo / ds:X509Data</td><td>Full DER of the e-Seal signing certificate (base64), embedded for offline verification.</td></tr>
+        <tr><td>xades:SignedProperties</td><td>Contains <code>xades:SigningTime</code> and <code>xades:SigningCertificateV2</code> (SHA-256 digest of the signing certificate for binding).</td></tr>
+        <tr><td>xades:UnsignedSignatureProperties / xades:SignatureTimeStamp</td><td>(B-T only) Contains <code>xades:EncapsulatedTimeStamp</code>: base64-encoded DER of an RFC 3161 TimeStampToken covering SHA-256 of the canonicalized <code>ds:SignatureValue</code> element. Per ETSI EN 319 132-1 §5.3.4.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Verify with xmlsec1</h3>
+    <div class="code-block"><span class="comment"># Download the e-Seal chain</span>
+<span class="cmd">curl -s -o eseal_chain.pem <?= htmlspecialchars(ESEAL_CHAIN_URL) ?></span>
+
+<span class="comment"># Request an XAdES-B-T signature</span>
+<span class="cmd">curl -s -X POST <?= htmlspecialchars(MPCA_ESEAL_URL) ?> \
+  -H 'Content-Type: application/json' \
+  -d '{"hash":"'"$(openssl dgst -sha256 myfile.pdf | awk '{print $2}')"'","format":"xades"}' \
+  -o eseal.xades</span>
+
+<span class="comment"># Verify the XMLDSig signature (requires xmlsec1)</span>
+<span class="cmd">xmlsec1 --verify --trusted-pem eseal_chain.pem eseal.xades</span>
+
+<span class="comment"># Inspect the XAdES XML</span>
+<span class="cmd">xmllint --format eseal.xades</span></div>
+
+    <h3>XAdES vs CAdES — when to choose which</h3>
+    <table class="field-table">
+      <thead><tr><th>Criterion</th><th>CAdES (CMS)</th><th>XAdES (XML)</th></tr></thead>
+      <tbody>
+        <tr><td>Output format</td><td>Binary DER (<code>.cms</code>)</td><td>UTF-8 XML (<code>.xades</code>)</td></tr>
+        <tr><td>Content embedding</td><td>Hash bytes embedded in <code>eContent</code></td><td>Detached — only digest referenced</td></tr>
+        <tr><td>Verification tooling</td><td><code>openssl cms -verify</code></td><td><code>xmlsec1 --verify</code></td></tr>
+        <tr><td>Common use cases</td><td>Binary document signing, email, S/MIME</td><td>XML documents, EU eIDAS, web services</td></tr>
+        <tr><td>Human-readable</td><td>No (ASN.1/DER)</td><td>Yes (XML)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
   <!-- ── Error Responses ───────────────────────────────────────────────────── -->
   <div class="doc-section">
     <h2>Error Responses</h2>
@@ -512,7 +622,8 @@ fs.writeFileSync(<span class="str">'signature.cms'</span>, Buffer.from(await res
   <div class="doc-section">
     <h2>Technical Notes</h2>
     <ul>
-      <li><strong>CAdES-T format:</strong> The endpoint produces a <strong>CAdES-T</strong> (CMS Advanced Electronic Signature with Time) token per ETSI EN 319 122-1 §5.3.3. The RFC 3161 signature timestamp (<code>id-aa-signatureTimeStampToken</code>, OID <code>1.2.840.113549.1.9.16.2.14</code>) is embedded as an unsigned attribute in the SignerInfo, timestamping the SHA-256 hash of the ECDSA signature value. This proves the seal existed at a specific point in time without relying on the signer certificate's validity period alone.</li>
+      <li><strong>CAdES format:</strong> The CMS output is a <strong>CAdES-T</strong> (by default) or <strong>CAdES-B</strong> (when <code>ts=false</code>) token per ETSI EN 319 122-1. The RFC 3161 signature timestamp (<code>id-aa-signatureTimeStampToken</code>, OID <code>1.2.840.113549.1.9.16.2.14</code>) is embedded as an unsigned attribute in the SignerInfo, covering the SHA-256 hash of the ECDSA signature value.</li>
+      <li><strong>XAdES format:</strong> The XML output follows ETSI EN 319 132-2 (XAdES baseline profile). At B-B level it contains only signed qualifying properties. At B-T level it adds a <code>xades:SignatureTimeStamp</code> unsigned attribute per ETSI EN 319 132-1 §5.3.4. The signature is detached — only the document's digest is referenced, not the document itself. The ECDSA signature value is raw r||s (not DER), base64-encoded, as required by the W3C XMLDSig specification.</li>
       <li><strong>Standard basis:</strong> The e-Seal signing certificate conforms to ETSI EN 319 412-3 (Certificate Profiles for Legal Persons). Key Usage is <code>digitalSignature + nonRepudiation</code> (critical). The subject includes <code>organizationIdentifier</code> in the ETSI-defined format.</li>
       <li><strong>eIDAS scope:</strong> Under eIDAS Regulation (EU) 910/2014, an e-Seal is the legal-person equivalent of an e-Signature. This testing service mimics the structure but is <span class="badge-test">not qualified</span> and has no legal standing.</li>
       <li><strong>CMS format:</strong> The response is a non-detached CMS SignedData (the hash bytes are embedded inside the token). This simplifies verification — you do not need the original hash separately to verify the signature, but you do need it to confirm the token covers your document.</li>

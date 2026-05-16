@@ -768,11 +768,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
             <div class="tool-card-body">
               <div class="tool-card-icon">🖊️</div>
               <div class="tool-card-name">Meerkat e-Seal API</div>
-              <div class="tool-card-desc">REST signing endpoint that produces a CAdES-T CMS SignedData from the Meerkat e-Seal authority (eIDAS / ETSI EN 319 412-3). An RFC 3161 signature timestamp is automatically embedded. Includes curl, Python, and JavaScript integration examples with full ASN.1 structure reference.</div>
+              <div class="tool-card-desc">REST signing endpoint issuing CAdES (CMS) or XAdES (XML) signatures from the Meerkat e-Seal authority (eIDAS / ETSI EN 319 412-3). Optional RFC 3161 timestamp for T-level. Includes curl, Python, and JavaScript integration examples.</div>
               <div class="tool-card-tags">
                 <span class="tag">eIDAS</span>
-                <span class="tag">CAdES-T</span>
-                <span class="tag">RFC 5652</span>
+                <span class="tag">CAdES</span>
+                <span class="tag">XAdES</span>
                 <span class="tag">ETSI</span>
               </div>
               <a href="/eseal_doc.php" class="tool-card-link">View Endpoint →</a>
@@ -810,11 +810,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
             <div class="tool-card-body">
               <div class="tool-card-icon">🔏</div>
               <div class="tool-card-name">Meerkat e-Seal Signer</div>
-              <div class="tool-card-desc">Paste a SHA-256, SHA-384, or SHA-512 hash digest to receive a CAdES-T CMS signature from the Meerkat e-Seal authority (eIDAS / ETSI EN 319 412-3). An RFC 3161 signature timestamp is automatically embedded via the Meerkat TSA. Download the <code>.cms</code> token and inspect the ASN.1 structure inline.</div>
+              <div class="tool-card-desc">Paste a hash digest to receive a CAdES (CMS) or XAdES (XML) e-Seal signature, with or without an RFC 3161 timestamp (T level). Download the token and inspect it inline or send it to the Artifact Parser.</div>
               <div class="tool-card-tags">
                 <span class="tag">eIDAS</span>
-                <span class="tag">CAdES-T</span>
-                <span class="tag">CMS</span>
+                <span class="tag">CAdES</span>
+                <span class="tag">XAdES</span>
                 <span class="tag">ETSI</span>
               </div>
               <a href="/eseal_signer.php" class="tool-card-link">Open Tool →</a>

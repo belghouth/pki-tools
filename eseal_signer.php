@@ -7,6 +7,7 @@
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/recaptcha.php';
+require_once __DIR__ . '/includes/xades_sign.php';
 
 define('EIT_SIGN_DIR',  MPCA_CA_DIR   . '/eseal_sign');
 define('EIT_KEY',       EIT_SIGN_DIR  . '/eseal_signing.key');
@@ -22,6 +23,10 @@ $raw_text      = null;
 $timestamped   = false;
 $hash_detected = null;
 $hash_input    = '';
+$format        = 'cms';
+$with_ts       = true;
+$xades_xml     = null;
+$xades_dl_name = 'eseal.xades';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -156,6 +161,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    $format  = in_array($_POST['format'] ?? '', ['cms', 'xades'], true) ? $_POST['format'] : 'cms';
+    $with_ts = isset($_POST['with_ts']);
     $hash_input = trim($_POST['eit_hash'] ?? '');
 
     if ($error === null) {
@@ -175,65 +182,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($error === null && isset($hash_info) && !isset($hash_info['error'])) {
         $hash_detected = 'SHA-' . $hash_info['bits'];
-        $tmpIn  = tempnam(sys_get_temp_dir(), 'eit_in_');
-        $tmpCms = tempnam(sys_get_temp_dir(), 'eit_cms_');
-        $tmpTsq = tempnam(sys_get_temp_dir(), 'eit_tsq_');
-        $tmpTsr = tempnam(sys_get_temp_dir(), 'eit_tsr_');
-        try {
-            file_put_contents($tmpIn, hex2bin($hash_info['hex']));
-            $cmd = [OPENSSL_BIN, 'cms', '-sign',
-                '-binary', '-nodetach', '-signer', EIT_CERT, '-inkey', EIT_KEY,
-                '-md', $hash_info['alg'],
-                '-outform', 'DER', '-out', $tmpCms, '-in', $tmpIn,
-            ];
-            if (file_exists(EIT_CA_CHAIN)) {
-                array_splice($cmd, 3, 0, ['-certfile', EIT_CA_CHAIN]);
-            }
-            $r = eit_run($cmd);
+        $stem = 'eseal_' . substr($hash_info['hex'], 0, 12) . '_' . date('Ymd_His');
 
-            if (!$r['ok']) {
-                $error = 'CMS signing failed: ' . trim($r['err']);
+        if ($format === 'xades') {
+            // ── XAdES path ────────────────────────────────────────────────────
+            $cert_pem = (string) file_get_contents(EIT_CERT);
+            $key_pem  = (string) file_get_contents(EIT_KEY);
+            $xml = xa_sign($hash_info, $cert_pem, $key_pem, $with_ts, EIT_TSA_CNF);
+            if ($xml === '') {
+                $error = 'XAdES signing failed.';
             } else {
-                $cmsBytes = (string) file_get_contents($tmpCms);
-                if ($cmsBytes === '') {
-                    $error = 'e-Seal produced an empty CMS.';
+                $xades_xml     = $xml;
+                $xades_dl_name = $stem . '.xades';
+                $timestamped   = $with_ts && str_contains($xml, 'xades:SignatureTimeStamp');
+            }
+        } else {
+            // ── CAdES / CMS path ──────────────────────────────────────────────
+            $tmpIn  = tempnam(sys_get_temp_dir(), 'eit_in_');
+            $tmpCms = tempnam(sys_get_temp_dir(), 'eit_cms_');
+            $tmpTsq = tempnam(sys_get_temp_dir(), 'eit_tsq_');
+            $tmpTsr = tempnam(sys_get_temp_dir(), 'eit_tsr_');
+            try {
+                file_put_contents($tmpIn, hex2bin($hash_info['hex']));
+                $cmd = [OPENSSL_BIN, 'cms', '-sign',
+                    '-binary', '-nodetach', '-signer', EIT_CERT, '-inkey', EIT_KEY,
+                    '-md', $hash_info['alg'],
+                    '-outform', 'DER', '-out', $tmpCms, '-in', $tmpIn,
+                ];
+                if (file_exists(EIT_CA_CHAIN)) {
+                    array_splice($cmd, 3, 0, ['-certfile', EIT_CA_CHAIN]);
+                }
+                $r = eit_run($cmd);
+
+                if (!$r['ok']) {
+                    $error = 'CMS signing failed: ' . trim($r['err']);
                 } else {
-                    // CAdES-T: embed RFC 3161 timestamp of the signature value
-                    if (file_exists(EIT_TSA_CNF)) {
-                        $sig_bytes = eit_extract_sig_bytes($cmsBytes);
-                        if ($sig_bytes !== null) {
-                            $sig_hex = bin2hex(hash('sha256', $sig_bytes, true));
-                            $r2 = eit_run([OPENSSL_BIN, 'ts', '-query',
-                                '-digest', $sig_hex, '-sha256', '-cert', '-out', $tmpTsq]);
-                            if ($r2['ok']) {
-                                $r3 = eit_run([OPENSSL_BIN, 'ts', '-reply',
-                                    '-config', EIT_TSA_CNF, '-queryfile', $tmpTsq, '-out', $tmpTsr]);
-                                if ($r3['ok']) {
-                                    $tsr = (string) file_get_contents($tmpTsr);
-                                    $tst = eit_extract_tst($tsr);
-                                    if ($tst !== null) {
-                                        $cms_t = eit_inject_tst($cmsBytes, $tst);
-                                        if ($cms_t !== null) { $cmsBytes = $cms_t; $timestamped = true; }
+                    $cmsBytes = (string) file_get_contents($tmpCms);
+                    if ($cmsBytes === '') {
+                        $error = 'e-Seal produced an empty CMS.';
+                    } else {
+                        if ($with_ts && file_exists(EIT_TSA_CNF)) {
+                            $sig_bytes = eit_extract_sig_bytes($cmsBytes);
+                            if ($sig_bytes !== null) {
+                                $sig_hex = bin2hex(hash('sha256', $sig_bytes, true));
+                                $r2 = eit_run([OPENSSL_BIN, 'ts', '-query',
+                                    '-digest', $sig_hex, '-sha256', '-cert', '-out', $tmpTsq]);
+                                if ($r2['ok']) {
+                                    $r3 = eit_run([OPENSSL_BIN, 'ts', '-reply',
+                                        '-config', EIT_TSA_CNF, '-queryfile', $tmpTsq, '-out', $tmpTsr]);
+                                    if ($r3['ok']) {
+                                        $tsr = (string) file_get_contents($tmpTsr);
+                                        $tst = eit_extract_tst($tsr);
+                                        if ($tst !== null) {
+                                            $cms_t = eit_inject_tst($cmsBytes, $tst);
+                                            if ($cms_t !== null) { $cmsBytes = $cms_t; $timestamped = true; }
+                                        }
                                     }
                                 }
                             }
                         }
+
+                        $cms_b64 = base64_encode($cmsBytes);
+                        $dl_name = $stem . '.cms';
+                        $p7_name = $stem . '.p7b';
+
+                        $tmpView = tempnam(sys_get_temp_dir(), 'eit_view_');
+                        file_put_contents($tmpView, $cmsBytes);
+                        $rv = eit_run([OPENSSL_BIN, 'asn1parse', '-inform', 'DER', '-in', $tmpView]);
+                        @unlink($tmpView);
+                        $raw_text = $rv['out'] ?: $rv['err'];
                     }
-
-                    $cms_b64 = base64_encode($cmsBytes);
-                    $dl_name = 'eseal_' . substr($hash_info['hex'], 0, 12) . '_' . date('Ymd_His') . '.cms';
-                    $p7_name = substr($dl_name, 0, -4) . '.p7b';
-
-                    // Produce human-readable summary via openssl asn1parse
-                    $tmpView = tempnam(sys_get_temp_dir(), 'eit_view_');
-                    file_put_contents($tmpView, $cmsBytes);
-                    $rv = eit_run([OPENSSL_BIN, 'asn1parse', '-inform', 'DER', '-in', $tmpView]);
-                    @unlink($tmpView);
-                    $raw_text = $rv['out'] ?: $rv['err'];
                 }
+            } finally {
+                foreach ([$tmpIn, $tmpCms, $tmpTsq, $tmpTsr] as $f) @unlink($f);
             }
-        } finally {
-            foreach ([$tmpIn, $tmpCms, $tmpTsq, $tmpTsr] as $f) @unlink($f);
         }
     }
 }
@@ -398,6 +420,21 @@ $navLabel = 'Meerkat — e-Seal Signer';
     .eit-asn1-label { font-family: var(--mono); font-size: .63rem; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
     .eit-asn1-pre { margin: 0; padding: .75rem 1rem; font-family: var(--mono); font-size: .62rem; color: #8899aa; overflow-x: auto; white-space: pre; line-height: 1.55; max-height: 420px; overflow-y: auto; }
 
+    .eit-opts {
+      display: flex; align-items: center; gap: .9rem; flex-wrap: wrap;
+      padding: .7rem 1.4rem; border-top: 1px solid var(--border);
+      background: rgba(0,0,0,.08); font-size: .78rem; color: var(--muted);
+    }
+    .eit-opts-label { font-family: var(--mono); font-size: .65rem; text-transform: uppercase;
+                      letter-spacing: .08em; color: var(--muted); margin-right: .1rem; }
+    .eit-radio-lbl, .eit-check-lbl {
+      display: inline-flex; align-items: center; gap: .35rem; cursor: pointer;
+      font-family: var(--mono); font-size: .72rem; color: var(--text);
+      user-select: none;
+    }
+    .eit-radio-lbl input, .eit-check-lbl input { accent-color: var(--purple); cursor: pointer; }
+    .eit-opts-sep { color: var(--border); }
+
     .site-footer { border-top: 1px solid var(--border); padding: 1.4rem 2rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; font-family: var(--mono); font-size: .72rem; color: var(--muted); }
     .site-footer a { color: var(--muted); }
     .site-footer a:hover { color: var(--accent); }
@@ -417,7 +454,7 @@ $navLabel = 'Meerkat — e-Seal Signer';
 
   <div class="eit-header">
     <h1>🔏 Meerkat e-Seal Signer</h1>
-    <p>Paste a SHA-256, SHA-384, or SHA-512 hash digest to receive a CAdES-T CMS signature from the Meerkat e-Seal authority. Includes an embedded RFC 3161 signature timestamp. Download the <code>.cms</code> token and inspect it inline.</p>
+    <p>Paste a SHA-256, SHA-384, or SHA-512 hash digest to receive a CAdES or XAdES signature from the Meerkat e-Seal authority. Choose format and whether to include an RFC 3161 signature timestamp (T level).</p>
   </div>
 
   <div class="eit-sec-note">
@@ -450,6 +487,24 @@ $navLabel = 'Meerkat — e-Seal Signer';
       </div>
 
       <input type="hidden" name="g_recaptcha_token" id="eit_recaptcha_token">
+
+      <div class="eit-opts">
+        <span class="eit-opts-label">Format</span>
+        <label class="eit-radio-lbl">
+          <input type="radio" name="format" value="cms" <?= $format === 'cms' ? 'checked' : '' ?>>
+          CAdES-B (CMS)
+        </label>
+        <label class="eit-radio-lbl">
+          <input type="radio" name="format" value="xades" <?= $format === 'xades' ? 'checked' : '' ?>>
+          XAdES-B (XML)
+        </label>
+        <span class="eit-opts-sep">·</span>
+        <label class="eit-check-lbl">
+          <input type="checkbox" name="with_ts" value="1" <?= $with_ts ? 'checked' : '' ?>>
+          Include timestamp (T level)
+        </label>
+      </div>
+
       <div class="eit-submit">
         <button type="button" class="eit-btn-clear" id="eitClear">Clear</button>
         <button type="button" class="eit-btn" id="eitSubmitBtn" onclick="doSeal()">e-Seal →</button>
@@ -460,7 +515,7 @@ $navLabel = 'Meerkat — e-Seal Signer';
 
   <?php if ($cms_b64): ?>
 
-  <!-- Success banner -->
+  <!-- CAdES success banner -->
   <div class="eit-success">
     <div>
       <div class="eit-success-eyebrow">e-Seal Issued</div>
@@ -468,7 +523,7 @@ $navLabel = 'Meerkat — e-Seal Signer';
         CMS SignedData<?php if ($timestamped): ?>
           <span class="eit-ts-badge">CAdES-T ✓ timestamped</span>
         <?php else: ?>
-          <span class="eit-ts-no-badge">CAdES-B (no TSA)</span>
+          <span class="eit-ts-no-badge">CAdES-B</span>
         <?php endif; ?>
       </div>
       <div class="eit-success-sub">
@@ -506,6 +561,44 @@ $navLabel = 'Meerkat — e-Seal Signer';
     <pre class="eit-asn1-pre"><?= htmlspecialchars($raw_text) ?></pre>
   </div>
   <?php endif; ?>
+
+  <?php require __DIR__ . '/includes/adsense_unit.php'; ?>
+
+  <?php elseif ($xades_xml): ?>
+
+  <!-- XAdES success banner -->
+  <div class="eit-success">
+    <div>
+      <div class="eit-success-eyebrow">e-Seal Issued</div>
+      <div class="eit-success-title">
+        XAdES detached<?php if ($timestamped): ?>
+          <span class="eit-ts-badge">XAdES-B-T ✓ timestamped</span>
+        <?php else: ?>
+          <span class="eit-ts-no-badge">XAdES-B-B</span>
+        <?php endif; ?>
+      </div>
+      <div class="eit-success-sub">
+        <?= htmlspecialchars($hash_detected) ?> &nbsp;·&nbsp;
+        Meerkat e-Seal &nbsp;·&nbsp;
+        <?= htmlspecialchars($xades_dl_name) ?>
+      </div>
+    </div>
+    <div class="eit-dl-row">
+      <a href="data:application/xml;base64,<?= htmlspecialchars(base64_encode($xades_xml), ENT_QUOTES) ?>"
+         download="<?= htmlspecialchars($xades_dl_name, ENT_QUOTES) ?>"
+         class="eit-btn-dl">⬇ XAdES XML</a>
+      <button type="button" class="eit-btn-parser" onclick="sendXadesToParser()">🔍 Inspect in Artifact Parser</button>
+    </div>
+  </div>
+
+  <!-- XML display -->
+  <div class="eit-b64-card">
+    <div class="eit-b64-header">
+      <span class="eit-b64-label">XAdES XML</span>
+      <button type="button" class="eit-b64-copy" id="eitCopyXml">Copy</button>
+    </div>
+    <textarea class="eit-b64-textarea" id="eitXml" rows="14" readonly spellcheck="false"><?= htmlspecialchars($xades_xml, ENT_NOQUOTES) ?></textarea>
+  </div>
 
   <?php require __DIR__ . '/includes/adsense_unit.php'; ?>
 
@@ -596,6 +689,18 @@ async function doSeal() {
       });
     });
   }
+
+  var copyXmlBtn = document.getElementById('eitCopyXml');
+  if (copyXmlBtn) {
+    copyXmlBtn.addEventListener('click', function () {
+      var xml = document.getElementById('eitXml').value;
+      navigator.clipboard.writeText(xml).then(function () {
+        copyXmlBtn.textContent = 'Copied!';
+        copyXmlBtn.classList.add('copied');
+        setTimeout(function () { copyXmlBtn.textContent = 'Copy'; copyXmlBtn.classList.remove('copied'); }, 2000);
+      });
+    });
+  }
 }());
 
 function sendToParser() {
@@ -603,6 +708,13 @@ function sendToParser() {
   if (!b64) return;
   var pem = '-----BEGIN PKCS7-----\n' + b64.match(/.{1,64}/g).join('\n') + '\n-----END PKCS7-----\n';
   sessionStorage.setItem('mkt_eseal_cms', pem);
+  window.open('/artifact_parser.php', '_blank');
+}
+
+function sendXadesToParser() {
+  var xml = document.getElementById('eitXml').value;
+  if (!xml) return;
+  sessionStorage.setItem('mkt_eseal_xades', xml);
   window.open('/artifact_parser.php', '_blank');
 }
 </script>

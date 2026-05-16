@@ -15,6 +15,7 @@
 // Errors return JSON {"error": "..."} with the matching HTTP status code.
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/includes/xades_sign.php';
 
 define('ESEAL_SIGN_DIR',  MPCA_CA_DIR    . '/eseal_sign');
 define('ESEAL_KEY',       ESEAL_SIGN_DIR . '/eseal_signing.key');
@@ -272,13 +273,33 @@ if ($hashInput === '') {
     exit;
 }
 
+$format  = strtolower(trim((string) ($req['format'] ?? 'cms')));
+if (!in_array($format, ['cms', 'xades'], true)) $format = 'cms';
+$with_ts = isset($req['ts']) ? (bool) $req['ts'] : true;
+
 $hashInfo = eseal_normalize_hash($hashInput);
 if (isset($hashInfo['error'])) {
     eseal_error(400, $hashInfo['error']);
     exit;
 }
 
-// ── Step 1: Create basic CMS SignedData ───────────────────────────────────────
+// ── XAdES path ────────────────────────────────────────────────────────────────
+
+if ($format === 'xades') {
+    $cert_pem = (string) file_get_contents(ESEAL_CERT);
+    $key_pem  = (string) file_get_contents(ESEAL_KEY);
+    $xml   = xa_sign($hashInfo, $cert_pem, $key_pem, $with_ts, TSA_CNF);
+    $level = str_contains($xml, 'xades:SignatureTimeStamp') ? 'XAdES-B-T' : 'XAdES-B-B';
+    header('Content-Type: application/xml; charset=utf-8');
+    header('Content-Disposition: attachment; filename="eseal.xades"');
+    header('Content-Length: ' . strlen($xml));
+    header('X-Eseal-Format: xades');
+    header('X-Eseal-Level: ' . $level);
+    echo $xml;
+    exit;
+}
+
+// ── CAdES / CMS path ──────────────────────────────────────────────────────────
 
 $tmpIn  = tempnam(sys_get_temp_dir(), 'eseal_in_');
 $tmpCms = tempnam(sys_get_temp_dir(), 'eseal_cms_');
@@ -320,7 +341,7 @@ try {
 
     $timestamped = false;
 
-    if (file_exists(TSA_CNF)) {
+    if ($with_ts && file_exists(TSA_CNF)) {
         $sig_bytes = eseal_extract_sig_bytes($cms);
 
         if ($sig_bytes !== null) {
@@ -362,6 +383,8 @@ try {
 
     header('Content-Type: application/cms');
     header('Content-Length: ' . strlen($cms));
+    header('X-Eseal-Format: cms');
+    header('X-Eseal-Level: ' . ($timestamped ? 'CAdES-T' : 'CAdES-B'));
     header('X-Eseal-Timestamped: ' . ($timestamped ? 'yes' : 'no'));
     echo $cms;
 

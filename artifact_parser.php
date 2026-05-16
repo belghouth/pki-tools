@@ -22,7 +22,7 @@ const PRIVATE_KEY_MARKERS = [
     '-----BEGIN PGP PRIVATE KEY BLOCK-----',
 ];
 
-const ALLOWED_EXTS = ['pem','crt','cer','csr','der','cms','p7b','p7c','p7s','p7m','p10','req','tsr','tst','tsq','ocsp','crl'];
+const ALLOWED_EXTS = ['pem','crt','cer','csr','der','cms','p7b','p7c','p7s','p7m','p10','req','tsr','tst','tsq','ocsp','crl','xades'];
 const BLOCKED_EXTS = ['key','p12','pfx','jks','keystore','pvk','ppk'];
 const MAX_BYTES    = 51200; // 50 KB
 
@@ -111,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $module = ArtifactRegistry::match($bytes, $ext);
 
             if ($module === null) {
-                $error = 'Artifact type not recognised. Supported types: X.509 certificate, CSR/PKCS#10, CRL, public key, CMS/PKCS#7, OCSP response, RFC 3161 timestamp request (TSQ), RFC 3161 timestamp response (TSR).';
+                $error = 'Artifact type not recognised. Supported types: X.509 certificate, CSR/PKCS#10, CRL, public key, CMS/PKCS#7, OCSP response, RFC 3161 timestamp request (TSQ), RFC 3161 timestamp response (TSR), XAdES signature.';
             } else {
                 try {
                     $parsed  = $module->parse($bytes);
@@ -473,10 +473,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="ap-panel" id="panel-upload" role="tabpanel" aria-labelledby="tab-upload" hidden>
       <div class="ap-drop-zone" id="dropZone">
         <input type="file" name="ap_file" id="apFile"
-               accept=".pem,.crt,.cer,.csr,.der,.p7b,.p7c,.p7s,.p7m,.p10,.req,.tsr,.tst,.tsq,.ocsp,.crl">
+               accept=".pem,.crt,.cer,.csr,.der,.p7b,.p7c,.p7s,.p7m,.p10,.req,.tsr,.tst,.tsq,.ocsp,.crl,.xades">
         <div class="dz-icon">📂</div>
         <p>Drop a file here, or click to browse</p>
-        <p class="dz-hint">.pem .crt .cer .csr .der .p7b .p7c .p10 .tsr .tsq .ocsp .crl &nbsp;·&nbsp; max 50 KB</p>
+        <p class="dz-hint">.pem .crt .cer .csr .der .p7b .p7c .p10 .tsr .tsq .ocsp .crl .xades &nbsp;·&nbsp; max 50 KB</p>
         <p class="dz-selected" id="dzSelected" hidden></p>
       </div>
     </div>
@@ -576,14 +576,16 @@ async function doAnalyse() {
 
 (function () {
   // ── Pre-fill from sessionStorage ─────────────────────────────────────────────
-  // pki_prefill_cert (cert_factory Parse) takes priority; then eseal CMS; then CSR.
-  var cert  = sessionStorage.getItem('pki_prefill_cert');
-  var eseal = sessionStorage.getItem('mkt_eseal_cms');
-  var csr   = sessionStorage.getItem('meerkat_pem');
+  // pki_prefill_cert takes priority; then eseal CMS or XAdES; then CSR.
+  var cert   = sessionStorage.getItem('pki_prefill_cert');
+  var eseal  = sessionStorage.getItem('mkt_eseal_cms');
+  var xades  = sessionStorage.getItem('mkt_eseal_xades');
+  var csr    = sessionStorage.getItem('meerkat_pem');
   sessionStorage.removeItem('pki_prefill_cert');
   sessionStorage.removeItem('mkt_eseal_cms');
+  sessionStorage.removeItem('mkt_eseal_xades');
   sessionStorage.removeItem('meerkat_pem');
-  var prefill = cert || eseal || csr;
+  var prefill = cert || eseal || xades || csr;
   if (prefill) {
     var ta = document.getElementById('apPem');
     if (ta && !ta.value.trim()) {
