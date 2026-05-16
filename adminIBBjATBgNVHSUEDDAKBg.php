@@ -51,6 +51,17 @@ function ua_label(string $ua): string {
         return '<span class="ua-browser" title="'.htmlspecialchars($ua).'">'.htmlspecialchars($m[1]).'</span>';
     return '<span class="muted" title="'.htmlspecialchars($ua).'">'.htmlspecialchars(substr($ua, 0, 20)).'…</span>';
 }
+function flag(string $cc): string {
+    $cc = strtoupper(trim($cc));
+    if (!preg_match('/^[A-Z]{2}$/', $cc) || $cc === 'XX') return '';
+    return mb_chr(0x1F1E0 + ord($cc[0]) - 65) . mb_chr(0x1F1E0 + ord($cc[1]) - 65);
+}
+function geo_label(string $ip, array $geo): string {
+    $cc = $geo[$ip] ?? '';
+    if (!$cc || $cc === 'XX') return '<span class="muted">—</span>';
+    $f = flag($cc);
+    return "<span class=\"geo\" title=\"$cc\">$f <span class=\"geo-cc\">$cc</span></span>";
+}
 function rel_time(string $dt): string {
     $d = time() - strtotime($dt . ' UTC');
     if ($d < 60)    return $d . 's ago';
@@ -134,6 +145,10 @@ if ($pdo) {
 
 $total_pages = max(1, (int)ceil($total_rows / $pp));
 $tool_max    = $tool_usage ? (int)$tool_usage[0]['c'] : 1;
+
+// Geo lookup — cache-first, ip-api.com batch for misses
+$geo_ips = array_unique(array_merge(array_column($rows, 'ip'), array_column($top_ips, 'ip')));
+$geo     = $pdo ? geoip_country($geo_ips) : [];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -259,6 +274,10 @@ $tool_max    = $tool_usage ? (int)$tool_usage[0]['c'] : 1;
     .err-file { font-family: var(--mono); font-size: .63rem; color: #3d4f68; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
     .empty-state { padding: 2rem; text-align: center; font-family: var(--mono); font-size: .72rem; color: #3d4f68; }
 
+    /* geo */
+    .geo { font-size: .75rem; white-space: nowrap; }
+    .geo-cc { font-family: var(--mono); font-size: .65rem; color: var(--muted); }
+
     /* IP table side */
     .ip-table td:first-child { font-family: var(--mono); font-size: .72rem; }
     .epct-warn { color: var(--warn); }
@@ -357,7 +376,7 @@ $tool_max    = $tool_usage ? (int)$tool_usage[0]['c'] : 1;
             <table>
               <thead>
                 <tr>
-                  <th>Time</th><th>IP</th><th>M</th><th>Path</th>
+                  <th>Time</th><th>IP</th><th>Country</th><th>M</th><th>Path</th>
                   <th>Status</th><th>Tool</th><th>UA</th><th>Referer</th>
                 </tr>
               </thead>
@@ -366,6 +385,7 @@ $tool_max    = $tool_usage ? (int)$tool_usage[0]['c'] : 1;
               <tr>
                 <td><span class="ts" title="<?= htmlspecialchars($r['created_at']) ?> UTC"><?= rel_time($r['created_at']) ?></span></td>
                 <td><a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a></td>
+                <td><?= geo_label($r['ip'], $geo) ?></td>
                 <td><?= method_badge($r['method']) ?></td>
                 <td><span class="uri" title="<?= htmlspecialchars($r['uri'] . ($r['query_string'] ? '?'.$r['query_string'] : '')) ?>">
                   <?= htmlspecialchars($r['uri']) ?>
@@ -430,12 +450,13 @@ $tool_max    = $tool_usage ? (int)$tool_usage[0]['c'] : 1;
         <div class="card-hd"><h2>Top IPs</h2></div>
         <div class="tbl-wrap">
           <table class="ip-table">
-            <thead><tr><th>IP</th><th>Req</th><th>Err%</th><th>Last seen</th></tr></thead>
+            <thead><tr><th>IP</th><th>Country</th><th>Req</th><th>Err%</th><th>Last seen</th></tr></thead>
             <tbody>
             <?php if ($top_ips): ?>
             <?php foreach ($top_ips as $row): ?>
             <tr>
               <td><a href="<?= q(['ip' => $row['ip']]) ?>" class="ip-link"><?= htmlspecialchars($row['ip']) ?></a></td>
+              <td><?= geo_label($row['ip'], $geo) ?></td>
               <td><?= number_format($row['c']) ?></td>
               <td class="<?= (int)$row['epct'] > 30 ? 'epct-warn' : '' ?> muted"><?= (int)$row['epct'] ?>%</td>
               <td class="muted"><?= rel_time($row['last']) ?></td>

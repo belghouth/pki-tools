@@ -76,6 +76,13 @@ function _admin_schema(PDO $pdo): void {
     try { $pdo->exec("ALTER TABLE visits ADD COLUMN status SMALLINT UNSIGNED NOT NULL DEFAULT 200 AFTER accept_lang"); } catch (Throwable) {}
     try { $pdo->exec("ALTER TABLE visits ADD INDEX idx_status (status)"); } catch (Throwable) {}
 
+    $pdo->exec("CREATE TABLE IF NOT EXISTS geoip_cache (
+        ip         VARCHAR(45) PRIMARY KEY,
+        country    CHAR(3)     NOT NULL DEFAULT 'XX',
+        fetched_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_fetched (fetched_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS admin_sessions (
         token        CHAR(64)     PRIMARY KEY,
         email        VARCHAR(255) NOT NULL,
@@ -131,6 +138,11 @@ function log_visit(int $status = 200): void {
         ?? $_SERVER['HTTP_X_FORWARDED_FOR']
         ?? $_SERVER['REMOTE_ADDR'] ?? '';
     $ip = substr(trim(explode(',', $raw)[0]), 0, 45);
+    // Cloudflare provides country for free — cache it while we're here
+    $cf_cc = strtoupper(trim($_SERVER['HTTP_CF_IPCOUNTRY'] ?? ''));
+    if (strlen($cf_cc) === 2 && ctype_alpha($cf_cc) && $cf_cc !== 'XX') {
+        geoip_cache_store($ip, $cf_cc);
+    }
     $srv = [];
     foreach (['SERVER_PROTOCOL','HTTP_CF_IPCOUNTRY','HTTP_CF_VISITOR',
               'CONTENT_TYPE','CONTENT_LENGTH','HTTP_ACCEPT_ENCODING'] as $k) {
@@ -181,6 +193,60 @@ function _admin_log_error(string $type, int $errno, string $msg, string $file, i
             substr(basename($_SERVER['SCRIPT_FILENAME'] ?? ''), 0, 128),
         ]);
     } catch (Throwable) {}
+}
+
+// Returns [ip => 'US'] map for the given IPs. Checks geoip_cache first;
+// calls ip-api.com batch (free, no key) for misses and stores results.
+function geoip_country(array $ips): array {
+    if (!$ips) return [];
+    $pdo = admin_pdo();
+    if (!$pdo) return [];
+    $ips = array_values(array_unique(array_filter($ips, fn($ip) => !_geoip_is_private($ip))));
+    if (!$ips) return [];
+
+    $ph = implode(',', array_fill(0, count($ips), '?'));
+    $st = $pdo->prepare("SELECT ip, country FROM geoip_cache WHERE ip IN ($ph) AND fetched_at > DATE_SUB(NOW(), INTERVAL 30 DAY)");
+    $st->execute($ips);
+    $out = [];
+    foreach ($st->fetchAll() as $r) $out[$r['ip']] = $r['country'];
+
+    $miss = array_values(array_diff($ips, array_keys($out)));
+    foreach (array_chunk($miss, 100) as $chunk) {
+        $ch = curl_init('http://ip-api.com/batch?fields=countryCode,query');
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 5,
+            CURLOPT_POSTFIELDS     => json_encode(array_map(fn($ip) => ['query' => $ip], $chunk)),
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+        ]);
+        $body = curl_exec($ch); curl_close($ch);
+        if (!$body) continue;
+        $data = json_decode($body, true);
+        if (!is_array($data)) continue;
+        foreach ($data as $item) {
+            $ip = $item['query'] ?? '';
+            $cc = $item['countryCode'] ?? 'XX';
+            if (!$ip) continue;
+            $out[$ip] = $cc;
+            geoip_cache_store($ip, $cc);
+        }
+    }
+    return $out;
+}
+
+function geoip_cache_store(string $ip, string $cc): void {
+    if (_geoip_is_private($ip) || !$cc) return;
+    try {
+        admin_pdo()?->prepare(
+            "INSERT INTO geoip_cache (ip,country) VALUES (?,?) ON DUPLICATE KEY UPDATE country=VALUES(country), fetched_at=NOW()"
+        )->execute([$ip, $cc]);
+    } catch (Throwable) {}
+}
+
+function _geoip_is_private(string $ip): bool {
+    if ($ip === '' || $ip === '::1') return true;
+    return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false;
 }
 
 // Auto-register visit logger + PHP error capture (skipped on admin pages)
