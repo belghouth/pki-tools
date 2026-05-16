@@ -183,7 +183,7 @@ $geo     = $pdo ? geoip_country($geo_ips) : [];
     .admin-bar-logout { color: #4a5a70; transition: color var(--tr); } .admin-bar-logout:hover { color: #fca5a5; }
 
     /* layout */
-    .wrap { max-width: 1360px; margin: 0 auto; padding: 2rem 1.5rem; }
+    .wrap { max-width: 100%; margin: 0 auto; padding: 2rem 1.75rem; }
 
     /* page header */
     .page-hd { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; margin-bottom: 1.75rem; }
@@ -202,9 +202,9 @@ $geo     = $pdo ? geoip_country($geo_ips) : [];
     .stat-lbl { font-size: .73rem; color: var(--muted); margin-top: .3rem; }
     .stat-sub { font-family: var(--mono); font-size: .65rem; color: #3d4f68; margin-top: .15rem; }
 
-    /* dashboard columns */
-    .dash-row { display: grid; grid-template-columns: 1fr 320px; gap: 1.5rem; align-items: start; }
-    @media(max-width:1040px) { .dash-row { grid-template-columns: 1fr; } }
+    /* analytics row (tool usage + top IPs side by side, above full-width table) */
+    .side-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 0; }
+    @media(max-width:760px) { .side-row { grid-template-columns: 1fr; } }
 
     /* cards */
     .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 1.25rem; }
@@ -236,11 +236,11 @@ $geo     = $pdo ? geoip_country($geo_ips) : [];
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: rgba(255,255,255,.02); }
     .ts { font-family: var(--mono); font-size: .68rem; color: var(--muted); }
-    .uri { font-family: var(--mono); font-size: .72rem; color: var(--text); max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+    .uri { font-family: var(--mono); font-size: .72rem; color: var(--text); max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
     .ip-link { font-family: var(--mono); font-size: .72rem; color: var(--accent2); }
     .ip-link:hover { color: #fff; }
     .muted { color: var(--muted); font-size: .68rem; }
-    .referer { max-width: 140px; overflow: hidden; text-overflow: ellipsis; font-size: .68rem; color: var(--muted); }
+    .referer { max-width: 220px; overflow: hidden; text-overflow: ellipsis; font-size: .68rem; color: var(--muted); }
 
     /* badges */
     .badge { font-family: var(--mono); font-size: .63rem; padding: .15rem .45rem; border-radius: 3px; display: inline-block; font-weight: 600; }
@@ -264,7 +264,7 @@ $geo     = $pdo ? geoip_country($geo_ips) : [];
     /* tool usage bars */
     .tool-row { display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem; }
     .tool-row:last-child { margin-bottom: 0; }
-    .tool-lbl { font-family: var(--mono); font-size: .68rem; color: var(--muted); width: 130px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tool-lbl { font-family: var(--mono); font-size: .72rem; color: var(--muted); width: 170px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tool-bar-bg { flex: 1; height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
     .tool-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width .4s ease; }
     .tool-cnt { font-family: var(--mono); font-size: .65rem; color: #3d4f68; width: 40px; text-align: right; flex-shrink: 0; }
@@ -275,8 +275,8 @@ $geo     = $pdo ? geoip_country($geo_ips) : [];
     .empty-state { padding: 2rem; text-align: center; font-family: var(--mono); font-size: .72rem; color: #3d4f68; }
 
     /* geo */
-    .geo { font-size: .75rem; white-space: nowrap; }
-    .geo-cc { font-family: var(--mono); font-size: .65rem; color: var(--muted); }
+    .geo { font-size: 1rem; white-space: nowrap; display: inline-flex; align-items: center; gap: .35rem; }
+    .geo-cc { font-family: var(--mono); font-size: .8rem; color: var(--text); font-weight: 600; letter-spacing: .04em; }
 
     /* IP table side */
     .ip-table td:first-child { font-family: var(--mono); font-size: .72rem; }
@@ -327,149 +327,143 @@ $geo     = $pdo ? geoip_country($geo_ips) : [];
     </div>
   </div>
 
-  <!-- ── Main columns ────────────────────────────────────────────────────────── -->
-  <div class="dash-row">
+  <!-- ── Analytics row (tool usage + top IPs) ──────────────────────────────── -->
+  <div class="side-row">
 
-    <!-- Left: filters + activity table -->
-    <div>
-      <div class="card">
-        <div class="card-hd">
-          <h2>Activity Feed</h2>
-          <span class="card-meta"><?= number_format($total_rows) ?> rows matched</span>
+    <div class="card">
+      <div class="card-hd"><h2>Tool Usage</h2></div>
+      <div class="card-body">
+        <?php if ($tool_usage): ?>
+        <?php foreach ($tool_usage as $t): ?>
+        <div class="tool-row">
+          <span class="tool-lbl" title="<?= htmlspecialchars($t['script_name']) ?>"><?= htmlspecialchars($tool_name($t['script_name'])) ?></span>
+          <div class="tool-bar-bg"><div class="tool-bar-fill" style="width:<?= round($t['c']/$tool_max*100) ?>%"></div></div>
+          <span class="tool-cnt"><?= number_format($t['c']) ?></span>
         </div>
-        <div class="card-body">
-
-          <!-- Filters -->
-          <form method="GET" class="filter-bar">
-            <input type="hidden" name="period" value="<?= htmlspecialchars($period) ?>">
-            <div class="flt">
-              <label>IP</label>
-              <input type="text" name="ip" value="<?= htmlspecialchars($fip) ?>" placeholder="1.2.3.4">
-            </div>
-            <div class="flt">
-              <label>Status</label>
-              <select name="status">
-                <option value="">All</option>
-                <?php foreach (['2xx','3xx','4xx','5xx'] as $opt): ?>
-                <option value="<?= $opt ?>" <?= $fstatus === $opt ? 'selected' : '' ?>><?= $opt ?></option>
-                <?php endforeach; ?>
-              </select>
-            </div>
-            <div class="flt">
-              <label>Method</label>
-              <select name="method">
-                <option value="">All</option>
-                <?php foreach (['GET','POST','HEAD','OPTIONS','DELETE','PUT'] as $m): ?>
-                <option value="<?= $m ?>" <?= $fmethod === $m ? 'selected' : '' ?>><?= $m ?></option>
-                <?php endforeach; ?>
-              </select>
-            </div>
-            <div class="flt" style="flex-direction:row;gap:.4rem;align-items:flex-end">
-              <button type="submit" class="btn-sm">Filter</button>
-              <a href="<?= q([], ['ip','status','method','page']) ?>" class="btn-sm clear">Clear</a>
-            </div>
-          </form>
-
-          <!-- Table -->
-          <?php if ($rows): ?>
-          <div class="tbl-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Time</th><th>IP</th><th>Country</th><th>M</th><th>Path</th>
-                  <th>Status</th><th>Tool</th><th>UA</th><th>Referer</th>
-                </tr>
-              </thead>
-              <tbody>
-              <?php foreach ($rows as $r): ?>
-              <tr>
-                <td><span class="ts" title="<?= htmlspecialchars($r['created_at']) ?> UTC"><?= rel_time($r['created_at']) ?></span></td>
-                <td><a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a></td>
-                <td><?= geo_label($r['ip'], $geo) ?></td>
-                <td><?= method_badge($r['method']) ?></td>
-                <td><span class="uri" title="<?= htmlspecialchars($r['uri'] . ($r['query_string'] ? '?'.$r['query_string'] : '')) ?>">
-                  <?= htmlspecialchars($r['uri']) ?>
-                </span></td>
-                <td><?= status_badge((int)$r['status']) ?></td>
-                <td><span class="muted"><?= htmlspecialchars($tool_name($r['script_name'])) ?></span></td>
-                <td><?= ua_label($r['user_agent']) ?></td>
-                <td><span class="referer" title="<?= htmlspecialchars($r['referer']) ?>"><?= $r['referer'] ? htmlspecialchars($r['referer']) : '<span class="muted">—</span>' ?></span></td>
-              </tr>
-              <?php endforeach; ?>
-              </tbody>
-            </table>
-          </div>
-          <?php else: ?>
-          <div class="empty-state">No activity found for this filter.</div>
-          <?php endif; ?>
-
-          <!-- Pagination -->
-          <?php if ($total_pages > 1): ?>
-          <div class="pager">
-            <?php if ($page > 1): ?><a href="<?= pg_url($page-1) ?>">← Prev</a><?php endif; ?>
-            <?php
-              $pages_to_show = [];
-              for ($i = 1; $i <= $total_pages; $i++) {
-                if ($i === 1 || $i === $total_pages || abs($i - $page) <= 2) $pages_to_show[] = $i;
-              }
-              $prev = null;
-              foreach ($pages_to_show as $pn):
-                if ($prev !== null && $pn - $prev > 1): ?><span class="ellipsis">…</span><?php endif;
-                $prev = $pn;
-            ?>
-            <?php if ($pn === $page): ?><span class="cur"><?= $pn ?></span>
-            <?php else: ?><a href="<?= pg_url($pn) ?>"><?= $pn ?></a><?php endif; ?>
-            <?php endforeach; ?>
-            <?php if ($page < $total_pages): ?><a href="<?= pg_url($page+1) ?>">Next →</a><?php endif; ?>
-          </div>
-          <?php endif; ?>
-
-        </div>
+        <?php endforeach; ?>
+        <?php else: ?><div class="empty-state">No data yet.</div><?php endif; ?>
       </div>
     </div>
 
-    <!-- Right: tool usage + top IPs -->
-    <div>
-
-      <div class="card">
-        <div class="card-hd"><h2>Tool Usage</h2></div>
-        <div class="card-body">
-          <?php if ($tool_usage): ?>
-          <?php foreach ($tool_usage as $t): ?>
-          <div class="tool-row">
-            <span class="tool-lbl" title="<?= htmlspecialchars($t['script_name']) ?>"><?= htmlspecialchars($tool_name($t['script_name'])) ?></span>
-            <div class="tool-bar-bg"><div class="tool-bar-fill" style="width:<?= round($t['c']/$tool_max*100) ?>%"></div></div>
-            <span class="tool-cnt"><?= number_format($t['c']) ?></span>
-          </div>
+    <div class="card">
+      <div class="card-hd"><h2>Top IPs</h2></div>
+      <div class="tbl-wrap">
+        <table class="ip-table">
+          <thead><tr><th>IP</th><th>Country</th><th>Req</th><th>Err%</th><th>Last seen</th></tr></thead>
+          <tbody>
+          <?php if ($top_ips): ?>
+          <?php foreach ($top_ips as $row): ?>
+          <tr>
+            <td><a href="<?= q(['ip' => $row['ip']]) ?>" class="ip-link"><?= htmlspecialchars($row['ip']) ?></a></td>
+            <td><?= geo_label($row['ip'], $geo) ?></td>
+            <td><?= number_format($row['c']) ?></td>
+            <td class="<?= (int)$row['epct'] > 30 ? 'epct-warn' : '' ?> muted"><?= (int)$row['epct'] ?>%</td>
+            <td class="muted"><?= rel_time($row['last']) ?></td>
+          </tr>
           <?php endforeach; ?>
-          <?php else: ?><div class="empty-state">No data yet.</div><?php endif; ?>
-        </div>
+          <?php else: ?><tr><td colspan="5" class="empty-state">No data yet.</td></tr><?php endif; ?>
+          </tbody>
+        </table>
       </div>
+    </div>
 
-      <div class="card">
-        <div class="card-hd"><h2>Top IPs</h2></div>
-        <div class="tbl-wrap">
-          <table class="ip-table">
-            <thead><tr><th>IP</th><th>Country</th><th>Req</th><th>Err%</th><th>Last seen</th></tr></thead>
-            <tbody>
-            <?php if ($top_ips): ?>
-            <?php foreach ($top_ips as $row): ?>
-            <tr>
-              <td><a href="<?= q(['ip' => $row['ip']]) ?>" class="ip-link"><?= htmlspecialchars($row['ip']) ?></a></td>
-              <td><?= geo_label($row['ip'], $geo) ?></td>
-              <td><?= number_format($row['c']) ?></td>
-              <td class="<?= (int)$row['epct'] > 30 ? 'epct-warn' : '' ?> muted"><?= (int)$row['epct'] ?>%</td>
-              <td class="muted"><?= rel_time($row['last']) ?></td>
-            </tr>
-            <?php endforeach; ?>
-            <?php else: ?><tr><td colspan="4" class="empty-state">No data yet.</td></tr><?php endif; ?>
-            </tbody>
-          </table>
+  </div><!-- .side-row -->
+
+  <!-- ── Activity table (full width) ────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-hd">
+      <h2>Activity Feed</h2>
+      <span class="card-meta"><?= number_format($total_rows) ?> rows matched</span>
+    </div>
+    <div class="card-body">
+
+      <!-- Filters -->
+      <form method="GET" class="filter-bar">
+        <input type="hidden" name="period" value="<?= htmlspecialchars($period) ?>">
+        <div class="flt">
+          <label>IP</label>
+          <input type="text" name="ip" value="<?= htmlspecialchars($fip) ?>" placeholder="1.2.3.4">
         </div>
+        <div class="flt">
+          <label>Status</label>
+          <select name="status">
+            <option value="">All</option>
+            <?php foreach (['2xx','3xx','4xx','5xx'] as $opt): ?>
+            <option value="<?= $opt ?>" <?= $fstatus === $opt ? 'selected' : '' ?>><?= $opt ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div class="flt">
+          <label>Method</label>
+          <select name="method">
+            <option value="">All</option>
+            <?php foreach (['GET','POST','HEAD','OPTIONS','DELETE','PUT'] as $m): ?>
+            <option value="<?= $m ?>" <?= $fmethod === $m ? 'selected' : '' ?>><?= $m ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div class="flt" style="flex-direction:row;gap:.4rem;align-items:flex-end">
+          <button type="submit" class="btn-sm">Filter</button>
+          <a href="<?= q([], ['ip','status','method','page']) ?>" class="btn-sm clear">Clear</a>
+        </div>
+      </form>
+
+      <!-- Table -->
+      <?php if ($rows): ?>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th><th>IP</th><th>Country</th><th>M</th><th>Path</th>
+              <th>Status</th><th>Tool</th><th>UA</th><th>Referer</th>
+            </tr>
+          </thead>
+          <tbody>
+          <?php foreach ($rows as $r): ?>
+          <tr>
+            <td><span class="ts" title="<?= htmlspecialchars($r['created_at']) ?> UTC"><?= rel_time($r['created_at']) ?></span></td>
+            <td><a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a></td>
+            <td><?= geo_label($r['ip'], $geo) ?></td>
+            <td><?= method_badge($r['method']) ?></td>
+            <td><span class="uri" title="<?= htmlspecialchars($r['uri'] . ($r['query_string'] ? '?'.$r['query_string'] : '')) ?>">
+              <?= htmlspecialchars($r['uri']) ?>
+            </span></td>
+            <td><?= status_badge((int)$r['status']) ?></td>
+            <td><span class="muted"><?= htmlspecialchars($tool_name($r['script_name'])) ?></span></td>
+            <td><?= ua_label($r['user_agent']) ?></td>
+            <td><span class="referer" title="<?= htmlspecialchars($r['referer']) ?>"><?= $r['referer'] ? htmlspecialchars($r['referer']) : '<span class="muted">—</span>' ?></span></td>
+          </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
       </div>
+      <?php else: ?>
+      <div class="empty-state">No activity found for this filter.</div>
+      <?php endif; ?>
+
+      <!-- Pagination -->
+      <?php if ($total_pages > 1): ?>
+      <div class="pager">
+        <?php if ($page > 1): ?><a href="<?= pg_url($page-1) ?>">← Prev</a><?php endif; ?>
+        <?php
+          $pages_to_show = [];
+          for ($i = 1; $i <= $total_pages; $i++) {
+            if ($i === 1 || $i === $total_pages || abs($i - $page) <= 2) $pages_to_show[] = $i;
+          }
+          $prev = null;
+          foreach ($pages_to_show as $pn):
+            if ($prev !== null && $pn - $prev > 1): ?><span class="ellipsis">…</span><?php endif;
+            $prev = $pn;
+        ?>
+        <?php if ($pn === $page): ?><span class="cur"><?= $pn ?></span>
+        <?php else: ?><a href="<?= pg_url($pn) ?>"><?= $pn ?></a><?php endif; ?>
+        <?php endforeach; ?>
+        <?php if ($page < $total_pages): ?><a href="<?= pg_url($page+1) ?>">Next →</a><?php endif; ?>
+      </div>
+      <?php endif; ?>
 
     </div>
-  </div><!-- .dash-row -->
+  </div><!-- activity card -->
 
   <!-- ── Errors ──────────────────────────────────────────────────────────────── -->
   <div class="card">
