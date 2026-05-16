@@ -172,6 +172,34 @@ $navLabel = 'Meerkat TSA';
       color: var(--amber); border-radius: 3px; padding: 0.1em 0.5em;
     }
 
+    /* ── Tool CTA banner ── */
+    .tool-cta {
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;
+      background: rgba(245,158,11,0.07); border: 1px solid rgba(245,158,11,0.25);
+      border-radius: 6px; padding: 0.9rem 1.2rem; margin-bottom: 2rem;
+      font-size: 0.84rem;
+    }
+    .tool-cta-text { color: var(--text); }
+    .tool-cta-text strong { color: #fff; }
+    .tool-cta-btn {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      font-family: var(--mono); font-size: 0.72rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.07em; white-space: nowrap;
+      background: var(--amber); color: #0e1014; border-radius: 4px;
+      padding: 0.45em 1.1em; text-decoration: none; transition: opacity 0.15s;
+    }
+    .tool-cta-btn:hover { opacity: 0.85; color: #0e1014; }
+
+    /* ── Inline CTA (inside sections) ── */
+    .inline-cta {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      font-family: var(--mono); font-size: 0.72rem; font-weight: 600;
+      letter-spacing: 0.06em; color: var(--amber); text-decoration: none;
+      border: 1px solid rgba(245,158,11,0.35); border-radius: 4px;
+      padding: 0.3em 0.8em; transition: background 0.15s;
+    }
+    .inline-cta:hover { background: rgba(245,158,11,0.08); color: var(--amber); }
+
     /* ── Footer ── */
     .site-footer {
       border-top: 1px solid var(--border); padding: 1.4rem 2rem;
@@ -203,6 +231,15 @@ $navLabel = 'Meerkat TSA';
       <code>TimeStampResp</code> signed by the Meerkat TSA signing certificate.
       Supports SHA-256, SHA-384, and SHA-512 message imprints.
     </p>
+  </div>
+
+  <div class="tool-cta">
+    <span class="tool-cta-text">
+      <strong>Want to timestamp a file or text?</strong>
+      Use <strong>Meerkat TimeStampIt</strong> — upload or paste content, get a signed <code>.tsr</code> token, and inspect it inline.
+      This page documents the raw HTTP API.
+    </span>
+    <a href="/timestamp_it.php" class="tool-cta-btn">🕰️ Open TimeStampIt →</a>
   </div>
 
   <div class="notice">
@@ -355,6 +392,13 @@ $navLabel = 'Meerkat TSA';
   <!-- ── Integration Guide ─────────────────────────────────────────────────── -->
   <div class="doc-section">
     <h2>Integration Guide</h2>
+
+    <p>
+      If you just want to timestamp a file without writing any code,
+      use <a href="/timestamp_it.php" class="inline-cta">🕰️ Meerkat TimeStampIt</a> —
+      it handles the TSQ/TSR flow for you and lets you download the token directly.
+      The steps below are for integrating the TSA endpoint into your own tooling or pipeline.
+    </p>
 
     <h3>Step 1 — Create a timestamp request with openssl</h3>
     <div class="code-block"><span class="comment"># Hash your file and create a TimeStampReq (nonce + certReq included)</span>

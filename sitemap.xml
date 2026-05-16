@@ -65,6 +65,12 @@
   </url>
 
   <url>
+    <loc>https://thameur.org/timestamp_it.php</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.9</priority>
+  </url>
+
+  <url>
     <loc>https://thameur.org/community_tools.php</loc>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
