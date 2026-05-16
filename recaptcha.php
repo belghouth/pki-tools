@@ -237,7 +237,7 @@ function recaptcha_bind_js(array $bindings): string {
         grecaptcha.execute(siteKey, { action: action }).then(function(token) {
           tokenField.value = token;
 
-          // Inject the button's name=value so the server sees it in $_POST.
+          // Inject the button's name=value so the server sees it in \$_POST.
           btnProxy.name  = btn.name;
           btnProxy.value = btn.value;
 

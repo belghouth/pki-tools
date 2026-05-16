@@ -438,8 +438,8 @@ $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fet
     .tool-cnt { font-family: var(--mono); font-size: .65rem; color: #3d4f68; width: 40px; text-align: right; flex-shrink: 0; }
 
     /* errors table */
-    .err-msg { font-family: var(--mono); font-size: .68rem; color: var(--text); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .err-file { font-family: var(--mono); font-size: .63rem; color: #3d4f68; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+    .err-msg { font-family: var(--mono); font-size: .68rem; color: var(--text); max-width: 520px; white-space: pre-wrap; word-break: break-word; }
+    .err-file { font-family: var(--mono); font-size: .63rem; color: #3d4f68; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .empty-state { padding: 2rem; text-align: center; font-family: var(--mono); font-size: .72rem; color: #3d4f68; }
 
     /* geo */
@@ -743,8 +743,8 @@ $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fet
           <td><a href="<?= q(['ip' => $e['ip']]) ?>" class="ip-link"><?= htmlspecialchars($e['ip']) ?></a></td>
           <td><span class="badge badge--warn"><?= htmlspecialchars($e['error_type']) ?></span></td>
           <td><span class="uri"><?= htmlspecialchars($e['uri']) ?></span></td>
-          <td><span class="err-msg" title="<?= htmlspecialchars($e['error_msg']) ?>"><?= htmlspecialchars($e['error_msg']) ?></span></td>
-          <td><span class="err-file"><?= htmlspecialchars(basename($e['error_file'])) ?> : <?= (int)$e['error_line'] ?></span></td>
+          <td><span class="err-msg"><?= htmlspecialchars($e['error_msg']) ?></span></td>
+          <td><span class="err-file" title="<?= htmlspecialchars($e['error_file']) ?>"><?= htmlspecialchars(basename($e['error_file'])) ?> : <?= (int)$e['error_line'] ?></span></td>
         </tr>
         <?php endforeach; ?>
         </tbody>
