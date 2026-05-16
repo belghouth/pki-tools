@@ -253,12 +253,12 @@ certs                  = \$dir/chain.pem
 signer_key             = \$dir/tsa_signing.key
 signer_digest          = sha256
 default_policy         = $OID_TSA_POLICY
-other_policies         =
 digests                = sha256, sha384, sha512
 accuracy               = secs:1
 clock_precision_digits = 0
 ordering               = no
 tsa_name               = yes
+ess_cert_id_alg        = sha256
 ess_cert_id_chain      = yes
 CONF
 }
