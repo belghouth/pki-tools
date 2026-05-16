@@ -748,6 +748,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
         </div>
 
         <div class="tool-card">
+          <div class="tool-card-bar tool-card-bar--amber"></div>
+          <div class="tool-card-body">
+            <div class="tool-card-icon">⏱</div>
+            <div class="tool-card-name">Meerkat Testing TSA</div>
+            <div class="tool-card-desc">A fully RFC 3161-compliant Time Stamping Authority for testing. Submit a DER-encoded timestamp request and receive a cryptographically valid TimeStampResp signed by the Meerkat TSA. Supports SHA-256, SHA-384, and SHA-512. Includes integration guide and verification instructions.</div>
+            <div class="tool-card-tags">
+              <span class="tag">RFC 3161</span>
+              <span class="tag">TSA</span>
+              <span class="tag">IETF</span>
+              <span class="tag">Timestamp</span>
+            </div>
+            <a href="/tsa_doc.php" class="tool-card-link">Open Tool →</a>
+          </div>
+        </div>
+
+        <div class="tool-card">
           <div class="tool-card-bar tool-card-bar--purple"></div>
           <div class="tool-card-body">
             <div class="tool-card-icon">🏛️</div>
