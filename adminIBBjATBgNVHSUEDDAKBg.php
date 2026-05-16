@@ -298,10 +298,10 @@ if ($tab === 'activity' && $pdo) {
     $st->execute($bp); $rows = $st->fetchAll();
 
     // Tool usage
-    $tool_usage = $pdo->query("SELECT script_name, COUNT(*) AS c FROM visits WHERE created_at >= $pstart AND script_name != '' GROUP BY script_name ORDER BY c DESC LIMIT 15")->fetchAll();
+    $tool_usage = $pdo->query("SELECT script_name, COUNT(*) AS c FROM visits WHERE created_at >= $pstart AND script_name != '' GROUP BY script_name ORDER BY c DESC LIMIT 40")->fetchAll();
 
     // Top IPs (blocked IPs excluded so they don't crowd out active ones)
-    $top_ips = $pdo->query("SELECT ip, COUNT(*) AS c, MAX(created_at) AS last, ROUND(SUM(status>=400)/COUNT(*)*100) AS epct FROM visits WHERE created_at >= $pstart AND ip NOT IN (SELECT ip FROM blocked_ips) GROUP BY ip ORDER BY c DESC LIMIT 12")->fetchAll();
+    $top_ips = $pdo->query("SELECT ip, COUNT(*) AS c, MAX(created_at) AS last, ROUND(SUM(status>=400)/COUNT(*)*100) AS epct FROM visits WHERE created_at >= $pstart AND ip NOT IN (SELECT ip FROM blocked_ips) GROUP BY ip ORDER BY c DESC LIMIT 40")->fetchAll();
 
     // Errors
     $err_rows = $pdo->query("SELECT created_at,ip,uri,error_type,error_msg,error_file,error_line FROM errors ORDER BY created_at DESC LIMIT 25")->fetchAll();
@@ -556,8 +556,9 @@ $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fet
 
     <div class="card">
       <div class="card-hd"><h2>Tool Usage</h2></div>
-      <div class="card-body">
+      <div class="card-body" style="padding-bottom:.5rem">
         <?php if ($tool_usage): ?>
+        <div style="max-height:290px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border2) transparent;padding-right:.25rem">
         <?php foreach ($tool_usage as $t): ?>
         <div class="tool-row">
           <span class="tool-lbl" title="<?= htmlspecialchars($t['script_name']) ?>"><?= htmlspecialchars($tool_name($t['script_name'])) ?></span>
@@ -565,15 +566,16 @@ $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fet
           <span class="tool-cnt"><?= number_format($t['c']) ?></span>
         </div>
         <?php endforeach; ?>
+        </div>
         <?php else: ?><div class="empty-state">No data yet.</div><?php endif; ?>
       </div>
     </div>
 
     <div class="card">
       <div class="card-hd"><h2>Top IPs</h2></div>
-      <div class="tbl-wrap">
+      <div class="tbl-wrap" style="max-height:296px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border2) transparent">
         <table class="ip-table">
-          <thead><tr><th>IP</th><th>Country</th><th>Req</th><th>Err%</th><th>Last seen</th><th></th></tr></thead>
+          <thead style="position:sticky;top:0;background:var(--surface);z-index:1"><tr><th>IP</th><th>Country</th><th>Req</th><th>Err%</th><th>Last seen</th><th></th></tr></thead>
           <tbody>
           <?php if ($top_ips): ?>
           <?php foreach ($top_ips as $row): ?>
@@ -607,6 +609,7 @@ $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fet
       <h2>Activity Feed</h2>
       <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
         <span class="card-meta"><?= number_format($total_rows) ?> rows matched</span>
+        <a href="<?= htmlspecialchars($_SERVER['REQUEST_URI']) ?>" class="btn-sm" style="font-size:.65rem;padding:.28rem .65rem" title="Refresh">↻</a>
         <?php if ($fip): ?>
         <?php if (isset($blocked_set[$fip])): ?>
         <form method="POST" style="display:inline">

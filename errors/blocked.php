@@ -158,7 +158,7 @@
     <div class="error-code">403</div>
     <div class="error-title">Access Restricted</div>
     <p class="error-desc">
-      Access to this service has been restricted from your address.
+      This service is not available at this time.
     </p>
     <p class="error-contact">
       If you believe this is a mistake, contact
