@@ -4,7 +4,7 @@ require_once __DIR__ . '/config.php';
 define('TSA_SIGN_DIR',  MPCA_CA_DIR  . '/tsa_sign');
 define('TSA_CERT_PATH', TSA_SIGN_DIR . '/tsa_signing.crt');
 define('TSA_CA_CRT_URL',   MPCA_BASE_URL . '/tsa_ca.crt');
-define('TSA_CHAIN_URL',    PKI_BASE_URL  . '/tsa_chain.pem');
+define('TSA_CHAIN_URL',    PKI_BASE_URL  . '/mpca/tsa_chain.pem');
 
 // ── Read TSA signing certificate details (if initialized) ─────────────────────
 $tsaInfo = null;
