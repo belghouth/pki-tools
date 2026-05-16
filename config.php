@@ -143,13 +143,6 @@ define('MPCA_BASE_URL',     'https://' . PKI_DOMAIN . '/mpca');
 define('MPCA_TSA_URL',      'https://thameur.org/tsa');
 define('MPCA_ESEAL_URL',    'https://thameur.org/eseal');
 
-// ── Secrets ────────────────────────────────────────────────────────────────────
-// .secrets is gitignored and blocked by nginx (dotfile rule).
-// It sets variables consumed by the define() calls below, e.g.:
-//   $_google_client_id     = '...';
-//   $_google_client_secret = '...';
-@include __DIR__ . '/.secrets';
-
 // ── Admin database ────────────────────────────────────────────────────────────
 define('ADMIN_DB_HOST', 'localhost');
 define('ADMIN_DB_NAME', 'pki_tools');
@@ -162,9 +155,21 @@ define('ADMIN_LOGIN_URL',     SITE_BASE_URL . '/loginIBBjATBgNVHSUEDDAKBg.php');
 define('ADMIN_PANEL_URL',     SITE_BASE_URL . '/adminIBBjATBgNVHSUEDDAKBg.php');
 
 // ── Google OAuth ───────────────────────────────────────────────────────────────
-// Credentials live in .secrets (gitignored). Defaults are empty = OAuth disabled.
-define('GOOGLE_CLIENT_ID',     $_google_client_id     ?? '');
-define('GOOGLE_CLIENT_SECRET', $_google_client_secret ?? '');
+// Credentials live in .secrets (KEY=VALUE, gitignored). Defaults = OAuth disabled.
+$_google_client_id     = '';
+$_google_client_secret = '';
+$_secrets_file = __DIR__ . '/.secrets';
+if (is_readable($_secrets_file)) {
+    foreach (file($_secrets_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $_sl) {
+        if (!str_contains($_sl, '=')) continue;
+        [$_sk, $_sv] = explode('=', $_sl, 2);
+        if (trim($_sk) === 'GOOGLE_CLIENT_ID')     $_google_client_id     = trim($_sv);
+        if (trim($_sk) === 'GOOGLE_CLIENT_SECRET') $_google_client_secret = trim($_sv);
+    }
+}
+define('GOOGLE_CLIENT_ID',     $_google_client_id);
+define('GOOGLE_CLIENT_SECRET', $_google_client_secret);
+unset($_secrets_file, $_sl, $_sk, $_sv, $_google_client_id, $_google_client_secret);
 
 // ── CT log identities ─────────────────────────────────────────────────────────
 // Key = filename stem in PKI_CT_KEYS_DIR (e.g. "kablouti" → kablouti.pem / kablouti.id)
