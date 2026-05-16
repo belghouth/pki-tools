@@ -782,6 +782,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
         <div class="tool-card">
           <div class="tool-card-bar tool-card-bar--purple"></div>
           <div class="tool-card-body">
+            <div class="tool-card-icon">🔏</div>
+            <div class="tool-card-name">Meerkat e-Seal Signer</div>
+            <div class="tool-card-desc">Paste a SHA-256, SHA-384, or SHA-512 hash digest to receive a CAdES-T CMS signature from the Meerkat e-Seal authority (eIDAS / ETSI EN 319 412-3). An RFC 3161 signature timestamp is automatically embedded via the Meerkat TSA. Download the <code>.cms</code> token and inspect the ASN.1 structure inline.</div>
+            <div class="tool-card-tags">
+              <span class="tag">eIDAS</span>
+              <span class="tag">CAdES-T</span>
+              <span class="tag">CMS</span>
+              <span class="tag">ETSI</span>
+            </div>
+            <a href="/eseal_signer.php" class="tool-card-link">Open Tool →</a>
+          </div>
+        </div>
+
+        <div class="tool-card">
+          <div class="tool-card-bar tool-card-bar--purple"></div>
+          <div class="tool-card-body">
             <div class="tool-card-icon">🏛️</div>
             <div class="tool-card-name">Meerkat MPCA Factory</div>
             <div class="tool-card-desc">Issue multi-purpose test certificates from the Meerkat private CA hierarchy. Supports S/MIME (MV Multipurpose &amp; Signing), Client Authentication, Document Signing (AdES/RFC 9336), and Code Signing OV. Profile-driven — extensions, policies, and validity are enforced per CA/B Forum requirements.</div>

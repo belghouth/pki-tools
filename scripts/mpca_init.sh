@@ -8,8 +8,10 @@
 #    ├── MPCA S/MIME CA   RSA-3072   10 yr
 #    ├── MPCA Personal CA P-384      10 yr   (client auth + document signing)
 #    ├── MPCA CS CA       RSA-4096   10 yr   (code signing)
-#    └── MPCA TSA CA      P-384      10 yr
-#         └── TSA Signing  P-256     3 yr    (RFC 3161 endpoint cert)
+#    ├── MPCA TSA CA      P-384      10 yr
+#    │    └── TSA Signing  P-256     3 yr    (RFC 3161 endpoint cert)
+#    └── MPCA e-Seal CA   P-384      10 yr   (eIDAS/ETSI EN 319 412-3)
+#         └── e-Seal Signing P-256   3 yr    (CMS/CAdES-B signing cert)
 #
 # OID arc: 2.16.788.1.99  (thameur.org test MPCA — Tunisia ISO 3166-1 numeric 788)
 #
@@ -32,10 +34,13 @@ PERSONAL_DIR="$MPCA_DIR/personal"
 CS_DIR="$MPCA_DIR/codesign"
 TSA_CA_DIR="$MPCA_DIR/tsa_ca"
 TSA_SIGN_DIR="$MPCA_DIR/tsa_sign"
+ESEAL_CA_DIR="$MPCA_DIR/eseal_ca"
+ESEAL_SIGN_DIR="$MPCA_DIR/eseal_sign"
 
 REPO_URL="https://pki.thameur.org/mpca"
 REPO_URL_HTTP="http://pki.thameur.org/mpca"   # used in AIA/CDP (HTTPS creates circular dependency)
 TSA_URL="https://thameur.org/tsa"
+ESEAL_URL="https://thameur.org/eseal"
 SITE_URL="https://thameur.org"
 # Set to live OCSP responder URL once deployed; leave empty to omit AIA OCSP entry
 OCSP_URL="${OCSP_URL:-}"
@@ -46,10 +51,15 @@ OID_PERSONAL_CA_CP="2.16.788.1.99.1.3"
 OID_CS_CA_CP="2.16.788.1.99.1.4"
 OID_TSA_CA_CP="2.16.788.1.99.1.5"
 OID_TSA_POLICY="2.16.788.1.99.1.40"
+OID_ESEAL_CA_CP="2.16.788.1.99.1.6"
+OID_ESEAL_POLICY="2.16.788.1.99.1.60"
+OID_ESEAL_SIGNER_CP="2.16.788.1.99.1.61"
+ESEAL_ORG_ID="${ESEAL_ORG_ID:-VATTN-TEST12345678}"  # ETSI EN 319 412-1 — override in env
 
-ROOT_DAYS=9131      # 25 yr
-SUBCA_DAYS=3652     # 10 yr
-TSA_SIGN_DAYS=1095  # 3 yr
+ROOT_DAYS=9131       # 25 yr
+SUBCA_DAYS=3652      # 10 yr
+TSA_SIGN_DAYS=1095   # 3 yr
+ESEAL_SIGN_DAYS=1095 # 3 yr
 
 DN_C="TN"
 DN_O="Meerkat MPCA by Thameur Belghith"
@@ -261,6 +271,25 @@ tsa_name               = yes
 ess_cert_id_alg        = sha256
 ess_cert_id_chain      = yes
 CONF
+}
+
+write_eseal_sign_cnf() {
+  local aia; aia=$(aia_value "$REPO_URL_HTTP/eseal_ca.crt")
+  cat > "$ESEAL_SIGN_DIR/eseal_signing_ext.cnf" <<EXT
+[ eseal_sign_ext ]
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always,issuer
+basicConstraints       = critical,CA:false
+keyUsage               = critical,digitalSignature,nonRepudiation
+extendedKeyUsage       = 1.3.6.1.5.5.7.3.36
+crlDistributionPoints  = URI:${REPO_URL_HTTP}/eseal_ca.crl
+authorityInfoAccess    = $aia
+certificatePolicies    = @cp_eseal_sign
+
+[ cp_eseal_sign ]
+policyIdentifier = $OID_ESEAL_POLICY
+CPS.1            = $REPO_URL/cps.html
+EXT
 }
 
 # ── CA init functions ──────────────────────────────────────────────────────────
@@ -478,6 +507,83 @@ EXT
   openssl x509 -noout -subject -enddate -in "$TSA_SIGN_DIR/tsa_signing.crt"
 }
 
+init_eseal_ca() {
+  sep; log "e-Seal CA (P-384)"
+  ask_skip "e-Seal CA" "$ESEAL_CA_DIR/private/eseal_ca.key" || return 0
+
+  init_ca_db "$ESEAL_CA_DIR"
+  write_subca_cnf "$ESEAL_CA_DIR" eseal_ca.key eseal_ca.crt "e-Seal CA"
+
+  openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-384 \
+    -out "$ESEAL_CA_DIR/private/eseal_ca.key" 2>/dev/null
+  chmod 400 "$ESEAL_CA_DIR/private/eseal_ca.key"
+
+  openssl req -new -config "$ESEAL_CA_DIR/openssl.cnf" \
+    -key "$ESEAL_CA_DIR/private/eseal_ca.key" -out "$ESEAL_CA_DIR/csr/eseal_ca.csr"
+
+  local ext="$ESEAL_CA_DIR/csr/eseal_ca_ext.cnf"
+  local aia; aia=$(aia_value "$REPO_URL_HTTP/root.crt")
+  cat > "$ext" <<EXT
+[ subca_ext ]
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always,issuer
+basicConstraints       = critical,CA:true,pathlen:0
+keyUsage               = critical,keyCertSign,cRLSign
+crlDistributionPoints  = URI:${REPO_URL_HTTP}/root.crl
+authorityInfoAccess    = $aia
+certificatePolicies    = @cp_eseal_ca, @cp_eseal_policy
+
+[ cp_eseal_ca ]
+policyIdentifier = $OID_ESEAL_CA_CP
+CPS.1            = $REPO_URL/cps.html
+
+[ cp_eseal_policy ]
+policyIdentifier = $OID_ESEAL_POLICY
+CPS.1            = $REPO_URL/cps.html
+EXT
+  sign_subca "e-Seal CA" "$ESEAL_CA_DIR/csr/eseal_ca.csr" "$ESEAL_CA_DIR/eseal_ca.crt" "$ext"
+
+  openssl ca -gencrl -config "$ESEAL_CA_DIR/openssl.cnf" \
+    -out "$ESEAL_CA_DIR/crl/eseal_ca.crl" 2>/dev/null
+  ok "e-Seal CA initialized"
+}
+
+init_eseal_signing() {
+  sep; log "e-Seal Signing Certificate (P-256)"
+  ask_skip "e-Seal Signing cert" "$ESEAL_SIGN_DIR/eseal_signing.key" || return 0
+
+  mkdir -p "$ESEAL_SIGN_DIR"
+  chmod 700 "$ESEAL_SIGN_DIR"
+
+  write_eseal_sign_cnf
+
+  openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 \
+    -out "$ESEAL_SIGN_DIR/eseal_signing.key" 2>/dev/null
+  chmod 400 "$ESEAL_SIGN_DIR/eseal_signing.key"
+
+  openssl req -new \
+    -key "$ESEAL_SIGN_DIR/eseal_signing.key" \
+    -out "$ESEAL_SIGN_DIR/eseal_signing.csr" \
+    -subj "/C=${DN_C}/O=${DN_O}/CN=e-Seal Signer/organizationIdentifier=${ESEAL_ORG_ID}"
+
+  log "e-Seal CA signs e-Seal signing certificate (${ESEAL_SIGN_DAYS}d)…"
+  openssl ca -batch -notext \
+    -config     "$ESEAL_CA_DIR/openssl.cnf" \
+    -in         "$ESEAL_SIGN_DIR/eseal_signing.csr" \
+    -out        "$ESEAL_SIGN_DIR/eseal_signing.crt" \
+    -days       "$ESEAL_SIGN_DAYS" \
+    -extfile    "$ESEAL_SIGN_DIR/eseal_signing_ext.cnf" \
+    -extensions eseal_sign_ext 2>/dev/null
+
+  cat "$ESEAL_SIGN_DIR/eseal_signing.crt" \
+      "$ESEAL_CA_DIR/eseal_ca.crt" \
+      "$ROOT_DIR/root.crt" \
+    > "$ESEAL_SIGN_DIR/chain.pem"
+
+  ok "e-Seal Signing certificate initialized"
+  openssl x509 -noout -subject -enddate -in "$ESEAL_SIGN_DIR/eseal_signing.crt"
+}
+
 # ── Web publish ───────────────────────────────────────────────────────────────
 
 publish_web() {
@@ -489,7 +595,8 @@ publish_web() {
     "$SMIME_DIR/smime_ca.crt:smime_ca" \
     "$PERSONAL_DIR/personal_ca.crt:personal_ca" \
     "$CS_DIR/codesign_ca.crt:codesign_ca" \
-    "$TSA_CA_DIR/tsa_ca.crt:tsa_ca"
+    "$TSA_CA_DIR/tsa_ca.crt:tsa_ca" \
+    "$ESEAL_CA_DIR/eseal_ca.crt:eseal_ca"
   do
     local src="${pair%%:*}" base="${pair##*:}"
     cp "$src" "$WEB_DIR/${base}.crt"
@@ -501,7 +608,8 @@ publish_web() {
     "$SMIME_DIR/crl/smime_ca.crl:smime_ca" \
     "$PERSONAL_DIR/crl/personal_ca.crl:personal_ca" \
     "$CS_DIR/crl/codesign_ca.crl:codesign_ca" \
-    "$TSA_CA_DIR/crl/tsa_ca.crl:tsa_ca"
+    "$TSA_CA_DIR/crl/tsa_ca.crl:tsa_ca" \
+    "$ESEAL_CA_DIR/crl/eseal_ca.crl:eseal_ca"
   do
     openssl crl -in "${pair%%:*}" -outform DER -out "$WEB_DIR/${pair##*:}.crl" 2>/dev/null
   done
@@ -510,6 +618,7 @@ publish_web() {
   cat "$PERSONAL_DIR/personal_ca.crt" "$ROOT_DIR/root.crt" > "$WEB_DIR/personal_chain.pem"
   cat "$CS_DIR/codesign_ca.crt"       "$ROOT_DIR/root.crt" > "$WEB_DIR/codesign_chain.pem"
   cat "$TSA_CA_DIR/tsa_ca.crt"        "$ROOT_DIR/root.crt" > "$WEB_DIR/tsa_chain.pem"
+  cat "$ESEAL_CA_DIR/eseal_ca.crt"    "$ROOT_DIR/root.crt" > "$WEB_DIR/eseal_chain.pem"
 
   ok "Web directory populated"
   write_html
@@ -573,13 +682,15 @@ CARD
 write_html() {
   local generated; generated=$(date -u '+%Y-%m-%d %H:%M UTC')
 
-  local root_card smime_card personal_card cs_card tsa_ca_card tsa_sign_card
-  root_card=$(cert_card     "MPCA Root CA"            "$ROOT_DIR/root.crt"             "root.crl"        "root.crt")
-  smime_card=$(cert_card    "MPCA S/MIME CA"           "$SMIME_DIR/smime_ca.crt"        "smime_ca.crl"    "smime_ca.crt"    "smime_chain.pem")
-  personal_card=$(cert_card "MPCA Personal CA"         "$PERSONAL_DIR/personal_ca.crt"  "personal_ca.crl" "personal_ca.crt" "personal_chain.pem")
-  cs_card=$(cert_card       "MPCA Code Signing CA"     "$CS_DIR/codesign_ca.crt"        "codesign_ca.crl" "codesign_ca.crt" "codesign_chain.pem")
-  tsa_ca_card=$(cert_card   "MPCA TSA CA"              "$TSA_CA_DIR/tsa_ca.crt"         "tsa_ca.crl"      "tsa_ca.crt"      "tsa_chain.pem")
-  tsa_sign_card=$(cert_card "TSA Signing Certificate"  "$TSA_SIGN_DIR/tsa_signing.crt"  "tsa_ca.crl"      "tsa_ca.crt")
+  local root_card smime_card personal_card cs_card tsa_ca_card tsa_sign_card eseal_ca_card eseal_sign_card
+  root_card=$(cert_card        "MPCA Root CA"               "$ROOT_DIR/root.crt"                "root.crl"        "root.crt")
+  smime_card=$(cert_card       "MPCA S/MIME CA"              "$SMIME_DIR/smime_ca.crt"           "smime_ca.crl"    "smime_ca.crt"    "smime_chain.pem")
+  personal_card=$(cert_card    "MPCA Personal CA"            "$PERSONAL_DIR/personal_ca.crt"     "personal_ca.crl" "personal_ca.crt" "personal_chain.pem")
+  cs_card=$(cert_card          "MPCA Code Signing CA"        "$CS_DIR/codesign_ca.crt"           "codesign_ca.crl" "codesign_ca.crt" "codesign_chain.pem")
+  tsa_ca_card=$(cert_card      "MPCA TSA CA"                 "$TSA_CA_DIR/tsa_ca.crt"            "tsa_ca.crl"      "tsa_ca.crt"      "tsa_chain.pem")
+  tsa_sign_card=$(cert_card    "TSA Signing Certificate"     "$TSA_SIGN_DIR/tsa_signing.crt"     "tsa_ca.crl"      "tsa_ca.crt")
+  eseal_ca_card=$(cert_card    "MPCA e-Seal CA"              "$ESEAL_CA_DIR/eseal_ca.crt"        "eseal_ca.crl"    "eseal_ca.crt"    "eseal_chain.pem")
+  eseal_sign_card=$(cert_card  "e-Seal Signing Certificate"  "$ESEAL_SIGN_DIR/eseal_signing.crt" "eseal_ca.crl"    "eseal_ca.crt")
 
   cat > "$HTML_PAGE" <<HTML
 <!DOCTYPE html>
@@ -707,6 +818,22 @@ ${tsa_sign_card}
     </div>
   </div>
 
+  <h2>e-Seal Authority (eIDAS / ETSI EN 319 412-3)</h2>
+
+${eseal_ca_card}
+${eseal_sign_card}
+
+  <div class="card">
+    <div class="card-title">CMS / CAdES-B Endpoint</div>
+    <div class="card-meta">
+      URL: <span><a href="${ESEAL_URL}">${ESEAL_URL}</a></span><br>
+      Protocol: <span>HTTP POST  application/json → application/cms</span><br>
+      Policy OID: <span>${OID_ESEAL_POLICY}</span><br>
+      Digests: <span>SHA-256, SHA-384, SHA-512</span><br>
+      Org ID: <span>${ESEAL_ORG_ID}</span>
+    </div>
+  </div>
+
   <h2>OID Arc — 2.16.788.1.99</h2>
 
   <div class="card">
@@ -717,6 +844,7 @@ ${tsa_sign_card}
       <tr><td>${OID_PERSONAL_CA_CP}</td><td>Personal CA CP</td></tr>
       <tr><td>${OID_CS_CA_CP}</td><td>Code Signing CA CP</td></tr>
       <tr><td>${OID_TSA_CA_CP}</td><td>TSA CA CP</td></tr>
+      <tr><td>${OID_ESEAL_CA_CP}</td><td>e-Seal CA CP</td></tr>
       <tr class="section"><td colspan="2">Leaf Certificate Policies</td></tr>
       <tr><td>2.16.788.1.99.1.10</td><td>S/MIME MV — Multipurpose  &nbsp;+&nbsp; 2.23.140.1.5.1.2 (CA/B Forum)</td></tr>
       <tr><td>2.16.788.1.99.1.11</td><td>S/MIME MV — Signing only  &nbsp;+&nbsp; 2.23.140.1.5.1.3 (CA/B Forum)</td></tr>
@@ -724,6 +852,8 @@ ${tsa_sign_card}
       <tr><td>2.16.788.1.99.1.21</td><td>Document Signing (AdES / RFC 9336)</td></tr>
       <tr><td>2.16.788.1.99.1.30</td><td>Code Signing OV  &nbsp;+&nbsp; 2.23.140.1.4.1 (CA/B Forum)</td></tr>
       <tr><td>${OID_TSA_POLICY}</td><td>TSA Policy</td></tr>
+      <tr><td>${OID_ESEAL_POLICY}</td><td>e-Seal Policy</td></tr>
+      <tr><td>${OID_ESEAL_SIGNER_CP}</td><td>e-Seal Signer CP</td></tr>
     </table>
   </div>
 
@@ -774,6 +904,8 @@ print_summary() {
     "$CS_DIR/codesign_ca.crt"
     "$TSA_CA_DIR/tsa_ca.crt"
     "$TSA_SIGN_DIR/tsa_signing.crt"
+    "$ESEAL_CA_DIR/eseal_ca.crt"
+    "$ESEAL_SIGN_DIR/eseal_signing.crt"
   )
   for cert in "${certs[@]}"; do
     [[ -f "$cert" ]] || continue
@@ -790,6 +922,7 @@ print_summary() {
   log "Cert/CRL repo    : $REPO_URL/"
   log "Repo page        : $HTML_PAGE"
   log "TSA endpoint     : $TSA_URL"
+  log "e-Seal endpoint  : $ESEAL_URL"
   [[ -n "$OCSP_URL" ]] \
     && log "OCSP             : $OCSP_URL" \
     || warn "OCSP_URL not set — AIA omits OCSP entry; set env var and re-run to add"
@@ -811,6 +944,8 @@ main() {
   init_cs_ca
   init_tsa_ca
   init_tsa_signing
+  init_eseal_ca
+  init_eseal_signing
   publish_web
   print_summary
 

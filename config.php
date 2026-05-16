@@ -141,6 +141,7 @@ define('MPCA_PROFILES_DIR', MPCA_CA_DIR     . '/profiles');
 define('MPCA_WEB_DIR',      PKI_WEB_DIR     . '/mpca');
 define('MPCA_BASE_URL',     'https://' . PKI_DOMAIN . '/mpca');
 define('MPCA_TSA_URL',      'https://thameur.org/tsa');
+define('MPCA_ESEAL_URL',    'https://thameur.org/eseal');
 
 // ── CT log identities ─────────────────────────────────────────────────────────
 // Key = filename stem in PKI_CT_KEYS_DIR (e.g. "kablouti" → kablouti.pem / kablouti.id)
