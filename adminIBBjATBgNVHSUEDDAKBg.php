@@ -54,7 +54,7 @@ function ua_label(string $ua): string {
 function flag(string $cc): string {
     $cc = strtoupper(trim($cc));
     if (!preg_match('/^[A-Z]{2}$/', $cc) || $cc === 'XX') return '';
-    return mb_chr(0x1F1E0 + ord($cc[0]) - 65) . mb_chr(0x1F1E0 + ord($cc[1]) - 65);
+    return mb_chr(0x1F1E6 + ord($cc[0]) - 65) . mb_chr(0x1F1E6 + ord($cc[1]) - 65);
 }
 function geo_label(string $ip, array $geo): string {
     $cc = $geo[$ip] ?? '';
