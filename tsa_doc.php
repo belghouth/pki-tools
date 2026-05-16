@@ -236,7 +236,7 @@ $navLabel = 'Meerkat TSA';
   <div class="tool-cta">
     <span class="tool-cta-text">
       <strong>Want to timestamp a file or text?</strong>
-      Use <strong>Meerkat TimeStampIt</strong> — upload or paste content, get a signed <code>.tsr</code> token, and inspect it inline.
+      Use <strong>Meerkat TimeStampIt</strong> —  paste the hash of your document and get a signed <code>.tsr</code> token, and inspect it inline.
       This page documents the raw HTTP API.
     </span>
     <a href="/timestamp_it.php" class="tool-cta-btn">🕰️ Open TimeStampIt →</a>
