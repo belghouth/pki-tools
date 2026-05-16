@@ -222,6 +222,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     $cms_b64 = base64_encode($cmsBytes);
                     $dl_name = 'eseal_' . substr($hash_info['hex'], 0, 12) . '_' . date('Ymd_His') . '.cms';
+                    $p7_name = substr($dl_name, 0, -4) . '.p7b';
 
                     // Produce human-readable summary via openssl asn1parse
                     $tmpView = tempnam(sys_get_temp_dir(), 'eit_view_');
@@ -362,6 +363,7 @@ $navLabel = 'Meerkat — e-Seal Signer';
       background: rgba(107,122,144,.1); border: 1px solid rgba(107,122,144,.25);
       color: var(--muted); border-radius: 3px; padding: .1em .5em; margin-left: .4rem;
     }
+    .eit-dl-row { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
     .eit-btn-dl {
       display: inline-flex; align-items: center; gap: .4rem;
       font-family: var(--mono); font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .07em;
@@ -369,6 +371,19 @@ $navLabel = 'Meerkat — e-Seal Signer';
       padding: .5em 1.2em; text-decoration: none; transition: opacity .15s; white-space: nowrap;
     }
     .eit-btn-dl:hover { opacity: .85; color: #0e1014; }
+    .eit-btn-dl--outline {
+      background: transparent; color: var(--purple);
+      border: 1px solid rgba(167,139,250,.4);
+    }
+    .eit-btn-dl--outline:hover { background: rgba(167,139,250,.08); color: var(--purple); opacity: 1; }
+    .eit-btn-parser {
+      display: inline-flex; align-items: center; gap: .4rem;
+      font-family: var(--mono); font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .07em;
+      background: transparent; color: var(--accent);
+      border: 1px solid rgba(0,212,170,.35); border-radius: var(--radius);
+      padding: .5em 1.2em; cursor: pointer; transition: background .15s; white-space: nowrap;
+    }
+    .eit-btn-parser:hover { background: rgba(0,212,170,.08); }
 
     .eit-b64-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 1.5rem; }
     .eit-b64-header { display: flex; align-items: center; justify-content: space-between; padding: .55rem 1rem; border-bottom: 1px solid var(--border); background: rgba(0,0,0,.1); }
@@ -462,9 +477,15 @@ $navLabel = 'Meerkat — e-Seal Signer';
         <?= htmlspecialchars($dl_name) ?>
       </div>
     </div>
-    <a href="data:application/cms;base64,<?= htmlspecialchars($cms_b64, ENT_QUOTES) ?>"
-       download="<?= htmlspecialchars($dl_name, ENT_QUOTES) ?>"
-       class="eit-btn-dl">⬇ Download .cms</a>
+    <div class="eit-dl-row">
+      <a href="data:application/pkcs7-mime;base64,<?= htmlspecialchars(base64_encode("-----BEGIN PKCS7-----\n" . chunk_split($cms_b64, 64, "\n") . "-----END PKCS7-----\n"), ENT_QUOTES) ?>"
+         download="<?= htmlspecialchars($p7_name, ENT_QUOTES) ?>"
+         class="eit-btn-dl">⬇ PKCS#7 PEM</a>
+      <a href="data:application/cms;base64,<?= htmlspecialchars($cms_b64, ENT_QUOTES) ?>"
+         download="<?= htmlspecialchars($dl_name, ENT_QUOTES) ?>"
+         class="eit-btn-dl eit-btn-dl--outline">⬇ Binary DER</a>
+      <button type="button" class="eit-btn-parser" onclick="sendToParser()">🔍 Inspect in Artifact Parser</button>
+    </div>
   </div>
 
   <!-- Base64 token -->
@@ -482,7 +503,7 @@ $navLabel = 'Meerkat — e-Seal Signer';
     <div class="eit-asn1-header">
       <span class="eit-asn1-label">CMS Structure (openssl asn1parse)</span>
     </div>
-    <pre class="eit-asn1-pre"><?= htmlspecialchars(substr($raw_text, 0, 6000)) ?><?= strlen($raw_text) > 6000 ? "\n… truncated" : '' ?></pre>
+    <pre class="eit-asn1-pre"><?= htmlspecialchars($raw_text) ?></pre>
   </div>
   <?php endif; ?>
 
@@ -576,6 +597,14 @@ async function doSeal() {
     });
   }
 }());
+
+function sendToParser() {
+  var b64 = document.getElementById('eitB64').value.replace(/\s+/g, '');
+  if (!b64) return;
+  var pem = '-----BEGIN PKCS7-----\n' + b64.match(/.{1,64}/g).join('\n') + '\n-----END PKCS7-----\n';
+  sessionStorage.setItem('mkt_eseal_cms', pem);
+  window.open('/artifact_parser.php', '_blank');
+}
 </script>
 </body>
 </html>

@@ -6,9 +6,15 @@ class Pkcs7Module extends ArtifactModule {
     public function label(): string { return 'CMS / PKCS#7'; }
 
     public function recognize(string $bytes, string $ext): bool {
-        return artifact_has_pem_header($bytes, 'PKCS7')
+        if (artifact_has_pem_header($bytes, 'PKCS7')
             || artifact_has_pem_header($bytes, 'CMS')
-            || in_array($ext, ['p7b', 'p7c', 'p7s', 'p7m'], true);
+            || in_array($ext, ['p7b', 'p7c', 'p7s', 'p7m', 'cms'], true)) {
+            return true;
+        }
+        // DER ContentInfo whose first child OID is pkcs7-signedData (1.2.840.113549.1.7.2).
+        // The OID appears within the first 16 bytes regardless of outer SEQUENCE length encoding.
+        return artifact_is_der($bytes) && strlen($bytes) > 13
+            && str_contains(substr($bytes, 0, 16), "\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x07\x02");
     }
 
     public function parse(string $bytes): array {

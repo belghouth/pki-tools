@@ -22,7 +22,7 @@ const PRIVATE_KEY_MARKERS = [
     '-----BEGIN PGP PRIVATE KEY BLOCK-----',
 ];
 
-const ALLOWED_EXTS = ['pem','crt','cer','csr','der','p7b','p7c','p7s','p7m','p10','req','tsr','tst','tsq','ocsp','crl'];
+const ALLOWED_EXTS = ['pem','crt','cer','csr','der','cms','p7b','p7c','p7s','p7m','p10','req','tsr','tst','tsq','ocsp','crl'];
 const BLOCKED_EXTS = ['key','p12','pfx','jks','keystore','pvk','ppk'];
 const MAX_BYTES    = 51200; // 50 KB
 
@@ -576,12 +576,14 @@ async function doAnalyse() {
 
 (function () {
   // ── Pre-fill from sessionStorage ─────────────────────────────────────────────
-  // pki_prefill_cert (cert_factory Parse) takes priority over meerkat_pem (csr_generator Parse)
-  var cert = sessionStorage.getItem('pki_prefill_cert');
-  var csr  = sessionStorage.getItem('meerkat_pem');
+  // pki_prefill_cert (cert_factory Parse) takes priority; then eseal CMS; then CSR.
+  var cert  = sessionStorage.getItem('pki_prefill_cert');
+  var eseal = sessionStorage.getItem('mkt_eseal_cms');
+  var csr   = sessionStorage.getItem('meerkat_pem');
   sessionStorage.removeItem('pki_prefill_cert');
+  sessionStorage.removeItem('mkt_eseal_cms');
   sessionStorage.removeItem('meerkat_pem');
-  var prefill = cert || csr;
+  var prefill = cert || eseal || csr;
   if (prefill) {
     var ta = document.getElementById('apPem');
     if (ta && !ta.value.trim()) {
