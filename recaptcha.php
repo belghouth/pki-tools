@@ -48,6 +48,7 @@
 $_recaptcha_secrets_file = __DIR__ . '/.secrets';
 $_recaptcha_site_key     = 'YOUR_RECAPTCHA_SITE_KEY_HERE';
 $_recaptcha_secret_key   = 'YOUR_RECAPTCHA_SECRET_KEY_HERE';
+$_recaptcha_bypass_ips   = [];
 
 if (is_readable($_recaptcha_secrets_file)) {
     foreach (file($_recaptcha_secrets_file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $_line) {
@@ -57,16 +58,22 @@ if (is_readable($_recaptcha_secrets_file)) {
         $_k = trim($_k); $_v = trim($_v);
         if ($_k === 'RECAPTCHA_SITE_KEY')   $_recaptcha_site_key   = $_v;
         if ($_k === 'RECAPTCHA_SECRET_KEY') $_recaptcha_secret_key = $_v;
+        // Comma-separated list of IPs that skip reCAPTCHA (e.g. your own IP).
+        // RECAPTCHA_BYPASS_IPS=1.2.3.4,5.6.7.8
+        if ($_k === 'RECAPTCHA_BYPASS_IPS') {
+            $_recaptcha_bypass_ips = array_filter(array_map('trim', explode(',', $_v)));
+        }
     }
 }
 
 define('RECAPTCHA_SITE_KEY',   $_recaptcha_site_key);
 define('RECAPTCHA_SECRET_KEY', $_recaptcha_secret_key);
-unset($_recaptcha_secrets_file, $_recaptcha_site_key, $_recaptcha_secret_key, $_line, $_k, $_v);
+define('RECAPTCHA_BYPASS_IPS', $_recaptcha_bypass_ips);
+unset($_recaptcha_secrets_file, $_recaptcha_site_key, $_recaptcha_secret_key, $_recaptcha_bypass_ips, $_line, $_k, $_v);
 
 // Minimum score threshold (0.0–1.0). Google recommends 0.5 as a starting point.
 // Lower = more permissive, higher = stricter.
-define('RECAPTCHA_MIN_SCORE', 0.5);
+define('RECAPTCHA_MIN_SCORE', 0.3);
 
 // reCAPTCHA v3 verification endpoint.
 define('RECAPTCHA_VERIFY_URL', 'https://www.recaptcha.net/recaptcha/api/siteverify');
@@ -82,6 +89,13 @@ define('RECAPTCHA_VERIFY_URL', 'https://www.recaptcha.net/recaptcha/api/siteveri
  * @return bool           True if the token is valid and score meets threshold.
  */
 function recaptcha_verify(string $token, string $action): bool {
+    // IP bypass — allows the site owner to use the tools without reCAPTCHA friction.
+    // Add IPs to RECAPTCHA_BYPASS_IPS in .secrets.
+    $remote = $_SERVER['REMOTE_ADDR'] ?? '';
+    if ($remote !== '' && in_array($remote, RECAPTCHA_BYPASS_IPS, true)) {
+        return true;
+    }
+
     if ($token === '' || RECAPTCHA_SECRET_KEY === 'YOUR_RECAPTCHA_SECRET_KEY_HERE') {
         return false;
     }
