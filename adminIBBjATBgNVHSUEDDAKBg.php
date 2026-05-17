@@ -360,7 +360,7 @@ if ($ipf !== 'all') $w[] = ltrim($ipf_sql(), 'AND ');
 $wsql = implode(' AND ', $w);
 
 // nginx WHERE clause (same base filters + optional vhost)
-$nw = ["created_at >= $pstart"]; $nbp = [];
+$nw = ["created_at >= $pstart", "uri NOT IN ('/errors/404.html','/errors/403.html','/errors/50x.html')"]; $nbp = [];
 if ($fip)     { $nw[] = 'ip = ?';     $nbp[] = $fip; }
 if ($fmethod) { $nw[] = 'method = ?'; $nbp[] = $fmethod; }
 if ($fvhost)  { $nw[] = 'vhost = ?';  $nbp[] = $fvhost; }
