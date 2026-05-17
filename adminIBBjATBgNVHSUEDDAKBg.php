@@ -543,6 +543,52 @@ if ($tab === 'soc' && $pdo) {
             ORDER BY n.created_at DESC LIMIT 100
         ")->fetchAll();
 
+        // Sessions (from session_analysis cron)
+        $soc_sessions = $pdo->query("
+            SELECT s.ip, s.session_start, s.session_end, s.duration_s, s.req_count,
+                   s.uniq_paths, s.ua_count, s.c404, s.c5xx, s.exploit_hits,
+                   s.has_scanner, s.replay_pairs, s.pki_hits, s.score, s.classification,
+                   s.signals, COALESCE(g.country,'') AS country,
+                   i.org, i.asn, i.provider_type, i.is_hosting, i.is_proxy,
+                   i.bot_verified, i.bot_claimed
+            FROM sessions s
+            LEFT JOIN geoip_cache g ON g.ip = s.ip
+            LEFT JOIN ip_intel i    ON i.ip = s.ip
+            WHERE s.session_start >= $soc_win
+            ORDER BY s.score DESC, s.session_start DESC
+            LIMIT 40
+        ")->fetchAll();
+
+        // Distributed scans — same 404 path hit by ≥3 distinct IPs
+        $soc_distrib = $pdo->query("
+            SELECT uri,
+                   COUNT(DISTINCT ip) AS c_ips,
+                   COUNT(*)           AS c_hits,
+                   MIN(created_at)    AS first_seen,
+                   MAX(created_at)    AS last_seen
+            FROM nginx_visits
+            WHERE created_at >= $soc_win
+              AND status = 404
+              AND uri NOT IN ('/','/favicon.ico','/robots.txt','/sitemap.xml','/index.php')
+              AND uri NOT REGEXP '[.](css|js|ico|png|jpg|jpeg|gif|svg|woff2?|ttf)$'
+            GROUP BY uri
+            HAVING c_ips >= 3
+            ORDER BY c_ips DESC, c_hits DESC
+            LIMIT 15
+        ")->fetchAll();
+
+        // Honeypot hits — requests to known-decoy paths
+        $soc_honeypot = $pdo->query("
+            SELECT n.created_at, n.ip, COALESCE(g.country, n.country,'') AS country,
+                   n.method, n.uri, n.status, n.user_agent
+            FROM nginx_visits n
+            LEFT JOIN geoip_cache g ON g.ip = n.ip
+            WHERE n.created_at >= $soc_win
+              AND n.uri REGEXP '(wp-login[.]php|wp-admin|xmlrpc[.]php|phpinfo|phpmyadmin|adminer|[.]env$|[.]git/|shell[.]php|cmd[.]php|c99[.]php|r57[.]php|webshell|setup[.]php|install[.]php|/etc/passwd|/proc/self|/backup[./])'
+            ORDER BY n.created_at DESC
+            LIMIT 40
+        ")->fetchAll();
+
         // Determine overall threat level
         $soc_c_crit   = count(array_filter($soc_threat_ips, fn($r) => $r['score'] >= 80));
         $soc_c_high   = count(array_filter($soc_threat_ips, fn($r) => $r['score'] >= 50 && $r['score'] < 80));
@@ -777,6 +823,29 @@ if ($tab === 'soc' && $pdo) {
     .sig-rate  { background:rgba(168,85,247,.08); border-color:rgba(168,85,247,.3); color:#c084fc; }
     .sig-5xx   { background:rgba(239,68,68,.05);  border-color:rgba(239,68,68,.2);  color:#fca5a5; }
     .sig-php   { background:rgba(245,158,11,.07); border-color:rgba(245,158,11,.25); color:var(--warn); }
+
+    /* classification badges */
+    .cls-badge    { font-family:var(--mono); font-size:.63rem; padding:.15rem .45rem; border-radius:3px; display:inline-block; font-weight:600; white-space:nowrap; }
+    .cls-human      { background:rgba(34,197,94,.08);   color:var(--ok);    border:1px solid rgba(34,197,94,.2); }
+    .cls-researcher { background:rgba(0,153,255,.08);   color:var(--redir); border:1px solid rgba(0,153,255,.2); }
+    .cls-crawler    { background:rgba(107,122,144,.06); color:var(--muted); border:1px solid var(--border2); }
+    .cls-scanner    { background:rgba(249,115,22,.1);   color:#f97316;      border:1px solid rgba(249,115,22,.3); }
+    .cls-attacker   { background:rgba(239,68,68,.12);   color:var(--err);   border:1px solid rgba(239,68,68,.3); }
+    .cls-unknown    { background:rgba(255,255,255,.03); color:var(--muted); border:1px solid var(--border); }
+
+    /* provider / ASN badges */
+    .pvdr-badge { font-family:var(--mono); font-size:.58rem; padding:.1rem .3rem; border-radius:2px; border:1px solid; display:inline-block; white-space:nowrap; }
+    .pvdr-hosting { background:rgba(239,68,68,.05);  border-color:rgba(239,68,68,.2);  color:#fca5a5; }
+    .pvdr-proxy   { background:rgba(168,85,247,.07); border-color:rgba(168,85,247,.25);color:#c084fc; }
+    .pvdr-mobile  { background:rgba(0,153,255,.06);  border-color:rgba(0,153,255,.2);  color:var(--redir); }
+    .pvdr-unknown { background:rgba(255,255,255,.03);border-color:var(--border);        color:#3d4f68; }
+    .asn-lbl { font-family:var(--mono); font-size:.62rem; color:#4a5a70; }
+    .org-lbl { font-family:var(--mono); font-size:.65rem; color:var(--muted); max-width:140px; overflow:hidden; text-overflow:ellipsis; display:inline-block; vertical-align:middle; white-space:nowrap; }
+    .bot-ok  { color:var(--ok);  font-size:.7rem; }
+    .bot-bad { color:var(--err); font-size:.7rem; }
+
+    /* session duration */
+    .dur-lbl { font-family:var(--mono); font-size:.65rem; color:var(--muted); }
 
     .ev-pill { font-family:var(--mono); font-size:.6rem; padding:.1rem .35rem; border-radius:3px; border:1px solid; display:inline-block; font-weight:600; }
     .ev-scanner { background:rgba(239,68,68,.1);   border-color:rgba(239,68,68,.35);  color:var(--err); }
@@ -1710,9 +1779,13 @@ if ($tab === 'soc' && $pdo) {
     <div class="tbl-wrap">
       <?php if ($soc_threat_ips): ?>
       <table>
+        <?php
+          // Enrich threat IPs with ASN (reads from cache only — cron writes it)
+          $soc_intel = ip_intel_get(array_column($soc_threat_ips, 'ip'));
+        ?>
         <thead>
           <tr>
-            <th>IP</th><th>CC</th><th>Score</th><th>Signals</th>
+            <th>IP</th><th>CC</th><th>Provider</th><th>Score</th><th>Signals</th>
             <th>Reqs</th><th>404s</th><th>5xx</th><th>PHP&nbsp;Err</th><th>Rate/5m</th><th>Last&nbsp;Seen</th><th></th>
           </tr>
         </thead>
@@ -1730,6 +1803,21 @@ if ($tab === 'soc' && $pdo) {
             <?php endif; ?>
           </td>
           <td><?= $cc ? geo_label($ip, $soc_geo) : '<span class="muted">—</span>' ?></td>
+          <td style="white-space:normal;min-width:110px">
+            <?php $intel = $soc_intel[$ip] ?? null;
+            if ($intel):
+                $org_short = $intel['org'] ? htmlspecialchars(substr($intel['org'], 0, 18)) : '';
+                $tip = htmlspecialchars(($intel['org'] ?? '') . ($intel['asn'] ? ' · '.$intel['asn'] : ''));
+            ?>
+              <?php if ($org_short): ?><span class="org-lbl" title="<?= $tip ?>"><?= $org_short ?><?= strlen($intel['org'] ?? '') > 18 ? '…' : '' ?></span><?php endif; ?>
+              <?php if ($intel['provider_type'] && $intel['provider_type'] !== 'unknown'): ?>
+              <span class="pvdr-badge pvdr-<?= htmlspecialchars($intel['provider_type']) ?>"><?= htmlspecialchars($intel['provider_type']) ?></span>
+              <?php endif; ?>
+              <?php if ($intel['bot_claimed'] && $intel['bot_verified'] !== null): ?>
+              <span class="<?= (int)$intel['bot_verified'] ? 'bot-ok' : 'bot-bad' ?>"><?= (int)$intel['bot_verified'] ? '✓' : '✗' ?></span>
+              <?php endif; ?>
+            <?php else: ?><span class="muted">—</span><?php endif; ?>
+          </td>
           <td><span class="risk-score <?= $soc_risk_class($sc) ?>"><?= $sc ?></span></td>
           <td>
             <div class="sig-pills">
@@ -1776,6 +1864,152 @@ if ($tab === 'soc' && $pdo) {
       <?php endif; ?>
     </div>
   </div>
+
+  <!-- ── Session Intelligence ────────────────────────────────────────────── -->
+  <?php
+    // Duration formatter
+    $dur = fn(int $s): string => $s >= 3600
+        ? floor($s/3600).'h '.floor(($s%3600)/60).'m'
+        : ($s >= 60 ? floor($s/60).'m '.($s%60).'s' : $s.'s');
+
+    // Signal pill helper for sessions
+    $sess_pills = function(array $r): string {
+        $sig = json_decode($r['signals'] ?? '{}', true) ?? [];
+        $out = '';
+        if (($sig['ua_switch'] ?? 0) > 0) $out .= '<span class="sig-pill sig-scan">ua-switch</span> ';
+        if (($sig['scanner']  ?? 0) > 0) $out .= '<span class="sig-pill sig-scan">scanner</span> ';
+        if (($sig['probe']    ?? 0) > 0) $out .= '<span class="sig-pill sig-probe">probe</span> ';
+        if (($sig['enum']     ?? 0) > 0) $out .= '<span class="sig-pill sig-enum">enum</span> ';
+        if (($sig['replay']   ?? 0) > 0) $out .= '<span class="sig-pill sig-php">replay</span> ';
+        if (($sig['pki']      ?? 0) > 0) $out .= '<span class="sig-pill sig-5xx">pki</span> ';
+        if (($sig['rate']     ?? 0) > 0) $out .= '<span class="sig-pill sig-rate">rate</span> ';
+        if (($sig['recon']    ?? 0) > 0) $out .= '<span class="sig-pill sig-enum">recon</span> ';
+        return trim($out);
+    };
+
+    $soc_sess_geo_ips = array_unique(array_column($soc_sessions, 'ip'));
+    $soc_sess_geo     = $pdo ? geoip_country($soc_sess_geo_ips) : [];
+  ?>
+  <div class="card" style="margin-bottom:1.25rem">
+    <div class="card-hd">
+      <h2>Session Intelligence</h2>
+      <span class="card-meta"><?= count($soc_sessions) ?> sessions · <?= $soc_period_label ?> · scored by cron/session_analysis.php</span>
+    </div>
+    <div class="tbl-wrap">
+      <?php if ($soc_sessions): ?>
+      <table>
+        <thead>
+          <tr>
+            <th>Start</th><th>IP</th><th>CC</th><th>Provider</th>
+            <th>Class</th><th>Score</th><th>Dur</th><th>Reqs</th>
+            <th>404s</th><th>5xx</th><th>Signals</th>
+          </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($soc_sessions as $s):
+            $sip = $s['ip'];
+            $scc = $soc_sess_geo[$sip] ?? $s['country'] ?? '';
+            $cls = $s['classification'];
+            $sc  = (int)$s['score'];
+            // Provider display
+            $pvdr = '';
+            if ($s['org']) {
+                $pvdr = '<span class="org-lbl" title="' . htmlspecialchars($s['org'] . ($s['asn'] ? ' · ' . $s['asn'] : '')) . '">'
+                      . htmlspecialchars(substr($s['org'], 0, 22)) . ($s['asn'] ? '</span> <span class="asn-lbl">' . htmlspecialchars($s['asn']) . '</span>' : '</span>');
+            }
+            if ($s['provider_type'] && $s['provider_type'] !== 'unknown') {
+                $pvdr .= ' <span class="pvdr-badge pvdr-' . htmlspecialchars($s['provider_type']) . '">' . htmlspecialchars($s['provider_type']) . '</span>';
+            }
+            if ($s['bot_claimed'] && $s['bot_verified'] !== null) {
+                $pvdr .= ' <span class="' . ((int)$s['bot_verified'] ? 'bot-ok' : 'bot-bad') . '">'
+                       . ((int)$s['bot_verified'] ? '✓' : '✗') . ' bot</span>';
+            }
+        ?>
+        <tr>
+          <td class="ts" title="<?= htmlspecialchars($s['session_start']) ?>"><?= rel_time($s['session_start']) ?></td>
+          <td><a href="?tab=nginx&ip=<?= urlencode($sip) ?>" class="ip-link"><?= htmlspecialchars($sip) ?></a></td>
+          <td><?= $scc ? geo_label($sip, $soc_sess_geo) : '<span class="muted">—</span>' ?></td>
+          <td style="white-space:normal;min-width:130px"><?= $pvdr ?: '<span class="muted">—</span>' ?></td>
+          <td><span class="cls-badge cls-<?= htmlspecialchars($cls) ?>"><?= htmlspecialchars($cls) ?></span></td>
+          <td><span class="risk-score <?= $soc_risk_class($sc) ?>"><?= $sc ?></span></td>
+          <td class="dur-lbl"><?= $dur((int)$s['duration_s']) ?></td>
+          <td class="ts"><?= number_format((int)$s['req_count']) ?></td>
+          <td><?= (int)$s['c404'] > 0 ? '<span class="badge badge--warn">'.(int)$s['c404'].'</span>' : '<span class="muted">0</span>' ?></td>
+          <td><?= (int)$s['c5xx'] > 0 ? '<span class="badge badge--err">'.(int)$s['c5xx'].'</span>'  : '<span class="muted">0</span>' ?></td>
+          <td><div class="sig-pills"><?= $sess_pills($s) ?></div></td>
+        </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+      <?php else: ?>
+      <div class="empty-state">No sessions in <?= $soc_period_label ?> — cron/session_analysis.php may not have run yet.</div>
+      <?php endif; ?>
+    </div>
+  </div>
+
+  <!-- ── Distributed Scans + Honeypot ─────────────────────────────────────── -->
+  <div class="side-row" style="margin-bottom:1.25rem">
+
+    <div class="card" style="margin-bottom:0">
+      <div class="card-hd">
+        <h2>Distributed Scans</h2>
+        <span class="card-meta">≥3 IPs · same 404 path · <?= $soc_period_label ?></span>
+      </div>
+      <div class="tbl-wrap">
+        <?php if ($soc_distrib): ?>
+        <table>
+          <thead><tr><th>Path</th><th>IPs</th><th>Hits</th><th>Window</th></tr></thead>
+          <tbody>
+          <?php foreach ($soc_distrib as $d): ?>
+          <tr>
+            <td class="uri" title="<?= htmlspecialchars($d['uri']) ?>"><?= htmlspecialchars(substr($d['uri'], 0, 50)) ?><?= strlen($d['uri']) > 50 ? '…' : '' ?></td>
+            <td><span class="badge badge--err"><?= (int)$d['c_ips'] ?></span></td>
+            <td class="ts"><?= number_format((int)$d['c_hits']) ?></td>
+            <td class="ts" title="<?= htmlspecialchars($d['first_seen']) ?> → <?= htmlspecialchars($d['last_seen']) ?>"><?= rel_time($d['first_seen']) ?></td>
+          </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+        <?php else: ?>
+        <div class="empty-state">No coordinated scans detected.</div>
+        <?php endif; ?>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:0">
+      <div class="card-hd">
+        <h2>Honeypot Hits</h2>
+        <span class="card-meta"><?= count($soc_honeypot) ?> hits · decoy paths · <?= $soc_period_label ?></span>
+      </div>
+      <div class="tbl-wrap">
+        <?php if ($soc_honeypot): ?>
+        <table>
+          <thead><tr><th>Time</th><th>IP</th><th>Path</th><th>Status</th><th>UA</th></tr></thead>
+          <tbody>
+          <?php foreach ($soc_honeypot as $h):
+              $hip = $h['ip'];
+              $hcc = $soc_geo[$hip] ?? $h['country'] ?? '';
+          ?>
+          <tr>
+            <td class="ts" title="<?= htmlspecialchars($h['created_at']) ?>"><?= rel_time($h['created_at']) ?></td>
+            <td>
+              <a href="?tab=soc&soc_period=<?= $soc_period_key ?>" class="ip-link"><?= htmlspecialchars($hip) ?></a>
+              <?php if ($hcc): ?> <?= flag($hcc) ?><?php endif; ?>
+            </td>
+            <td class="uri" title="<?= htmlspecialchars($h['uri']) ?>"><?= htmlspecialchars(substr($h['uri'], 0, 40)) ?><?= strlen($h['uri']) > 40 ? '…' : '' ?></td>
+            <td><?= status_badge((int)$h['status']) ?></td>
+            <td><?= ua_label($h['user_agent'] ?? '') ?></td>
+          </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+        <?php else: ?>
+        <div class="empty-state">No honeypot hits in <?= $soc_period_label ?>.</div>
+        <?php endif; ?>
+      </div>
+    </div>
+
+  </div><!-- .side-row -->
 
   <!-- ── Recent Security Events ───────────────────────────────────────────── -->
   <div class="card">

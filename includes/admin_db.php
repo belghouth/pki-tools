@@ -156,6 +156,58 @@ function _admin_schema(PDO $pdo): void {
         log_offset BIGINT UNSIGNED NOT NULL DEFAULT 0,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    // IP threat intelligence — ASN, provider type, bot verification, rDNS
+    $pdo->exec("CREATE TABLE IF NOT EXISTS ip_intel (
+        ip            VARCHAR(45)  PRIMARY KEY,
+        asn           VARCHAR(20)  DEFAULT NULL,
+        org           VARCHAR(255) DEFAULT NULL,
+        isp           VARCHAR(255) DEFAULT NULL,
+        provider_type ENUM('residential','mobile','hosting','proxy','unknown') NOT NULL DEFAULT 'unknown',
+        is_hosting    TINYINT(1)   NOT NULL DEFAULT 0,
+        is_proxy      TINYINT(1)   NOT NULL DEFAULT 0,
+        is_mobile     TINYINT(1)   NOT NULL DEFAULT 0,
+        rdns          VARCHAR(255) DEFAULT NULL,
+        bot_claimed   VARCHAR(60)  DEFAULT NULL,
+        bot_verified  TINYINT(1)   DEFAULT NULL,
+        fetched_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_fetched  (fetched_at),
+        INDEX idx_provider (provider_type),
+        INDEX idx_bot      (bot_claimed, bot_verified)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    // Attributed request sessions per IP
+    $pdo->exec("CREATE TABLE IF NOT EXISTS sessions (
+        id             BIGINT UNSIGNED   AUTO_INCREMENT PRIMARY KEY,
+        ip             VARCHAR(45)       NOT NULL,
+        session_start  DATETIME(3)       NOT NULL,
+        session_end    DATETIME(3)       NOT NULL,
+        duration_s     INT UNSIGNED      NOT NULL DEFAULT 0,
+        req_count      INT UNSIGNED      NOT NULL DEFAULT 0,
+        uniq_paths     INT UNSIGNED      NOT NULL DEFAULT 0,
+        ua_count       SMALLINT UNSIGNED NOT NULL DEFAULT 1,
+        c404           INT UNSIGNED      NOT NULL DEFAULT 0,
+        c5xx           INT UNSIGNED      NOT NULL DEFAULT 0,
+        exploit_hits   INT UNSIGNED      NOT NULL DEFAULT 0,
+        has_scanner    TINYINT(1)        NOT NULL DEFAULT 0,
+        replay_pairs   INT UNSIGNED      NOT NULL DEFAULT 0,
+        pki_hits       INT UNSIGNED      NOT NULL DEFAULT 0,
+        score          SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+        classification ENUM('human','researcher','crawler','scanner','attacker','unknown') NOT NULL DEFAULT 'unknown',
+        signals        JSON,
+        analyzed_at    DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_session (ip, session_start),
+        INDEX idx_ip    (ip),
+        INDEX idx_start (session_start),
+        INDEX idx_score (score),
+        INDEX idx_class (classification)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS session_cursor (
+        id            INT UNSIGNED PRIMARY KEY DEFAULT 1,
+        last_analyzed DATETIME(3)  NOT NULL DEFAULT '2000-01-01 00:00:00.000',
+        updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
 // Validate admin cookie; returns email on success or null.
@@ -438,6 +490,94 @@ function blocked_ip_list(): array {
              GROUP BY b.ip, b.reason, b.blocked_by, b.blocked_at, g.country
              ORDER BY b.blocked_at DESC"
         )?->fetchAll() ?? [];
+    } catch (Throwable) { return []; }
+}
+
+// ── IP threat intelligence ────────────────────────────────────────────────────
+
+// Fetch ASN / org / provider / bot fields for $ips via ip-api.com, cache in ip_intel.
+// Also back-fills geoip_cache for country if not already present.
+function ip_intel_enrich(array $ips): void {
+    if (!$ips) return;
+    $pdo = admin_pdo();
+    if (!$pdo) return;
+    $ips = array_values(array_unique(array_filter($ips, fn($ip) => !_geoip_is_private($ip))));
+    if (!$ips) return;
+
+    // Skip IPs enriched in the last 7 days
+    $ph  = implode(',', array_fill(0, count($ips), '?'));
+    $st  = $pdo->prepare("SELECT ip FROM ip_intel WHERE ip IN ($ph) AND fetched_at > DATE_SUB(NOW(), INTERVAL 7 DAY)");
+    $st->execute($ips);
+    $cached = $st->fetchAll(PDO::FETCH_COLUMN);
+    $miss   = array_values(array_diff($ips, $cached));
+    if (!$miss) return;
+
+    foreach (array_chunk($miss, 100) as $chunk) {
+        $ch = curl_init('http://ip-api.com/batch?fields=query,countryCode,as,org,isp,hosting,proxy,mobile');
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 8,
+            CURLOPT_POSTFIELDS     => json_encode(array_map(fn($ip) => ['query' => $ip], $chunk)),
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+        ]);
+        $body = curl_exec($ch);
+        curl_close($ch);
+        if (!$body) continue;
+        $data = json_decode($body, true);
+        if (!is_array($data)) continue;
+
+        foreach ($data as $item) {
+            $ip = $item['query'] ?? '';
+            if (!filter_var($ip, FILTER_VALIDATE_IP)) continue;
+
+            // Country → geoip_cache
+            $cc = strtoupper(trim($item['countryCode'] ?? ''));
+            if (strlen($cc) === 2 && ctype_alpha($cc) && $cc !== 'XX') geoip_cache_store($ip, $cc);
+
+            // ASN: "AS15169 Google LLC" → split at first space
+            $as_raw = trim($item['as'] ?? '');
+            $asn    = $org = '';
+            if (preg_match('/^(AS\d+)\s+(.+)$/i', $as_raw, $m)) { $asn = $m[1]; $org = substr($m[2], 0, 255); }
+
+            $is_hosting  = !empty($item['hosting']) ? 1 : 0;
+            $is_proxy    = !empty($item['proxy'])   ? 1 : 0;
+            $is_mobile   = !empty($item['mobile'])  ? 1 : 0;
+            $ptype       = match(true) {
+                (bool)$is_proxy   => 'proxy',
+                (bool)$is_hosting => 'hosting',
+                (bool)$is_mobile  => 'mobile',
+                default           => 'unknown',
+            };
+            $isp = substr(trim($item['isp'] ?? ''), 0, 255);
+            try {
+                $pdo->prepare(
+                    "INSERT INTO ip_intel (ip,asn,org,isp,provider_type,is_hosting,is_proxy,is_mobile)
+                     VALUES (?,?,?,?,?,?,?,?)
+                     ON DUPLICATE KEY UPDATE asn=VALUES(asn),org=VALUES(org),isp=VALUES(isp),
+                       provider_type=VALUES(provider_type),is_hosting=VALUES(is_hosting),
+                       is_proxy=VALUES(is_proxy),is_mobile=VALUES(is_mobile),fetched_at=NOW()"
+                )->execute([$ip, $asn ?: null, $org ?: null, $isp ?: null, $ptype, $is_hosting, $is_proxy, $is_mobile]);
+            } catch (Throwable) {}
+        }
+    }
+}
+
+// Read ip_intel rows for the given IPs (no API call — reads cache only).
+function ip_intel_get(array $ips): array {
+    if (!$ips) return [];
+    $pdo = admin_pdo();
+    if (!$pdo) return [];
+    $ph = implode(',', array_fill(0, count($ips), '?'));
+    try {
+        $st = $pdo->prepare(
+            "SELECT ip,asn,org,isp,provider_type,is_hosting,is_proxy,is_mobile,
+                    bot_claimed,bot_verified,rdns FROM ip_intel WHERE ip IN ($ph)"
+        );
+        $st->execute($ips);
+        $out = [];
+        foreach ($st->fetchAll() as $r) $out[$r['ip']] = $r;
+        return $out;
     } catch (Throwable) { return []; }
 }
 
