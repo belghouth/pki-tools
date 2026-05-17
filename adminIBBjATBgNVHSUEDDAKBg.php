@@ -748,15 +748,33 @@ if ($tab === 'soc' && $pdo) {
             LIMIT 40
         ")->fetchAll();
 
-        // Determine overall threat level
+        // KPI badge counts — from live nginx scoring (displayed in the banner KPI cards)
         $soc_c_crit   = count(array_filter($soc_threat_ips, fn($r) => $r['score'] >= 80));
         $soc_c_high   = count(array_filter($soc_threat_ips, fn($r) => $r['score'] >= 50 && $r['score'] < 80));
         $soc_c_medium = count(array_filter($soc_threat_ips, fn($r) => $r['score'] >= 25 && $r['score'] < 50));
+
+        // Overall banner level — mirrors alert cron deriveLevel() so both agree:
+        //   sessions table is authoritative (same source the alert cron reads)
+        $lv_crit = $soc_c_crit > 0;
+        $lv_high = $soc_c_high > 0;
+        $lv_med  = $soc_c_medium > 0;
+        foreach ($soc_sessions as $_s) {
+            $sc = (int)$_s['score'];
+            if      ($sc >= 80) $lv_crit = true;
+            elseif  ($sc >= 50) $lv_high = true;
+            elseif  ($sc >= 25) $lv_med  = true;
+        }
+        // Honeypot hits or watchlist escalations mirror deriveLevel()'s escalation rule
+        $lv_esc = !empty($soc_honeypot) || (bool)$pdo->query(
+            "SELECT COUNT(*) FROM ip_watchlist WHERE status='candidate' AND escalated_at >= $soc_win"
+        )->fetchColumn();
+        if ($lv_esc && $lv_high) $lv_crit = true;   // honeypot + HIGH  → CRITICAL
+        if ($lv_esc && !$lv_crit) $lv_high = true;  // honeypot alone   → at least HIGH
         $soc_threat_level = match(true) {
-            $soc_c_crit > 0   => 'critical',
-            $soc_c_high > 0   => 'high',
-            $soc_c_medium > 0 => 'medium',
-            default           => 'low',
+            $lv_crit => 'critical',
+            $lv_high => 'high',
+            $lv_med  => 'medium',
+            default  => 'low',
         };
     } catch (Throwable) {}
 }
