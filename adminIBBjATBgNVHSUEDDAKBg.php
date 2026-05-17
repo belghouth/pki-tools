@@ -841,9 +841,9 @@ if ($tab === 'soc' && $pdo) {
     .ip-act-w           { color: #8c5a20; }
     .ip-act-w:hover     { color: #f97316; }
     .ip-act-w.on        { color: #f97316; }
-    .ip-act-b           { color: #7a8fa8; }
+    .ip-act-b           { color: #7a8fa8; font-size: 1.45rem; }
     .ip-act-b:hover     { color: var(--err); }
-    .ip-act-blocked     { color: var(--err); cursor: default; }
+    .ip-act-blocked     { color: var(--err); cursor: default; font-size: 1.45rem; }
     .ip-act-disabled    { color: #7a8fa8; cursor: not-allowed; opacity: .3; }
     /* Watch-tab status column text labels (boxed) */
     .badge--watch     { background: rgba(249,115,22,.08); color: #f97316; border: 1px solid rgba(249,115,22,.3); border-radius: 3px; padding: .1rem .3rem; font-size: .65rem; font-family: var(--mono); }
