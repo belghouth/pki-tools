@@ -442,21 +442,6 @@ if ($secondsRemaining !== null) {
 <div class="glow-orb2"></div>
 
 
-    <!--
-    <header class="header">
-        <div class="header-left">
-            <div class="logo-line">Chrome Root Program</div>
-            <h1>ACME Automation<br><span>Test Endpoint</span></h1>
-            <p class="subtitle">RFC 8555 &bull; Automated Certificate Renewal Verification</p>
-        </div>
-        <div class="live-clock">
-            <div class="clock-label">Server Time</div>
-            <div id="clock">--:--:--</div>
-            <div class="clock-date"><?= date('D, d M Y') ?></div>
-        </div>
-    </header>
-    -->	
-   
         <?php $navLabel = 'ACME Automation Test Endpoint'; require_once __DIR__ . '/includes/site_nav.php'; ?>
     
     <div class="wrapper">
@@ -555,15 +540,6 @@ if ($secondsRemaining !== null) {
             <div style="margin-top:12px;"><span class="badge">&#10003; Chrome Root Program</span></div>
         </div>
 
-        <!-- Protocol -->
-	<!--
-	<div class="card">
-            <div class="card-label">Connection</div>
-            <div class="card-value big <?= $protocol === 'HTTPS' ? 'accent' : 'danger' ?>"><?= $protocol ?></div>
-            <div class="card-sub"><?= htmlspecialchars($tlsVersion) ?></div>
-            <div style="margin-top:12px;"><span class="tag">RFC 8555 ACME</span></div>
-        </div>
-	-->
     </div>
 
     <!-- Certificate Details -->
