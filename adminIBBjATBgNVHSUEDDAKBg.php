@@ -148,9 +148,16 @@ if ($tab === 'users' && $_SERVER['REQUEST_METHOD'] === 'POST' && _admin_csrf_ok(
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && _admin_csrf_ok()
         && ($_POST['action'] ?? '') === 'mark_msg_read' && $pdo) {
     $mid = (int)($_POST['msg_id'] ?? 0);
+    $wasUnread = false;
     if ($mid > 0) {
-        $pdo->prepare("UPDATE contact_messages SET read_at=NOW() WHERE id=? AND read_at IS NULL")
-            ->execute([$mid]);
+        $st = $pdo->prepare("UPDATE contact_messages SET read_at=NOW() WHERE id=? AND read_at IS NULL");
+        $st->execute([$mid]);
+        $wasUnread = $st->rowCount() > 0;
+    }
+    if (!empty($_POST['json'])) {
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => true, 'was_unread' => $wasUnread]);
+        exit;
     }
     header('Location: ?tab=msgs&ok=1');
     exit;
@@ -871,6 +878,16 @@ if ($tab === 'soc' && $pdo) {
     .badge--candidate { background: rgba(239,68,68,.1); color: #f87171; border: 1px solid rgba(239,68,68,.3); border-radius: 3px; padding: .1rem .3rem; font-size: .65rem; font-family: var(--mono); }
     #modal-watch { padding: 0; background: transparent; border: none; border-radius: 0; max-width: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; }
     #modal-watch::backdrop { background: rgba(0,0,0,.55); }
+    #modal-msg { padding: 0; background: transparent; border: none; border-radius: 0; max-width: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; width: min(600px, 94vw); }
+    #modal-msg::backdrop { background: rgba(0,0,0,.6); }
+    #modal-msg .modal-card { max-width: none; width: 100%; }
+    .msg-row { cursor: pointer; }
+    .msg-row:hover td { background: rgba(255,255,255,.02); }
+    .msg-row.msg-unread td { background: rgba(0,212,170,.04); }
+    .msg-row.msg-unread:hover td { background: rgba(0,212,170,.07); }
+    .msg-meta-grid { display: grid; grid-template-columns: 80px 1fr; gap: .35rem .75rem; font-size: .83rem; align-items: baseline; }
+    .msg-meta-grid .lbl { color: var(--muted); }
+    .msg-body { white-space: pre-wrap; font-size: .87rem; line-height: 1.65; max-height: 340px; overflow-y: auto; padding: .75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; }
     .ua-x       { cursor: pointer; user-select: text; }
     .ua-x.ua-expanded { font-family: var(--mono); font-size: .65rem; color: var(--text); background: rgba(0,212,170,.06); border: 1px solid rgba(0,212,170,.2); border-radius: 3px; padding: .15rem .4rem; white-space: normal; word-break: break-all; max-width: 480px; display: inline-block; }
     .ts-x       { cursor: pointer; }
@@ -1056,7 +1073,7 @@ if ($tab === 'soc' && $pdo) {
   <a href="?tab=blocked" class="<?= $tab === 'blocked' ? 'active' : '' ?>">Blocked IPs <?php if ($blocked_set): ?><span style="font-size:.6rem;opacity:.6">(<?= count($blocked_set) ?>)</span><?php endif; ?></a>
   <a href="?tab=myips" class="<?= $tab === 'myips' ? 'active' : '' ?>">My IPs <?php if ($my_ips_set): ?><span style="font-size:.6rem;opacity:.6">(<?= count($my_ips_set) ?>)</span><?php endif; ?></a>
   <a href="?tab=users" class="<?= $tab === 'users' ? 'active' : '' ?>">Users</a>
-  <a href="?tab=msgs" class="<?= $tab === 'msgs' ? 'active' : '' ?>"<?= $tab !== 'msgs' && $msgs_unread ? ' style="color:var(--accent)"' : '' ?>>Messages<?php if ($msgs_unread): ?> <span style="font-size:.6rem;opacity:.8">(<?= $msgs_unread ?>)</span><?php endif; ?></a>
+  <a href="?tab=msgs" class="<?= $tab === 'msgs' ? 'active' : '' ?>"<?= $tab !== 'msgs' && $msgs_unread ? ' style="color:var(--accent)"' : '' ?>>Messages <span id="msgs-nav-badge" style="font-size:.6rem;opacity:.8<?= !$msgs_unread ? ';display:none' : '' ?>">(<?= $msgs_unread ?>)</span></a>
 </nav>
 
 <div class="wrap">
@@ -2534,50 +2551,42 @@ if ($tab === 'soc' && $pdo) {
 
   <?php if ($tab === 'msgs'): ?>
   <div class="section-hd">
-    <h2 class="section-title">Contact Messages <span class="count-badge"><?= count($msgs_list) ?></span></h2>
+    <h2 class="section-title">Contact Messages <span id="msgs-count-badge" class="count-badge"<?= !$msgs_unread ? ' style="display:none"' : ''?>>(<?= $msgs_unread ?> unread)</span></h2>
   </div>
   <?php if ($msgs_list): ?>
   <div class="table-wrap">
     <table class="data-table">
       <thead><tr>
-        <th>From</th>
+        <th>Name</th>
+        <th>Email</th>
         <th>Topic</th>
-        <th>Message</th>
+        <th>Preview</th>
         <th>IP</th>
         <th>Received</th>
-        <th></th>
       </tr></thead>
       <tbody>
       <?php foreach ($msgs_list as $m): ?>
-        <?php $unread = ($m['read_at'] === null); ?>
-        <tr<?= $unread ? ' style="background:rgba(0,212,170,.04)"' : '' ?>>
-          <td>
-            <span style="font-weight:<?= $unread ? '600' : '400' ?>"><?= htmlspecialchars($m['name']) ?></span><br>
-            <a href="mailto:<?= htmlspecialchars($m['email']) ?>" class="ip-link" style="font-size:.8rem" aria-label="Email <?= htmlspecialchars($m['name']) ?>"><?= htmlspecialchars($m['email']) ?></a>
-          </td>
-          <td><span class="tag" style="font-size:.7rem"><?= htmlspecialchars(ucwords(str_replace('_', ' ', $m['topic']))) ?></span></td>
-          <td style="max-width:320px">
-            <details>
-              <summary style="cursor:pointer;color:var(--muted);font-size:.82rem;list-style:none">
-                <?= htmlspecialchars(mb_substr($m['message'], 0, 80)) ?><?= mb_strlen($m['message']) > 80 ? '…' : '' ?>
-              </summary>
-              <div style="margin-top:.5rem;white-space:pre-wrap;font-size:.82rem;color:var(--text)"><?= htmlspecialchars($m['message']) ?></div>
-            </details>
-          </td>
+        <?php
+        $unread  = ($m['read_at'] === null);
+        $topic   = ucwords(str_replace('_', ' ', $m['topic']));
+        $msgData = htmlspecialchars(json_encode([
+            'id'      => (int)$m['id'],
+            'name'    => $m['name'],
+            'email'   => $m['email'],
+            'topic'   => $topic,
+            'message' => $m['message'],
+            'ip'      => $m['ip'],
+            'ts'      => $m['created_at'],
+            'unread'  => $unread,
+        ]), ENT_QUOTES);
+        ?>
+        <tr class="msg-row<?= $unread ? ' msg-unread' : '' ?>" data-msg="<?= $msgData ?>" tabindex="0" onclick="openMsgModal(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMsgModal(this)}">
+          <td style="font-weight:<?= $unread ? '600' : '400' ?>"><?= htmlspecialchars($m['name']) ?></td>
+          <td style="font-size:.82rem;color:var(--muted)"><?= htmlspecialchars($m['email']) ?></td>
+          <td><span class="tag" style="font-size:.7rem"><?= htmlspecialchars($topic) ?></span></td>
+          <td style="color:var(--muted);font-size:.82rem;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?= htmlspecialchars(mb_substr($m['message'], 0, 90)) ?><?= mb_strlen($m['message']) > 90 ? '…' : '' ?></td>
           <td style="font-family:var(--mono);font-size:.78rem"><?= htmlspecialchars($m['ip']) ?></td>
-          <td><span class="ts-x" data-ts="<?= htmlspecialchars($m['created_at']) ?>" data-label="<?= htmlspecialchars(substr($m['created_at'], 0, 16)) ?>"><?= htmlspecialchars(substr($m['created_at'], 0, 16)) ?></span></td>
-          <td>
-            <?php if ($unread): ?>
-            <form method="POST" style="display:inline">
-              <input type="hidden" name="_csrf"   value="<?= _admin_csrf_token() ?>">
-              <input type="hidden" name="action"  value="mark_msg_read">
-              <input type="hidden" name="msg_id"  value="<?= (int)$m['id'] ?>">
-              <button type="submit" class="btn-act" style="font-size:.72rem;padding:.2rem .5rem">Mark read</button>
-            </form>
-            <?php else: ?>
-            <span style="font-size:.72rem;color:var(--muted)">Read</span>
-            <?php endif; ?>
-          </td>
+          <td style="white-space:nowrap"><span class="ts-x" data-ts="<?= htmlspecialchars($m['created_at']) ?>" data-label="<?= htmlspecialchars(substr($m['created_at'], 0, 16)) ?>"><?= htmlspecialchars(substr($m['created_at'], 0, 16)) ?></span></td>
         </tr>
       <?php endforeach; ?>
       </tbody>
@@ -2621,7 +2630,80 @@ if ($tab === 'soc' && $pdo) {
   </div>
 </dialog>
 
+<!-- Message detail modal — before <script> so getElementById finds it at parse time -->
+<dialog id="modal-msg" aria-labelledby="modal-msg-title">
+  <div class="modal-card">
+    <div class="modal-hd">
+      <h3 id="modal-msg-title">Contact Message</h3>
+      <button class="modal-close" onclick="document.getElementById('modal-msg').close()" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body" id="modal-msg-body"></div>
+  </div>
+</dialog>
+
 <script>
+var _msgsCsrf = <?= json_encode(_admin_csrf_token()) ?>;
+
+function _esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function _fmtTs(utcStr) {
+  if (!utcStr) return utcStr;
+  var d = new Date(utcStr.replace(' ', 'T') + 'Z');
+  return d.toLocaleString();
+}
+
+function updateMsgCount(delta) {
+  ['msgs-count-badge', 'msgs-nav-badge'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var n = (parseInt(el.textContent.replace(/\D/g, ''), 10) || 0) + delta;
+    if (n <= 0) {
+      el.style.display = 'none';
+    } else {
+      if (id === 'msgs-count-badge') el.textContent = '(' + n + ' unread)';
+      else                           el.textContent = '(' + n + ')';
+    }
+  });
+}
+
+function openMsgModal(row) {
+  var d = JSON.parse(row.dataset.msg);
+  var body = document.getElementById('modal-msg-body');
+
+  body.innerHTML =
+    '<div class="msg-meta-grid">' +
+    '<span class="lbl">From</span><strong>' + _esc(d.name) + '</strong>' +
+    '<span class="lbl">Email</span><a href="mailto:' + _esc(d.email) + '" style="color:var(--accent)">' + _esc(d.email) + '</a>' +
+    '<span class="lbl">Topic</span><span>' + _esc(d.topic) + '</span>' +
+    '<span class="lbl">IP</span><span style="font-family:var(--mono);font-size:.78rem">' + _esc(d.ip) + '</span>' +
+    '<span class="lbl">Received</span><span>' + _esc(_fmtTs(d.ts)) + '</span>' +
+    '</div>' +
+    '<hr style="border:none;border-top:1px solid var(--border);margin:.5rem 0">' +
+    '<div class="msg-body">' + _esc(d.message) + '</div>';
+
+  document.getElementById('modal-msg').showModal();
+
+  if (d.unread) {
+    var fd = new FormData();
+    fd.append('_csrf',   _msgsCsrf);
+    fd.append('action',  'mark_msg_read');
+    fd.append('msg_id',  d.id);
+    fd.append('json',    '1');
+    fetch(window.location.pathname, { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res.ok && res.was_unread) {
+          row.classList.remove('msg-unread');
+          row.dataset.msg = JSON.stringify(Object.assign({}, d, { unread: false }));
+          updateMsgCount(-1);
+        }
+      })
+      .catch(function () {});
+  }
+}
+
 // Convert UTC timestamps to local time on hover title
 document.querySelectorAll('.ts-x').forEach(function(el) {
   var utc = el.dataset.ts;
