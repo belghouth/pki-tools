@@ -12,6 +12,7 @@ $tab = match($_GET['tab'] ?? '') {
     'users'   => 'users',
     'blocked' => 'blocked',
     'nginx'   => 'nginx',
+    'soc'     => 'soc',
     default   => 'php',
 };
 
@@ -388,13 +389,177 @@ $ng_geo     = $pdo ? geoip_country($ng_geo_ips) : [];
 $users        = $tab === 'users'   ? user_list()        : [];
 $blocked_list = $tab === 'blocked' ? blocked_ip_list()  : [];
 $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fetchAll(PDO::FETCH_COLUMN)) : [];
+
+// ── SOC data ──────────────────────────────────────────────────────────────────
+$soc_threat_ips   = [];
+$soc_probe_paths  = [];
+$soc_events       = [];
+$soc_rate_ips     = [];
+$soc_threat_level = 'low';
+$soc_period_key   = '1h';
+$soc_c_crit = $soc_c_high = $soc_c_medium = 0;
+
+if ($tab === 'soc' && $pdo) {
+    try {
+        $soc_period_key = in_array($_GET['soc_period'] ?? '1h', ['1h','6h','24h'])
+            ? ($_GET['soc_period'] ?? '1h') : '1h';
+        $soc_win = match($soc_period_key) {
+            '6h'  => 'DATE_SUB(NOW(), INTERVAL 6 HOUR)',
+            '24h' => 'DATE_SUB(NOW(), INTERVAL 24 HOUR)',
+            default => 'DATE_SUB(NOW(), INTERVAL 1 HOUR)',
+        };
+
+        // PHP errors per IP in the window
+        $php_err_lookup = [];
+        foreach ($pdo->query(
+            "SELECT ip, COUNT(*) AS cnt FROM errors
+             WHERE created_at >= $soc_win AND ip != '' GROUP BY ip"
+        )->fetchAll() as $r) {
+            $php_err_lookup[$r['ip']] = (int)$r['cnt'];
+        }
+
+        // Rate anomaly: IPs with ≥15 reqs in the last 5 min
+        $rate_lookup = [];
+        foreach ($pdo->query(
+            "SELECT ip, COUNT(*) AS reqs FROM nginx_visits
+             WHERE created_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE) AND ip != ''
+             GROUP BY ip HAVING reqs >= 15"
+        )->fetchAll() as $r) {
+            $rate_lookup[$r['ip']] = (int)$r['reqs'];
+        }
+
+        // Per-IP aggregation of all signals
+        $soc_raw = $pdo->query("
+            SELECT n.ip,
+                   COALESCE(MAX(g.country), MAX(n.country), '') AS country,
+                   COUNT(*)                                           AS total_reqs,
+                   COUNT(DISTINCT n.uri)                             AS uniq_paths,
+                   SUM(n.status = 404)                               AS c404,
+                   COUNT(DISTINCT CASE WHEN n.status=404 THEN n.uri END) AS uniq_404,
+                   SUM(n.status BETWEEN 500 AND 599)                 AS c5xx,
+                   SUM(n.status BETWEEN 400 AND 499)                 AS c4xx,
+                   MAX(n.created_at)                                 AS last_seen,
+                   MAX(CASE WHEN n.user_agent REGEXP
+                     'nikto|nmap|sqlmap|masscan|zgrab|gobuster|nuclei|whatweb|wapiti|burp|acunetix|nessus|openvas|hydra|metasploit|feroxbuster|ffuf|wfuzz|dirsearch|python-requests|go-http-client|zgrab|shodan'
+                   THEN 1 ELSE 0 END)                                AS has_scanner,
+                   SUM(CASE WHEN
+                         n.uri REGEXP '[.](env|git|htaccess|htpasswd|bak|backup|sql|zip)$'
+                         OR n.uri REGEXP '(wp-admin|wp-login|xmlrpc|phpinfo|phpmyadmin|adminer)'
+                         OR n.uri REGEXP '(/shell[.]php|/cmd[.]php|/webshell|/c99[.]php|/r57[.]php)'
+                         OR n.uri REGEXP '(/etc/passwd|/proc/self|[.][.]/)'
+                         OR n.uri LIKE '%UNION%SELECT%'
+                         OR n.uri LIKE '%<script%'
+                         OR n.uri LIKE '%base64_decode%'
+                         OR LENGTH(n.uri) > 500
+                       THEN 1 ELSE 0 END)                            AS exploit_hits
+            FROM nginx_visits n
+            LEFT JOIN geoip_cache g ON g.ip = n.ip
+            WHERE n.created_at >= $soc_win AND n.ip != ''
+            GROUP BY n.ip
+            ORDER BY COUNT(*) DESC
+            LIMIT 200
+        ")->fetchAll();
+
+        // Score each IP and build threat list
+        foreach ($soc_raw as $r) {
+            $ip       = $r['ip'];
+            $php_errs = $php_err_lookup[$ip] ?? 0;
+            $rate     = $rate_lookup[$ip]    ?? 0;
+
+            $s_enum    = min((int)$r['uniq_404'] * 8, 40);
+            $s_scanner = (int)$r['has_scanner'] * 25;
+            $s_probe   = min((int)$r['exploit_hits'] * 15, 45);
+            $s_5xx     = min((int)$r['c5xx'] * 5, 20);
+            $s_php     = min($php_errs * 10, 30);
+            $s_rate    = $rate >= 50 ? 20 : ($rate >= 20 ? 10 : 0);
+            $score     = min($s_enum + $s_scanner + $s_probe + $s_5xx + $s_php + $s_rate, 100);
+
+            if ($score === 0 && (int)$r['total_reqs'] < 3) continue;
+
+            $soc_threat_ips[] = array_merge($r, [
+                'php_errs'   => $php_errs,
+                'rate_5m'    => $rate,
+                'score'      => $score,
+                's_enum'     => $s_enum,
+                's_scanner'  => $s_scanner,
+                's_probe'    => $s_probe,
+                's_5xx'      => $s_5xx,
+                's_php'      => $s_php,
+                's_rate'     => $s_rate,
+                'is_blocked' => isset($blocked_set[$ip]),
+            ]);
+        }
+        usort($soc_threat_ips, fn($a, $b) => $b['score'] <=> $a['score']);
+        $soc_threat_ips = array_slice($soc_threat_ips, 0, 50);
+
+        // Probe path breakdown (for the probe signal card)
+        $soc_probe_paths = $pdo->query("
+            SELECT uri, COUNT(*) AS hits, COUNT(DISTINCT ip) AS ips
+            FROM nginx_visits
+            WHERE created_at >= $soc_win
+              AND (
+                uri REGEXP '[.](env|git|htaccess|htpasswd|bak|backup|sql)$'
+                OR uri REGEXP '(wp-admin|wp-login|xmlrpc|phpinfo|phpmyadmin|adminer|shell[.]php|/etc/passwd)'
+                OR uri LIKE '%UNION%SELECT%'
+                OR uri LIKE '%<script%'
+              )
+            GROUP BY uri ORDER BY hits DESC LIMIT 15
+        ")->fetchAll();
+
+        // Rate anomaly IPs (for the rate signal card display)
+        $soc_rate_ips = $pdo->query("
+            SELECT nv.ip, COUNT(*) AS reqs,
+                   COALESCE(MAX(g.country), MAX(nv.country), '') AS country
+            FROM nginx_visits nv
+            LEFT JOIN geoip_cache g ON g.ip = nv.ip
+            WHERE nv.created_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE) AND nv.ip != ''
+            GROUP BY nv.ip HAVING reqs >= 15
+            ORDER BY reqs DESC LIMIT 10
+        ")->fetchAll();
+
+        // Recent security events feed
+        $soc_events = $pdo->query("
+            SELECT n.created_at, n.ip, COALESCE(g.country, n.country, '') AS country,
+                   n.method, n.uri, n.status, n.user_agent,
+                   CASE
+                     WHEN n.user_agent REGEXP 'nikto|nmap|sqlmap|masscan|zgrab|gobuster|nuclei|burp|acunetix|nessus|hydra|metasploit|feroxbuster|ffuf|wfuzz|dirsearch' THEN 'scanner'
+                     WHEN n.uri REGEXP '[.](env|git|htaccess|htpasswd|bak)$|wp-admin|xmlrpc|phpinfo|phpmyadmin|shell[.]php|/etc/passwd' THEN 'probe'
+                     WHEN n.status >= 500 THEN '5xx'
+                     WHEN n.status = 403 THEN '403'
+                     WHEN n.status = 404 THEN '404'
+                     ELSE 'anomaly'
+                   END AS ev_type
+            FROM nginx_visits n
+            LEFT JOIN geoip_cache g ON g.ip = n.ip
+            WHERE n.created_at >= $soc_win
+              AND (
+                n.status >= 400
+                OR n.user_agent REGEXP 'nikto|nmap|sqlmap|masscan|zgrab|gobuster|nuclei|burp|acunetix|nessus|hydra|metasploit|feroxbuster|ffuf|wfuzz|dirsearch'
+                OR n.uri REGEXP '[.](env|git|htaccess|htpasswd|bak)$|wp-admin|xmlrpc|phpinfo|phpmyadmin|shell[.]php'
+                OR LENGTH(n.uri) > 300
+              )
+            ORDER BY n.created_at DESC LIMIT 100
+        ")->fetchAll();
+
+        // Determine overall threat level
+        $soc_c_crit   = count(array_filter($soc_threat_ips, fn($r) => $r['score'] >= 80));
+        $soc_c_high   = count(array_filter($soc_threat_ips, fn($r) => $r['score'] >= 50 && $r['score'] < 80));
+        $soc_c_medium = count(array_filter($soc_threat_ips, fn($r) => $r['score'] >= 25 && $r['score'] < 50));
+        $soc_threat_level = match(true) {
+            $soc_c_crit > 0   => 'critical',
+            $soc_c_high > 0   => 'high',
+            $soc_c_medium > 0 => 'medium',
+            default           => 'low',
+        };
+    } catch (Throwable) {}
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><?= match($tab) { 'users' => 'Users', 'blocked' => 'Blocked IPs', 'nginx' => 'Server Activity', default => 'PHP Activity' } ?> — <?= SITE_DOMAIN ?></title>
+  <title><?= match($tab) { 'users' => 'Users', 'blocked' => 'Blocked IPs', 'nginx' => 'Server Activity', 'soc' => 'SOC', default => 'PHP Activity' } ?> — <?= SITE_DOMAIN ?></title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -556,6 +721,69 @@ $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fet
     .btn-block-sm:hover { color: var(--err); }
     .badge--blocked-sm { font-family: var(--mono); font-size: .65rem; color: rgba(239,68,68,.5); vertical-align: middle; margin-left: .15rem; cursor: default; }
 
+    /* ── SOC styles ─────────────────────────────────────────────────────────── */
+    .threat-banner { display:flex; align-items:center; gap:1.5rem; padding:1.25rem 1.5rem; border-radius:var(--radius); border:1px solid; margin-bottom:1.75rem; flex-wrap:wrap; }
+    .threat-banner.threat-low      { background:rgba(34,197,94,.05);   border-color:rgba(34,197,94,.2);  }
+    .threat-banner.threat-medium   { background:rgba(245,158,11,.05);  border-color:rgba(245,158,11,.2); }
+    .threat-banner.threat-high     { background:rgba(249,115,22,.06);  border-color:rgba(249,115,22,.3); }
+    .threat-banner.threat-critical { background:rgba(239,68,68,.08);   border-color:rgba(239,68,68,.35); }
+    .threat-icon  { font-size:2.2rem; line-height:1; flex-shrink:0; }
+    .threat-body  { flex:1; min-width:180px; }
+    .threat-level { font-family:var(--mono); font-size:1rem; font-weight:600; letter-spacing:.14em; text-transform:uppercase; }
+    .threat-level.low      { color:var(--ok); }
+    .threat-level.medium   { color:var(--warn); }
+    .threat-level.high     { color:#f97316; }
+    .threat-level.critical { color:var(--err); }
+    .threat-sub   { font-size:.78rem; color:var(--muted); margin-top:.2rem; }
+    .threat-kpis  { display:flex; gap:2.5rem; margin-left:auto; flex-wrap:wrap; }
+    .threat-kpi-val { font-family:var(--mono); font-size:1.4rem; font-weight:600; color:#fff; line-height:1.1; }
+    .threat-kpi-lbl { font-size:.65rem; color:var(--muted); margin-top:.2rem; }
+
+    .signal-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin-bottom:1.75rem; }
+    @media(max-width:900px) { .signal-grid { grid-template-columns:repeat(2,1fr); } }
+    @media(max-width:560px) { .signal-grid { grid-template-columns:1fr; } }
+
+    .signal-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); }
+    .signal-card.triggered { border-color:var(--sig-clr, var(--border)); }
+    .signal-hd   { padding:.7rem 1rem; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:.55rem; }
+    .signal-icon { font-size:.95rem; line-height:1; }
+    .signal-title { font-family:var(--mono); font-size:.66rem; letter-spacing:.1em; text-transform:uppercase; color:var(--accent); flex:1; }
+    .signal-count { font-family:var(--mono); font-size:.95rem; font-weight:600; }
+    .signal-count.zero { color:#2a3040; }
+    .signal-count.c-low  { color:var(--warn); }
+    .signal-count.c-high { color:#f97316; }
+    .signal-count.c-crit { color:var(--err); }
+    .signal-body { padding:.65rem 1rem; min-height:80px; }
+    .signal-item { display:flex; justify-content:space-between; align-items:center; padding:.18rem 0; border-bottom:1px solid rgba(42,48,64,.4); }
+    .signal-item:last-child { border-bottom:none; }
+    .signal-ip  { font-family:var(--mono); font-size:.7rem; color:var(--accent2); }
+    .signal-val { font-family:var(--mono); font-size:.65rem; color:var(--muted); }
+    .signal-empty { font-family:var(--mono); font-size:.7rem; color:#2a3040; padding:.25rem 0; }
+
+    .risk-score { font-family:var(--mono); font-size:.72rem; font-weight:600; padding:.2rem .5rem; border-radius:3px; display:inline-block; min-width:38px; text-align:center; }
+    .risk-0  { background:rgba(107,122,144,.06); color:#4a5a70; border:1px solid #2a3040; }
+    .risk-low  { background:rgba(34,197,94,.08);  color:var(--ok);  border:1px solid rgba(34,197,94,.2); }
+    .risk-med  { background:rgba(245,158,11,.1);  color:var(--warn); border:1px solid rgba(245,158,11,.25); }
+    .risk-high { background:rgba(249,115,22,.1);  color:#f97316;    border:1px solid rgba(249,115,22,.25); }
+    .risk-crit { background:rgba(239,68,68,.12);  color:var(--err); border:1px solid rgba(239,68,68,.3); }
+
+    .sig-pills { display:flex; gap:.2rem; flex-wrap:wrap; }
+    .sig-pill  { font-family:var(--mono); font-size:.58rem; padding:.1rem .3rem; border-radius:2px; border:1px solid; display:inline-block; white-space:nowrap; }
+    .sig-enum  { background:rgba(0,153,255,.07); border-color:rgba(0,153,255,.25); color:var(--redir); }
+    .sig-scan  { background:rgba(239,68,68,.08); border-color:rgba(239,68,68,.3);  color:var(--err); }
+    .sig-probe { background:rgba(249,115,22,.08); border-color:rgba(249,115,22,.3); color:#f97316; }
+    .sig-rate  { background:rgba(168,85,247,.08); border-color:rgba(168,85,247,.3); color:#c084fc; }
+    .sig-5xx   { background:rgba(239,68,68,.05);  border-color:rgba(239,68,68,.2);  color:#fca5a5; }
+    .sig-php   { background:rgba(245,158,11,.07); border-color:rgba(245,158,11,.25); color:var(--warn); }
+
+    .ev-pill { font-family:var(--mono); font-size:.6rem; padding:.1rem .35rem; border-radius:3px; border:1px solid; display:inline-block; font-weight:600; }
+    .ev-scanner { background:rgba(239,68,68,.1);   border-color:rgba(239,68,68,.35);  color:var(--err); }
+    .ev-probe   { background:rgba(249,115,22,.1);  border-color:rgba(249,115,22,.35); color:#f97316; }
+    .ev-5xx     { background:rgba(239,68,68,.06);  border-color:rgba(239,68,68,.2);   color:#fca5a5; }
+    .ev-403     { background:rgba(0,153,255,.07);  border-color:rgba(0,153,255,.2);   color:var(--redir); }
+    .ev-404     { background:rgba(245,158,11,.07); border-color:rgba(245,158,11,.25); color:var(--warn); }
+    .ev-anomaly { background:rgba(255,255,255,.03); border-color:var(--border); color:var(--muted); }
+
     /* modal — [hidden] must win over display:flex */
     [hidden] { display: none !important; }
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.72); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
@@ -582,6 +810,7 @@ $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fet
 <nav class="tab-nav">
   <a href="?" class="<?= $tab === 'php' ? 'active' : '' ?>">PHP Activity</a>
   <a href="?tab=nginx" class="<?= $tab === 'nginx' ? 'active' : '' ?>">Server Activity</a>
+  <a href="?tab=soc" class="<?= $tab === 'soc' ? 'active' : '' ?>" style="color:<?= $tab !== 'soc' ? 'var(--warn)' : '' ?>">SOC</a>
   <a href="?tab=blocked" class="<?= $tab === 'blocked' ? 'active' : '' ?>">Blocked IPs <?php if ($blocked_set): ?><span style="font-size:.6rem;opacity:.6">(<?= count($blocked_set) ?>)</span><?php endif; ?></a>
   <a href="?tab=users" class="<?= $tab === 'users' ? 'active' : '' ?>">Users</a>
 </nav>
@@ -1279,6 +1508,309 @@ $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fet
   </div>
 
   <?php endif; /* $tab === 'blocked' */ ?>
+
+  <?php if ($tab === 'soc'): ?>
+  <?php
+    // Helpers for SOC section
+    $soc_risk_class = fn(int $s): string => match(true) {
+        $s >= 80 => 'risk-crit', $s >= 50 => 'risk-high',
+        $s >= 25 => 'risk-med',  $s > 0   => 'risk-low',
+        default  => 'risk-0',
+    };
+    $soc_sig_ips  = fn(string $k) => array_filter($soc_threat_ips, fn($r) => $r[$k] > 0);
+    $soc_enum_top    = array_slice(iterator_to_array($soc_sig_ips('s_enum'),    false), 0, 5);
+    $soc_scanner_top = array_slice(iterator_to_array($soc_sig_ips('s_scanner'), false), 0, 5);
+    $soc_probe_top   = array_slice(iterator_to_array($soc_sig_ips('s_probe'),   false), 0, 5);
+    $soc_5xx_top     = array_slice(iterator_to_array($soc_sig_ips('s_5xx'),     false), 0, 5);
+    $soc_php_top     = array_slice(iterator_to_array($soc_sig_ips('s_php'),     false), 0, 5);
+    $soc_geo_ips     = array_unique(array_merge(
+        array_column($soc_threat_ips, 'ip'), array_column($soc_events, 'ip')
+    ));
+    $soc_geo = $pdo ? geoip_country($soc_geo_ips) : [];
+    $ev_label = ['scanner' => 'Scanner', 'probe' => 'Probe', '5xx' => '5xx',
+                 '403' => '403', '404' => '404', 'anomaly' => 'Anomaly'];
+    $soc_period_labels = ['1h' => 'Last hour', '6h' => 'Last 6 h', '24h' => 'Last 24 h'];
+    $soc_period_label  = $soc_period_labels[$soc_period_key];
+    $threat_icons = ['low' => '🟢', 'medium' => '🟡', 'high' => '🟠', 'critical' => '🔴'];
+  ?>
+
+  <!-- ── SOC Header ───────────────────────────────────────────────────────── -->
+  <div class="page-hd">
+    <h1>Security Operations</h1>
+    <div class="period-tabs">
+      <?php foreach ($soc_period_labels as $k => $lbl): ?>
+      <a href="?tab=soc&soc_period=<?= $k ?>" class="<?= $soc_period_key === $k ? 'active' : '' ?>"><?= $lbl ?></a>
+      <?php endforeach; ?>
+    </div>
+  </div>
+
+  <!-- ── Threat Level Banner ──────────────────────────────────────────────── -->
+  <div class="threat-banner threat-<?= $soc_threat_level ?>">
+    <div class="threat-icon"><?= $threat_icons[$soc_threat_level] ?></div>
+    <div class="threat-body">
+      <div class="threat-level <?= $soc_threat_level ?>"><?= strtoupper($soc_threat_level) ?></div>
+      <div class="threat-sub">
+        <?php $active = count($soc_threat_ips); ?>
+        <?= $active ?> IP<?= $active !== 1 ? 's' : '' ?> with signals · <?= $soc_c_crit ?> critical · <?= $soc_c_high ?> high · <?= $soc_c_medium ?> medium · <?= $soc_period_label ?>
+      </div>
+    </div>
+    <div class="threat-kpis">
+      <div>
+        <div class="threat-kpi-val <?= $soc_c_crit > 0 ? 'err' : '' ?>"><?= $soc_c_crit ?></div>
+        <div class="threat-kpi-lbl">Critical (≥80)</div>
+      </div>
+      <div>
+        <div class="threat-kpi-val <?= $soc_c_high > 0 ? 'warn' : '' ?>"><?= $soc_c_high ?></div>
+        <div class="threat-kpi-lbl">High (50–79)</div>
+      </div>
+      <div>
+        <div class="threat-kpi-val"><?= count($soc_events) ?></div>
+        <div class="threat-kpi-lbl">Security events</div>
+      </div>
+      <div>
+        <div class="threat-kpi-val"><?= count($blocked_set) ?></div>
+        <div class="threat-kpi-lbl">Blocked IPs</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Detection Signal Cards ───────────────────────────────────────────── -->
+  <div class="signal-grid">
+
+    <!-- Path Enumeration -->
+    <?php $cnt = count($soc_enum_top); $cc = $cnt >= 3 ? 'c-crit' : ($cnt >= 1 ? 'c-low' : 'zero'); ?>
+    <div class="signal-card <?= $cnt ? 'triggered' : '' ?>" style="--sig-clr:rgba(0,153,255,.35)">
+      <div class="signal-hd">
+        <span class="signal-icon">🔎</span>
+        <span class="signal-title">Path Enumeration</span>
+        <span class="signal-count <?= $cc ?>"><?= $cnt ?></span>
+      </div>
+      <div class="signal-body">
+        <?php if ($soc_enum_top): foreach ($soc_enum_top as $r): ?>
+        <div class="signal-item">
+          <span class="signal-ip"><?= htmlspecialchars($r['ip']) ?></span>
+          <span class="signal-val"><?= (int)$r['uniq_404'] ?> uniq 404s</span>
+        </div>
+        <?php endforeach; else: ?>
+        <div class="signal-empty">No enumeration detected</div>
+        <?php endif; ?>
+      </div>
+    </div>
+
+    <!-- Scanner Agents -->
+    <?php $cnt = count($soc_scanner_top); $cc = $cnt >= 2 ? 'c-crit' : ($cnt >= 1 ? 'c-high' : 'zero'); ?>
+    <div class="signal-card <?= $cnt ? 'triggered' : '' ?>" style="--sig-clr:rgba(239,68,68,.4)">
+      <div class="signal-hd">
+        <span class="signal-icon">🤖</span>
+        <span class="signal-title">Scanner Agents</span>
+        <span class="signal-count <?= $cc ?>"><?= $cnt ?></span>
+      </div>
+      <div class="signal-body">
+        <?php if ($soc_scanner_top): foreach ($soc_scanner_top as $r): ?>
+        <div class="signal-item">
+          <span class="signal-ip"><?= htmlspecialchars($r['ip']) ?></span>
+          <span class="signal-val"><?= number_format((int)$r['total_reqs']) ?> reqs</span>
+        </div>
+        <?php endforeach; else: ?>
+        <div class="signal-empty">No scanner user-agents</div>
+        <?php endif; ?>
+      </div>
+    </div>
+
+    <!-- Exploit Probes -->
+    <?php $cnt = count($soc_probe_top); $cc = $cnt >= 1 ? 'c-crit' : 'zero'; ?>
+    <div class="signal-card <?= $cnt ? 'triggered' : '' ?>" style="--sig-clr:rgba(249,115,22,.4)">
+      <div class="signal-hd">
+        <span class="signal-icon">💉</span>
+        <span class="signal-title">Exploit Probes</span>
+        <span class="signal-count <?= $cc ?>"><?= $cnt ?></span>
+      </div>
+      <div class="signal-body">
+        <?php if ($soc_probe_paths): foreach (array_slice($soc_probe_paths, 0, 5) as $r): ?>
+        <div class="signal-item">
+          <span class="signal-ip uri" style="max-width:180px" title="<?= htmlspecialchars($r['uri']) ?>"><?= htmlspecialchars(substr($r['uri'], 0, 32)) ?><?= strlen($r['uri']) > 32 ? '…' : '' ?></span>
+          <span class="signal-val"><?= (int)$r['hits'] ?>×, <?= (int)$r['ips'] ?> IP<?= (int)$r['ips'] !== 1 ? 's' : '' ?></span>
+        </div>
+        <?php endforeach; else: ?>
+        <div class="signal-empty">No exploit probes detected</div>
+        <?php endif; ?>
+      </div>
+    </div>
+
+    <!-- Rate Anomaly -->
+    <?php $cnt = count($soc_rate_ips); $cc = $cnt >= 2 ? 'c-crit' : ($cnt >= 1 ? 'c-high' : 'zero'); ?>
+    <div class="signal-card <?= $cnt ? 'triggered' : '' ?>" style="--sig-clr:rgba(168,85,247,.4)">
+      <div class="signal-hd">
+        <span class="signal-icon">⚡</span>
+        <span class="signal-title">Rate Anomaly <span style="font-size:.58rem;color:var(--muted);font-weight:normal;text-transform:none;letter-spacing:0">/5 min</span></span>
+        <span class="signal-count <?= $cc ?>"><?= $cnt ?></span>
+      </div>
+      <div class="signal-body">
+        <?php if ($soc_rate_ips): foreach ($soc_rate_ips as $r): ?>
+        <div class="signal-item">
+          <span class="signal-ip"><?= htmlspecialchars($r['ip']) ?></span>
+          <span class="signal-val"><?= (int)$r['reqs'] ?> req/5m</span>
+        </div>
+        <?php endforeach; else: ?>
+        <div class="signal-empty">No rate spikes in last 5 min</div>
+        <?php endif; ?>
+      </div>
+    </div>
+
+    <!-- Server Error Storms -->
+    <?php $cnt = count($soc_5xx_top); $cc = $cnt >= 2 ? 'c-crit' : ($cnt >= 1 ? 'c-low' : 'zero'); ?>
+    <div class="signal-card <?= $cnt ? 'triggered' : '' ?>" style="--sig-clr:rgba(239,68,68,.25)">
+      <div class="signal-hd">
+        <span class="signal-icon">💥</span>
+        <span class="signal-title">Server Errors</span>
+        <span class="signal-count <?= $cc ?>"><?= $cnt ?></span>
+      </div>
+      <div class="signal-body">
+        <?php if ($soc_5xx_top): foreach ($soc_5xx_top as $r): ?>
+        <div class="signal-item">
+          <span class="signal-ip"><?= htmlspecialchars($r['ip']) ?></span>
+          <span class="signal-val"><?= (int)$r['c5xx'] ?> × 5xx</span>
+        </div>
+        <?php endforeach; else: ?>
+        <div class="signal-empty">No 5xx clusters</div>
+        <?php endif; ?>
+      </div>
+    </div>
+
+    <!-- PHP Correlation -->
+    <?php $cnt = count($soc_php_top); $cc = $cnt >= 2 ? 'c-high' : ($cnt >= 1 ? 'c-low' : 'zero'); ?>
+    <div class="signal-card <?= $cnt ? 'triggered' : '' ?>" style="--sig-clr:rgba(245,158,11,.3)">
+      <div class="signal-hd">
+        <span class="signal-icon">🔗</span>
+        <span class="signal-title">PHP Correlation</span>
+        <span class="signal-count <?= $cc ?>"><?= $cnt ?></span>
+      </div>
+      <div class="signal-body">
+        <?php if ($soc_php_top): foreach ($soc_php_top as $r): ?>
+        <div class="signal-item">
+          <span class="signal-ip"><?= htmlspecialchars($r['ip']) ?></span>
+          <span class="signal-val"><?= (int)$r['php_errs'] ?> PHP err<?= (int)$r['php_errs'] !== 1 ? 's' : '' ?></span>
+        </div>
+        <?php endforeach; else: ?>
+        <div class="signal-empty">No nginx↔PHP correlation</div>
+        <?php endif; ?>
+      </div>
+    </div>
+
+  </div><!-- .signal-grid -->
+
+  <!-- ── Threat IP Table ──────────────────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:1.25rem">
+    <div class="card-hd">
+      <h2>Threat IPs</h2>
+      <span class="card-meta"><?= count($soc_threat_ips) ?> IPs · scored · <?= $soc_period_label ?></span>
+    </div>
+    <div class="tbl-wrap">
+      <?php if ($soc_threat_ips): ?>
+      <table>
+        <thead>
+          <tr>
+            <th>IP</th><th>CC</th><th>Score</th><th>Signals</th>
+            <th>Reqs</th><th>404s</th><th>5xx</th><th>PHP&nbsp;Err</th><th>Rate/5m</th><th>Last&nbsp;Seen</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($soc_threat_ips as $r):
+            $ip  = $r['ip'];
+            $cc  = $soc_geo[$ip] ?? $r['country'] ?? '';
+            $sc  = $r['score'];
+        ?>
+        <tr>
+          <td>
+            <a href="?tab=nginx&ip=<?= urlencode($ip) ?>" class="ip-link"><?= htmlspecialchars($ip) ?></a>
+            <?php if ($r['is_blocked']): ?>
+            <span class="badge--blocked-sm">blocked</span>
+            <?php endif; ?>
+          </td>
+          <td><?= $cc ? geo_label($ip, $soc_geo) : '<span class="muted">—</span>' ?></td>
+          <td><span class="risk-score <?= $soc_risk_class($sc) ?>"><?= $sc ?></span></td>
+          <td>
+            <div class="sig-pills">
+              <?php if ($r['s_enum'])    echo '<span class="sig-pill sig-enum">enum</span>'; ?>
+              <?php if ($r['s_scanner']) echo '<span class="sig-pill sig-scan">scanner</span>'; ?>
+              <?php if ($r['s_probe'])   echo '<span class="sig-pill sig-probe">probe</span>'; ?>
+              <?php if ($r['s_rate'])    echo '<span class="sig-pill sig-rate">rate</span>'; ?>
+              <?php if ($r['s_5xx'])     echo '<span class="sig-pill sig-5xx">5xx</span>'; ?>
+              <?php if ($r['s_php'])     echo '<span class="sig-pill sig-php">php-err</span>'; ?>
+            </div>
+          </td>
+          <td class="ts"><?= number_format((int)$r['total_reqs']) ?></td>
+          <td><?= (int)$r['c404'] > 0 ? '<span class="badge badge--warn">' . (int)$r['c404'] . '</span>' : '<span class="muted">0</span>' ?></td>
+          <td><?= (int)$r['c5xx'] > 0 ? '<span class="badge badge--err">'  . (int)$r['c5xx'] . '</span>' : '<span class="muted">0</span>' ?></td>
+          <td><?= (int)$r['php_errs'] > 0 ? '<span style="color:var(--warn)">' . (int)$r['php_errs'] . '</span>' : '<span class="muted">0</span>' ?></td>
+          <td><?= (int)$r['rate_5m'] > 0 ? '<span style="color:#c084fc">' . (int)$r['rate_5m'] . '</span>' : '<span class="muted">—</span>' ?></td>
+          <td class="ts" title="<?= htmlspecialchars($r['last_seen']) ?>"><?= rel_time($r['last_seen']) ?></td>
+          <td>
+            <?php if (!$r['is_blocked']): ?>
+            <form method="post" style="display:inline">
+              <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+              <input type="hidden" name="action" value="block_ip">
+              <input type="hidden" name="ip" value="<?= htmlspecialchars($ip) ?>">
+              <input type="hidden" name="reason" value="SOC: score <?= $sc ?>">
+              <button type="submit" class="btn-act danger" title="Block IP">Block</button>
+            </form>
+            <?php else: ?>
+            <form method="post" style="display:inline">
+              <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+              <input type="hidden" name="action" value="unblock_ip">
+              <input type="hidden" name="ip" value="<?= htmlspecialchars($ip) ?>">
+              <button type="submit" class="btn-act warn-act">Unblock</button>
+            </form>
+            <?php endif; ?>
+          </td>
+        </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+      <?php else: ?>
+      <div class="empty-state">No threat IPs detected in <?= $soc_period_label ?>. Server looks clean.</div>
+      <?php endif; ?>
+    </div>
+  </div>
+
+  <!-- ── Recent Security Events ───────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-hd">
+      <h2>Security Event Feed</h2>
+      <span class="card-meta"><?= count($soc_events) ?> events · <?= $soc_period_label ?> · most recent first</span>
+    </div>
+    <div class="tbl-wrap">
+      <?php if ($soc_events): ?>
+      <table>
+        <thead>
+          <tr><th>Time</th><th>IP</th><th>CC</th><th>Type</th><th>M</th><th>Path</th><th>Status</th><th>UA</th></tr>
+        </thead>
+        <tbody>
+        <?php foreach ($soc_events as $ev):
+            $eip = $ev['ip'];
+            $ecc = $soc_geo[$eip] ?? $ev['country'] ?? '';
+            $et  = $ev['ev_type'];
+        ?>
+        <tr>
+          <td class="ts" title="<?= htmlspecialchars($ev['created_at']) ?>"><?= rel_time($ev['created_at']) ?></td>
+          <td><a href="?tab=soc&soc_period=<?= $soc_period_key ?>" class="ip-link"><?= htmlspecialchars($eip) ?></a></td>
+          <td><?= $ecc ? '<span class="geo" title="' . htmlspecialchars($ecc) . '">' . flag($ecc) . ' <span class="geo-cc">' . htmlspecialchars($ecc) . '</span></span>' : '<span class="muted">—</span>' ?></td>
+          <td><span class="ev-pill ev-<?= htmlspecialchars($et) ?>"><?= htmlspecialchars($ev_label[$et] ?? $et) ?></span></td>
+          <td><?= method_badge($ev['method']) ?></td>
+          <td class="uri" title="<?= htmlspecialchars($ev['uri']) ?>"><?= htmlspecialchars(substr($ev['uri'], 0, 60)) ?><?= strlen($ev['uri']) > 60 ? '…' : '' ?></td>
+          <td><?= status_badge((int)$ev['status']) ?></td>
+          <td><?= ua_label($ev['user_agent'] ?? '') ?></td>
+        </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+      <?php else: ?>
+      <div class="empty-state">No security events in <?= $soc_period_label ?>.</div>
+      <?php endif; ?>
+    </div>
+  </div>
+
+  <?php endif; /* $tab === 'soc' */ ?>
 
 </div><!-- .wrap -->
 
