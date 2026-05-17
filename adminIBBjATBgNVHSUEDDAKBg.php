@@ -840,6 +840,8 @@ if ($tab === 'soc' && $pdo) {
     .btn-watch-sm      { background: none; border: none; cursor: pointer; color: #1e3a4a; font-size: .72rem; padding: 0 .2rem; line-height: 1; transition: color var(--tr); vertical-align: middle; }
     .btn-watch-sm:hover { color: #22d3ee; }
     .btn-watch-sm--on   { color: #22d3ee; }
+    #modal-watch { padding: 0; background: transparent; border: none; border-radius: 0; max-width: none; }
+    #modal-watch::backdrop { background: rgba(0,0,0,.55); }
     .ua-x       { cursor: pointer; user-select: text; }
     .ua-x.ua-expanded { font-family: var(--mono); font-size: .65rem; color: var(--text); background: rgba(0,212,170,.06); border: 1px solid rgba(0,212,170,.2); border-radius: 3px; padding: .15rem .4rem; white-space: normal; word-break: break-all; max-width: 480px; display: inline-block; }
     .ts-x       { cursor: pointer; }
@@ -2337,37 +2339,6 @@ if ($tab === 'soc' && $pdo) {
     </div>
   </div>
 
-  <!-- Watch IP modal -->
-  <div id="modal-watch" class="modal-overlay" hidden onclick="if(event.target===this)this.hidden=true">
-    <div class="modal-card">
-      <div class="modal-hd">
-        <h3>Watch IP</h3>
-        <button class="modal-close" onclick="document.getElementById('modal-watch').hidden=true">×</button>
-      </div>
-      <form method="POST">
-        <input type="hidden" name="_csrf"        value="<?= _admin_csrf_token() ?>">
-        <input type="hidden" name="action"       value="watch_ip">
-        <input type="hidden" name="source"       id="watch-source">
-        <input type="hidden" name="score"        id="watch-score">
-        <input type="hidden" name="redirect_tab" id="watch-redirect">
-        <div class="modal-body">
-          <div class="form-row">
-            <label>IP address</label>
-            <input type="text" name="ip" id="watch-ip" required autocomplete="off" placeholder="203.0.113.42">
-          </div>
-          <div class="form-row">
-            <label>Reason <span style="color:var(--muted)">(optional)</span></label>
-            <textarea name="reason" id="watch-reason" rows="3" placeholder="Why are you watching this IP?" style="resize:vertical"></textarea>
-          </div>
-        </div>
-        <div class="form-actions">
-          <button type="button" class="btn-act" onclick="document.getElementById('modal-watch').hidden=true">Cancel</button>
-          <button type="submit" class="btn-act primary">Watch</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
   <!-- Edit label modal -->
   <div id="modal-edit-myip" class="modal-overlay" hidden>
     <div class="modal-card">
@@ -2565,16 +2536,21 @@ function openEditMyIp(ip, label) {
 }
 // Watch IP modal
 function openWatchModal(ip, reason, source, score, redirectTab) {
+  var dlg = document.getElementById('modal-watch');
   document.getElementById('watch-ip').value       = ip || '';
   document.getElementById('watch-ip').readOnly    = ip !== '';
   document.getElementById('watch-reason').value   = reason || '';
   document.getElementById('watch-source').value   = source || 'manual';
   document.getElementById('watch-score').value    = score  || 0;
   document.getElementById('watch-redirect').value = redirectTab || 'watch';
-  document.getElementById('modal-watch').hidden   = false;
+  dlg.showModal();
   if (!ip) { document.getElementById('watch-ip').focus(); }
   else      { document.getElementById('watch-reason').focus(); }
 }
+// Close watch dialog on backdrop click
+document.getElementById('modal-watch').addEventListener('click', function(e) {
+  if (e.target === this) this.close();
+});
 // UA expand/collapse — click any .ua-x span to toggle full raw UA inline
 document.addEventListener('click', function(e) {
   var el = e.target.closest('.ua-x');
@@ -2588,6 +2564,37 @@ document.addEventListener('click', function(e) {
   }
 });
 </script>
+
+<!-- Watch IP modal — outside all tab blocks so it's always in the DOM -->
+<dialog id="modal-watch" aria-labelledby="modal-watch-title">
+  <div class="modal-card" style="margin:0">
+    <div class="modal-hd">
+      <h3 id="modal-watch-title">Watch IP</h3>
+      <button class="modal-close" onclick="document.getElementById('modal-watch').close()">×</button>
+    </div>
+    <form method="POST">
+      <input type="hidden" name="_csrf"        value="<?= _admin_csrf_token() ?>">
+      <input type="hidden" name="action"       value="watch_ip">
+      <input type="hidden" name="source"       id="watch-source">
+      <input type="hidden" name="score"        id="watch-score">
+      <input type="hidden" name="redirect_tab" id="watch-redirect">
+      <div class="modal-body">
+        <div class="form-row">
+          <label for="watch-ip">IP address</label>
+          <input type="text" name="ip" id="watch-ip" required autocomplete="off" placeholder="203.0.113.42">
+        </div>
+        <div class="form-row">
+          <label for="watch-reason">Reason <span style="color:var(--muted)">(optional)</span></label>
+          <textarea name="reason" id="watch-reason" rows="3" placeholder="Why are you watching this IP?" style="resize:vertical"></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-act" onclick="document.getElementById('modal-watch').close()">Cancel</button>
+        <button type="submit" class="btn-act primary">Watch</button>
+      </div>
+    </form>
+  </div>
+</dialog>
 
 </body>
 </html>
