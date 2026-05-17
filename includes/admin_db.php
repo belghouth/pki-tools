@@ -125,6 +125,37 @@ function _admin_schema(PDO $pdo): void {
         INDEX idx_ip         (ip),
         INDEX idx_blocked_at (blocked_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS nginx_visits (
+        id           BIGINT UNSIGNED   AUTO_INCREMENT PRIMARY KEY,
+        created_at   DATETIME(3)       NOT NULL,
+        ip           VARCHAR(45)       NOT NULL DEFAULT '',
+        method       VARCHAR(10)       NOT NULL DEFAULT '',
+        host         VARCHAR(255)      NOT NULL DEFAULT '',
+        vhost        VARCHAR(255)      NOT NULL DEFAULT '',
+        uri          VARCHAR(2048)     NOT NULL DEFAULT '',
+        query_string TEXT,
+        status       SMALLINT UNSIGNED NOT NULL DEFAULT 200,
+        bytes_sent   INT UNSIGNED      DEFAULT NULL,
+        user_agent   TEXT,
+        referer      VARCHAR(2048),
+        is_https     TINYINT(1)        NOT NULL DEFAULT 0,
+        proto        VARCHAR(20),
+        request_time DECIMAL(10,3)     DEFAULT NULL,
+        country      CHAR(3),
+        INDEX idx_created_at (created_at),
+        INDEX idx_ip         (ip),
+        INDEX idx_status     (status),
+        INDEX idx_vhost      (vhost(64)),
+        INDEX idx_uri        (uri(64))
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS nginx_import_cursor (
+        id         INT UNSIGNED PRIMARY KEY DEFAULT 1,
+        log_inode  BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        log_offset BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
 // Validate admin cookie; returns email on success or null.

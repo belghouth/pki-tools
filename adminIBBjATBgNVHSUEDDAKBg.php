@@ -11,7 +11,8 @@ $pdo = admin_pdo();
 $tab = match($_GET['tab'] ?? '') {
     'users'   => 'users',
     'blocked' => 'blocked',
-    default   => 'activity',
+    'nginx'   => 'nginx',
+    default   => 'php',
 };
 
 // ── Block / Unblock — global POST, any tab ────────────────────────────────────
@@ -259,6 +260,7 @@ $period  = in_array($_GET['period'] ?? '24h', ['1h', '24h', '7d', '30d']) ? $_GE
 $fip     = preg_replace('/[^\d\.:a-fA-F]/', '', $_GET['ip']     ?? '');
 $fstatus = $_GET['status'] ?? '';
 $fmethod = strtoupper(preg_replace('/[^A-Za-z]/', '', $_GET['method'] ?? ''));
+$fvhost  = in_array($_GET['vhost'] ?? '', ['', 'thameur.org', 'pki.thameur.org']) ? ($_GET['vhost'] ?? '') : '';
 $page    = max(1, (int)($_GET['page'] ?? 1));
 $_pp_opts = [50, 100, 200];
 $pp = in_array((int)($_GET['pp'] ?? 0), $_pp_opts) ? (int)$_GET['pp']
@@ -289,6 +291,19 @@ if ($fstatus !== '') {
 }
 $wsql = implode(' AND ', $w);
 
+// nginx WHERE clause (same base filters + optional vhost)
+$nw = ["created_at >= $pstart"]; $nbp = [];
+if ($fip)     { $nw[] = 'ip = ?';     $nbp[] = $fip; }
+if ($fmethod) { $nw[] = 'method = ?'; $nbp[] = $fmethod; }
+if ($fvhost)  { $nw[] = 'vhost = ?';  $nbp[] = $fvhost; }
+if ($fstatus !== '') {
+    if (preg_match('/^(\d)xx$/', $fstatus, $m)) {
+        $lo = (int)$m[1] * 100; $hi = $lo + 99;
+        $nw[] = 'status BETWEEN ? AND ?'; $nbp[] = $lo; $nbp[] = $hi;
+    } else { $nw[] = 'status = ?'; $nbp[] = (int)$fstatus; }
+}
+$nwsql = implode(' AND ', $nw);
+
 // ── Data ──────────────────────────────────────────────────────────────────────
 $stats      = ['total' => 0, 'uniq' => 0, 'errs' => 0, 'epct' => 0, 'top_tool' => '—', 'top_cnt' => 0];
 $rows       = [];
@@ -297,7 +312,7 @@ $tool_usage = [];
 $top_ips    = [];
 $err_rows   = [];
 
-if ($tab === 'activity' && $pdo) {
+if ($tab === 'php' && $pdo) {
     // Stats (always full period, ignore column filters)
     $r = $pdo->query("SELECT COUNT(*) AS t, COUNT(DISTINCT ip) AS u FROM visits WHERE created_at >= $pstart")->fetch();
     $stats['total'] = (int)$r['t']; $stats['uniq'] = (int)$r['u'];
@@ -328,9 +343,47 @@ if ($tab === 'activity' && $pdo) {
 $total_pages = max(1, (int)ceil($total_rows / $pp));
 $tool_max    = $tool_usage ? (int)$tool_usage[0]['c'] : 1;
 
-// Geo lookup — cache-first, ip-api.com batch for misses
+// Geo lookup for PHP activity
 $geo_ips = array_unique(array_merge(array_column($rows, 'ip'), array_column($top_ips, 'ip')));
 $geo     = $pdo ? geoip_country($geo_ips) : [];
+
+// ── nginx / Server Activity data ──────────────────────────────────────────────
+$ng_stats      = ['total' => 0, 'uniq' => 0, 'errs' => 0, 'epct' => 0, 'top_uri' => '—', 'top_cnt' => 0];
+$ng_rows       = [];
+$ng_total_rows = 0;
+$ng_top_uris   = [];
+$ng_top_ips    = [];
+
+if ($tab === 'nginx' && $pdo) {
+    try {
+        $r = $pdo->query("SELECT COUNT(*) AS t, COUNT(DISTINCT ip) AS u FROM nginx_visits WHERE created_at >= $pstart")->fetch();
+        $ng_stats['total'] = (int)$r['t']; $ng_stats['uniq'] = (int)$r['u'];
+
+        $r = $pdo->query("SELECT COUNT(*) AS c FROM nginx_visits WHERE created_at >= $pstart AND status >= 400")->fetch();
+        $ng_stats['errs'] = (int)$r['c'];
+        $ng_stats['epct'] = $ng_stats['total'] > 0 ? round($ng_stats['errs'] / $ng_stats['total'] * 100, 1) : 0;
+
+        $r = $pdo->query("SELECT uri, COUNT(*) AS c FROM nginx_visits WHERE created_at >= $pstart AND uri != '' GROUP BY uri ORDER BY c DESC LIMIT 1")->fetch();
+        if ($r) { $ng_stats['top_uri'] = $r['uri']; $ng_stats['top_cnt'] = (int)$r['c']; }
+
+        $st = $pdo->prepare("SELECT COUNT(*) FROM nginx_visits WHERE $nwsql"); $st->execute($nbp);
+        $ng_total_rows = (int)$st->fetchColumn();
+
+        $st = $pdo->prepare("SELECT created_at,ip,method,host,vhost,uri,query_string,status,bytes_sent,user_agent,country FROM nginx_visits WHERE $nwsql ORDER BY created_at DESC LIMIT $pp OFFSET " . (($page-1)*$pp));
+        $st->execute($nbp); $ng_rows = $st->fetchAll();
+
+        $ng_top_uris = $pdo->query("SELECT uri, COUNT(*) AS c FROM nginx_visits WHERE created_at >= $pstart AND uri != '' GROUP BY uri ORDER BY c DESC LIMIT 40")->fetchAll();
+
+        $ng_top_ips = $pdo->query("SELECT ip, COUNT(*) AS c, MAX(created_at) AS last, ROUND(SUM(status>=400)/COUNT(*)*100) AS epct FROM nginx_visits WHERE created_at >= $pstart AND ip != '' AND ip NOT IN (SELECT ip FROM blocked_ips) GROUP BY ip ORDER BY c DESC LIMIT 40")->fetchAll();
+    } catch (Throwable) {}
+}
+
+$ng_total_pages = max(1, (int)ceil($ng_total_rows / $pp));
+$ng_uri_max     = $ng_top_uris ? (int)$ng_top_uris[0]['c'] : 1;
+
+// Geo lookup for nginx activity — geoip_cache is populated by cron/nginx_import.php
+$ng_geo_ips = array_unique(array_merge(array_column($ng_rows, 'ip'), array_column($ng_top_ips, 'ip')));
+$ng_geo     = $pdo ? geoip_country($ng_geo_ips) : [];
 
 $users        = $tab === 'users'   ? user_list()        : [];
 $blocked_list = $tab === 'blocked' ? blocked_ip_list()  : [];
@@ -341,7 +394,7 @@ $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fet
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><?= match($tab) { 'users' => 'Users', 'blocked' => 'Blocked IPs', default => 'Activity' } ?> — <?= SITE_DOMAIN ?></title>
+  <title><?= match($tab) { 'users' => 'Users', 'blocked' => 'Blocked IPs', 'nginx' => 'Server Activity', default => 'PHP Activity' } ?> — <?= SITE_DOMAIN ?></title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -527,17 +580,18 @@ $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fet
   <a href="<?= ADMIN_LOGIN_URL ?>?logout=1" class="admin-bar-logout">Sign out</a>
 </div>
 <nav class="tab-nav">
-  <a href="?" class="<?= $tab === 'activity' ? 'active' : '' ?>">Activity</a>
+  <a href="?" class="<?= $tab === 'php' ? 'active' : '' ?>">PHP Activity</a>
+  <a href="?tab=nginx" class="<?= $tab === 'nginx' ? 'active' : '' ?>">Server Activity</a>
   <a href="?tab=blocked" class="<?= $tab === 'blocked' ? 'active' : '' ?>">Blocked IPs <?php if ($blocked_set): ?><span style="font-size:.6rem;opacity:.6">(<?= count($blocked_set) ?>)</span><?php endif; ?></a>
   <a href="?tab=users" class="<?= $tab === 'users' ? 'active' : '' ?>">Users</a>
 </nav>
 
 <div class="wrap">
 
-  <?php if ($tab === 'activity'): ?>
+  <?php if ($tab === 'php'): ?>
   <!-- ── Header ──────────────────────────────────────────────────────────────── -->
   <div class="page-hd">
-    <h1>Site Activity</h1>
+    <h1>PHP Activity</h1>
     <div class="period-tabs">
       <?php foreach (['1h' => 'Last hour', '24h' => 'Last 24 h', '7d' => '7 days', '30d' => '30 days'] as $k => $lbl): ?>
       <a href="<?= q(['period' => $k]) ?>" class="<?= $period === $k ? 'active' : '' ?>"><?= $lbl ?></a>
@@ -798,7 +852,231 @@ $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fet
     <?php endif; ?>
   </div>
 
-  <?php endif; /* $tab === 'activity' */ ?>
+  <?php endif; /* $tab === 'php' */ ?>
+
+  <?php if ($tab === 'nginx'): ?>
+  <!-- ── Header ──────────────────────────────────────────────────────────────── -->
+  <div class="page-hd">
+    <h1>Server Activity</h1>
+    <div class="period-tabs">
+      <?php foreach (['1h' => 'Last hour', '24h' => 'Last 24 h', '7d' => '7 days', '30d' => '30 days'] as $k => $lbl): ?>
+      <a href="<?= q(['period' => $k]) ?>" class="<?= $period === $k ? 'active' : '' ?>"><?= $lbl ?></a>
+      <?php endforeach; ?>
+    </div>
+  </div>
+
+  <!-- ── Stats ───────────────────────────────────────────────────────────────── -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-val"><?= number_format($ng_stats['total']) ?></div>
+      <div class="stat-lbl">Requests</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val"><?= number_format($ng_stats['uniq']) ?></div>
+      <div class="stat-lbl">Unique IPs</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val <?= $ng_stats['epct'] > 10 ? 'err' : ($ng_stats['epct'] > 3 ? 'warn' : '') ?>">
+        <?= $ng_stats['epct'] ?>%
+      </div>
+      <div class="stat-lbl">Error rate (4xx+5xx)</div>
+      <div class="stat-sub"><?= number_format($ng_stats['errs']) ?> requests</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" style="font-size:.85rem;line-height:1.5;word-break:break-all"><?= htmlspecialchars($ng_stats['top_uri']) ?></div>
+      <div class="stat-lbl">Top URI</div>
+      <div class="stat-sub"><?= number_format($ng_stats['top_cnt']) ?> requests</div>
+    </div>
+  </div>
+
+  <!-- ── Analytics row ─────────────────────────────────────────────────────── -->
+  <div class="side-row">
+
+    <div class="card">
+      <div class="card-hd"><h2>Top URIs</h2></div>
+      <div class="card-body" style="padding-bottom:.5rem">
+        <?php if ($ng_top_uris): ?>
+        <div style="max-height:290px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border2) transparent;padding-right:.25rem">
+        <?php foreach ($ng_top_uris as $t): ?>
+        <div class="tool-row">
+          <span class="tool-lbl" title="<?= htmlspecialchars($t['uri']) ?>"><?= htmlspecialchars($t['uri']) ?></span>
+          <div class="tool-bar-bg"><div class="tool-bar-fill" style="width:<?= round($t['c']/$ng_uri_max*100) ?>%"></div></div>
+          <span class="tool-cnt"><?= number_format($t['c']) ?></span>
+        </div>
+        <?php endforeach; ?>
+        </div>
+        <?php else: ?><div class="empty-state">No data yet.</div><?php endif; ?>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-hd"><h2>Top IPs</h2></div>
+      <div class="tbl-wrap" style="max-height:296px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border2) transparent">
+        <table class="ip-table">
+          <thead style="position:sticky;top:0;background:var(--surface);z-index:1"><tr><th>IP</th><th>Country</th><th>Req</th><th>Err%</th><th>Last seen</th><th></th></tr></thead>
+          <tbody>
+          <?php if ($ng_top_ips): ?>
+          <?php foreach ($ng_top_ips as $row): ?>
+          <tr>
+            <td><a href="<?= q(['ip' => $row['ip']]) ?>" class="ip-link"><?= htmlspecialchars($row['ip']) ?></a></td>
+            <td><?= geo_label($row['ip'], $ng_geo) ?></td>
+            <td><?= number_format($row['c']) ?></td>
+            <td class="<?= (int)$row['epct'] > 30 ? 'epct-warn' : '' ?> muted"><?= (int)$row['epct'] ?>%</td>
+            <td class="muted"><?= rel_time($row['last']) ?></td>
+            <td>
+              <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($row['ip'])) ?>?')">
+                <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+                <input type="hidden" name="action" value="block_ip">
+                <input type="hidden" name="ip" value="<?= htmlspecialchars($row['ip']) ?>">
+                <button type="submit" class="btn-act danger" style="font-size:.6rem;padding:.15rem .45rem">Block</button>
+              </form>
+            </td>
+          </tr>
+          <?php endforeach; ?>
+          <?php else: ?><tr><td colspan="6" class="empty-state">No data yet.</td></tr><?php endif; ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- .side-row -->
+
+  <!-- ── Activity table ─────────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-hd">
+      <h2>Server Activity</h2>
+      <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+        <span class="card-meta"><?= number_format($ng_total_rows) ?> rows matched</span>
+        <a href="<?= htmlspecialchars($_SERVER['REQUEST_URI']) ?>" class="btn-sm" style="font-size:.65rem;padding:.28rem .65rem" title="Refresh">↻</a>
+        <?php if ($fip): ?>
+        <?php if (isset($blocked_set[$fip])): ?>
+        <form method="POST" style="display:inline">
+          <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+          <input type="hidden" name="action" value="unblock_ip">
+          <input type="hidden" name="ip" value="<?= htmlspecialchars($fip) ?>">
+          <button type="submit" class="btn-sm" style="border-color:rgba(34,197,94,.3);color:#86efac;font-size:.65rem;padding:.25rem .7rem">↩ Unblock <?= htmlspecialchars($fip) ?></button>
+        </form>
+        <?php else: ?>
+        <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($fip)) ?>?')">
+          <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+          <input type="hidden" name="action" value="block_ip">
+          <input type="hidden" name="ip" value="<?= htmlspecialchars($fip) ?>">
+          <button type="submit" class="btn-sm" style="border-color:rgba(239,68,68,.3);color:#fca5a5;font-size:.65rem;padding:.25rem .7rem">⊘ Block <?= htmlspecialchars($fip) ?></button>
+        </form>
+        <?php endif; ?>
+        <?php endif; ?>
+      </div>
+    </div>
+    <div class="card-body">
+
+      <form method="GET" class="filter-bar">
+        <input type="hidden" name="tab" value="nginx">
+        <input type="hidden" name="period" value="<?= htmlspecialchars($period) ?>">
+        <div class="flt">
+          <label>IP</label>
+          <input type="text" name="ip" value="<?= htmlspecialchars($fip) ?>" placeholder="1.2.3.4">
+        </div>
+        <div class="flt">
+          <label>Status</label>
+          <select name="status">
+            <option value="">All</option>
+            <?php foreach (['2xx','3xx','4xx','5xx'] as $opt): ?>
+            <option value="<?= $opt ?>" <?= $fstatus === $opt ? 'selected' : '' ?>><?= $opt ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div class="flt">
+          <label>Method</label>
+          <select name="method">
+            <option value="">All</option>
+            <?php foreach (['GET','POST','HEAD','OPTIONS','DELETE','PUT'] as $m): ?>
+            <option value="<?= $m ?>" <?= $fmethod === $m ? 'selected' : '' ?>><?= $m ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div class="flt">
+          <label>Host</label>
+          <select name="vhost">
+            <option value="">All</option>
+            <option value="thameur.org" <?= $fvhost === 'thameur.org' ? 'selected' : '' ?>>thameur.org</option>
+            <option value="pki.thameur.org" <?= $fvhost === 'pki.thameur.org' ? 'selected' : '' ?>>pki.thameur.org</option>
+          </select>
+        </div>
+        <div class="flt">
+          <label>Display</label>
+          <select name="pp" style="width:80px">
+            <?php foreach ([50, 100, 200] as $opt): ?>
+            <option value="<?= $opt ?>" <?= $pp === $opt ? 'selected' : '' ?>><?= $opt ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div class="flt" style="flex-direction:row;gap:.4rem;align-items:flex-end">
+          <button type="submit" class="btn-sm">Filter</button>
+          <a href="<?= q([], ['ip','status','method','vhost','page']) ?>" class="btn-sm clear">Clear</a>
+        </div>
+      </form>
+
+      <?php if ($ng_rows): ?>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th><th>IP</th><th>Country</th><th>M</th><th>Host</th>
+              <th>Path</th><th>Status</th><th>UA</th><th>Bytes</th>
+            </tr>
+          </thead>
+          <tbody>
+          <?php foreach ($ng_rows as $r): ?>
+          <tr>
+            <td><span class="ts" title="<?= htmlspecialchars($r['created_at']) ?> UTC"><?= rel_time($r['created_at']) ?></span></td>
+            <td style="white-space:nowrap">
+              <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a>
+              <?php if (isset($blocked_set[$r['ip']])): ?>
+              <span class="badge--blocked-sm" title="Blocked">⊘</span>
+              <?php else: ?>
+              <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($r['ip'])) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="ip" value="<?= htmlspecialchars($r['ip']) ?>"><button type="submit" class="btn-block-sm" title="Block this IP">⊘</button></form>
+              <?php endif; ?>
+            </td>
+            <td><?= geo_label($r['ip'], $ng_geo) ?></td>
+            <td><?= method_badge($r['method']) ?></td>
+            <td><span class="muted" style="font-family:var(--mono);font-size:.68rem"><?= htmlspecialchars($r['host']) ?></span></td>
+            <td><span class="uri" title="<?= htmlspecialchars($r['uri'] . ($r['query_string'] ? '?'.$r['query_string'] : '')) ?>"><?= htmlspecialchars($r['uri']) ?></span></td>
+            <td><?= status_badge((int)$r['status']) ?></td>
+            <td><?= ua_label($r['user_agent']) ?></td>
+            <td class="muted" style="font-family:var(--mono);font-size:.68rem;text-align:right"><?= $r['bytes_sent'] !== null ? number_format((int)$r['bytes_sent']) : '—' ?></td>
+          </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+      <?php else: ?>
+      <div class="empty-state">No server activity found for this filter.</div>
+      <?php endif; ?>
+
+      <?php if ($ng_total_pages > 1): ?>
+      <div class="pager">
+        <?php if ($page > 1): ?><a href="<?= pg_url($page-1) ?>">← Prev</a><?php endif; ?>
+        <?php
+          $pages_to_show = [];
+          for ($i = 1; $i <= $ng_total_pages; $i++) {
+            if ($i === 1 || $i === $ng_total_pages || abs($i - $page) <= 2) $pages_to_show[] = $i;
+          }
+          $prev = null;
+          foreach ($pages_to_show as $pn):
+            if ($prev !== null && $pn - $prev > 1): ?><span class="ellipsis">…</span><?php endif;
+            $prev = $pn;
+        ?>
+        <?php if ($pn === $page): ?><span class="cur"><?= $pn ?></span>
+        <?php else: ?><a href="<?= pg_url($pn) ?>"><?= $pn ?></a><?php endif; ?>
+        <?php endforeach; ?>
+        <?php if ($page < $ng_total_pages): ?><a href="<?= pg_url($page+1) ?>">Next →</a><?php endif; ?>
+      </div>
+      <?php endif; ?>
+
+    </div>
+  </div><!-- server activity card -->
+
+  <?php endif; /* $tab === 'nginx' */ ?>
 
   <?php if ($tab === 'users'): ?>
 
