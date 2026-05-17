@@ -22,6 +22,7 @@ $tab = match($_GET['tab'] ?? '') {
     'soc'     => 'soc',
     'myips'   => 'myips',
     'watch'   => 'watch',
+    'msgs'    => 'msgs',
     default   => 'php',
 };
 
@@ -142,6 +143,16 @@ if ($tab === 'users' && $_SERVER['REQUEST_METHOD'] === 'POST' && _admin_csrf_ok(
         }
     }
     header('Location: ?tab=users' . ($err ? '&err=' . urlencode($err) : '&ok=1'));
+    exit;
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && _admin_csrf_ok()
+        && ($_POST['action'] ?? '') === 'mark_msg_read' && $pdo) {
+    $mid = (int)($_POST['msg_id'] ?? 0);
+    if ($mid > 0) {
+        $pdo->prepare("UPDATE contact_messages SET read_at=NOW() WHERE id=? AND read_at IS NULL")
+            ->execute([$mid]);
+    }
+    header('Location: ?tab=msgs&ok=1');
     exit;
 }
 if ($tab === 'users') {
@@ -522,6 +533,16 @@ if ($ipf !== 'all' && $blocked_list) {
 $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fetchAll(PDO::FETCH_COLUMN)) : [];
 $watch_set    = watchlistLoad(); // [ip => row] — loaded globally for badges on every tab
 
+// ── Contact messages ──────────────────────────────────────────────────────────
+$msgs_unread = $pdo ? (int)$pdo->query("SELECT COUNT(*) FROM contact_messages WHERE read_at IS NULL")->fetchColumn() : 0;
+$msgs_list   = [];
+if ($tab === 'msgs' && $pdo) {
+    $msgs_list = $pdo->query(
+        "SELECT id, name, email, topic, message, ip, created_at, read_at
+         FROM contact_messages ORDER BY created_at DESC LIMIT 200"
+    )->fetchAll();
+}
+
 // ── SOC data ──────────────────────────────────────────────────────────────────
 $soc_threat_ips   = [];
 $soc_probe_paths  = [];
@@ -738,7 +759,7 @@ if ($tab === 'soc' && $pdo) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><?= match($tab) { 'users' => 'Users', 'blocked' => 'Blocked IPs', 'nginx' => 'Server Activity', 'soc' => 'SOC', 'myips' => 'My IPs', default => 'PHP Activity' } ?> — <?= SITE_DOMAIN ?></title>
+  <title><?= match($tab) { 'users' => 'Users', 'blocked' => 'Blocked IPs', 'nginx' => 'Server Activity', 'soc' => 'SOC', 'myips' => 'My IPs', 'msgs' => 'Messages', default => 'PHP Activity' } ?> — <?= SITE_DOMAIN ?></title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1035,6 +1056,7 @@ if ($tab === 'soc' && $pdo) {
   <a href="?tab=blocked" class="<?= $tab === 'blocked' ? 'active' : '' ?>">Blocked IPs <?php if ($blocked_set): ?><span style="font-size:.6rem;opacity:.6">(<?= count($blocked_set) ?>)</span><?php endif; ?></a>
   <a href="?tab=myips" class="<?= $tab === 'myips' ? 'active' : '' ?>">My IPs <?php if ($my_ips_set): ?><span style="font-size:.6rem;opacity:.6">(<?= count($my_ips_set) ?>)</span><?php endif; ?></a>
   <a href="?tab=users" class="<?= $tab === 'users' ? 'active' : '' ?>">Users</a>
+  <a href="?tab=msgs" class="<?= $tab === 'msgs' ? 'active' : '' ?>"<?= $tab !== 'msgs' && $msgs_unread ? ' style="color:var(--accent)"' : '' ?>>Messages<?php if ($msgs_unread): ?> <span style="font-size:.6rem;opacity:.8">(<?= $msgs_unread ?>)</span><?php endif; ?></a>
 </nav>
 
 <div class="wrap">
@@ -2509,6 +2531,62 @@ if ($tab === 'soc' && $pdo) {
     </div>
   </div>
   <?php endif; /* $tab === 'watch' */ ?>
+
+  <?php if ($tab === 'msgs'): ?>
+  <div class="section-hd">
+    <h2 class="section-title">Contact Messages <span class="count-badge"><?= count($msgs_list) ?></span></h2>
+  </div>
+  <?php if ($msgs_list): ?>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr>
+        <th>From</th>
+        <th>Topic</th>
+        <th>Message</th>
+        <th>IP</th>
+        <th>Received</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+      <?php foreach ($msgs_list as $m): ?>
+        <?php $unread = ($m['read_at'] === null); ?>
+        <tr<?= $unread ? ' style="background:rgba(0,212,170,.04)"' : '' ?>>
+          <td>
+            <span style="font-weight:<?= $unread ? '600' : '400' ?>"><?= htmlspecialchars($m['name']) ?></span><br>
+            <a href="mailto:<?= htmlspecialchars($m['email']) ?>" class="ip-link" style="font-size:.8rem" aria-label="Email <?= htmlspecialchars($m['name']) ?>"><?= htmlspecialchars($m['email']) ?></a>
+          </td>
+          <td><span class="tag" style="font-size:.7rem"><?= htmlspecialchars(ucwords(str_replace('_', ' ', $m['topic']))) ?></span></td>
+          <td style="max-width:320px">
+            <details>
+              <summary style="cursor:pointer;color:var(--muted);font-size:.82rem;list-style:none">
+                <?= htmlspecialchars(mb_substr($m['message'], 0, 80)) ?><?= mb_strlen($m['message']) > 80 ? '…' : '' ?>
+              </summary>
+              <div style="margin-top:.5rem;white-space:pre-wrap;font-size:.82rem;color:var(--text)"><?= htmlspecialchars($m['message']) ?></div>
+            </details>
+          </td>
+          <td style="font-family:var(--mono);font-size:.78rem"><?= htmlspecialchars($m['ip']) ?></td>
+          <td><span class="ts-x" data-ts="<?= htmlspecialchars($m['created_at']) ?>" data-label="<?= htmlspecialchars(substr($m['created_at'], 0, 16)) ?>"><?= htmlspecialchars(substr($m['created_at'], 0, 16)) ?></span></td>
+          <td>
+            <?php if ($unread): ?>
+            <form method="POST" style="display:inline">
+              <input type="hidden" name="_csrf"   value="<?= _admin_csrf_token() ?>">
+              <input type="hidden" name="action"  value="mark_msg_read">
+              <input type="hidden" name="msg_id"  value="<?= (int)$m['id'] ?>">
+              <button type="submit" class="btn-act" style="font-size:.72rem;padding:.2rem .5rem">Mark read</button>
+            </form>
+            <?php else: ?>
+            <span style="font-size:.72rem;color:var(--muted)">Read</span>
+            <?php endif; ?>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+  <?php else: ?>
+  <p class="empty-state">No messages yet.</p>
+  <?php endif; ?>
+  <?php endif; /* $tab === 'msgs' */ ?>
 
 </div><!-- .wrap -->
 

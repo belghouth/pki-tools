@@ -244,6 +244,20 @@ function schemaIntel(PDO $pdo): void {
         updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
                                             ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS contact_messages (
+        id          INT UNSIGNED  NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        name        VARCHAR(120)  NOT NULL,
+        email       VARCHAR(254)  NOT NULL,
+        topic       VARCHAR(40)   NOT NULL,
+        message     TEXT          NOT NULL,
+        ip          VARCHAR(45)   NOT NULL DEFAULT '',
+        user_agent  VARCHAR(300)  NOT NULL DEFAULT '',
+        read_at     DATETIME      DEFAULT NULL,
+        created_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX (created_at),
+        INDEX (read_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
 function adminSchema(PDO $pdo): void {

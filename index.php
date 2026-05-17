@@ -1,15 +1,26 @@
 <?php
 // ── Contact form AJAX handler ───────────────────────────────────────────────
+define('ADMIN_NO_LOG', true);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/recaptcha.php';
+
+const CONTACT_TOPICS = [
+    'bug_report'      => 'Bug Report',
+    'wrong_result'    => 'Wrong Result / False Positive',
+    'feature_request' => 'Feature Request / Suggestion',
+    'pki_question'    => 'PKI / Compliance Question',
+    'tool_feedback'   => 'Tool Feedback',
+    'consulting'      => 'Consulting Inquiry',
+    'other'           => 'Other',
+];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'contact') {
     header('Content-Type: application/json');
 
-    $name    = trim(strip_tags($_POST['name']    ?? ''));
-    $email   = trim(strip_tags($_POST['email']   ?? ''));
-    $subject = trim(strip_tags($_POST['subject'] ?? ''));
-    $message = trim(strip_tags($_POST['message'] ?? ''));
+    $name    = mb_substr(trim(strip_tags($_POST['name']    ?? '')), 0, 120);
+    $email   = mb_substr(trim(strip_tags($_POST['email']   ?? '')), 0, 254);
+    $topic   = trim($_POST['topic'] ?? '');
+    $message = mb_substr(trim(strip_tags($_POST['message'] ?? '')), 0, 4000);
 
     if (!$name || !$email || !$message) {
         echo json_encode(['error' => 'Name, email, and message are required.']);
@@ -19,8 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
         echo json_encode(['error' => 'Please enter a valid email address.']);
         exit;
     }
-    if (strlen($message) > 4000) {
-        echo json_encode(['error' => 'Message is too long (max 4 000 characters).']);
+    if (!isset(CONTACT_TOPICS[$topic])) {
+        echo json_encode(['error' => 'Please select a topic.']);
         exit;
     }
 
@@ -32,23 +43,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
         }
     }
 
-    $to       = CONTACT_EMAIL;
-    $mailSubj = $subject !== ''
-        ? '[' . SITE_DOMAIN . '] ' . mb_substr($subject, 0, 100)
-        : '[' . SITE_DOMAIN . '] Message from ' . $name;
-    $body     = "Name:    {$name}\nEmail:   {$email}\n\n" . wordwrap($message, 72);
-    $headers  = implode("\r\n", [
-        'From: ' . NOREPLY_EMAIL,
-        'Reply-To: ' . $email,
-        'Content-Type: text/plain; charset=UTF-8',
-        'X-Mailer: ' . SITE_DOMAIN . '/contact',
-    ]);
+    $ip = substr(trim(explode(',',
+        $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['HTTP_X_REAL_IP'] ??
+        $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '')[0]), 0, 45);
+    $ua = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 300);
 
-    $sent = @mail($to, $mailSubj, $body, $headers);
-    echo json_encode($sent
-        ? ['ok' => true, 'message' => "Thanks {$name} — I'll be in touch."]
-        : ['error' => 'Mail could not be sent. Please email me directly at ' . CONTACT_EMAIL]
-    );
+    $pdo = admin_pdo();
+    if ($pdo) {
+        $pdo->prepare(
+            "INSERT INTO contact_messages (name, email, topic, message, ip, user_agent)
+             VALUES (?, ?, ?, ?, ?, ?)"
+        )->execute([$name, $email, $topic, $message, $ip, $ua]);
+    }
+
+    $topicLabel = CONTACT_TOPICS[$topic];
+    $mailSubj   = '[' . SITE_DOMAIN . '] ' . $topicLabel . ' from ' . $name;
+    $mailBody   = "Topic  : {$topicLabel}\nName   : {$name}\nEmail  : {$email}\nIP     : {$ip}\n\n"
+                . wordwrap($message, 72);
+    $headers = implode("\r\n", [
+        'From: '       . NOREPLY_EMAIL,
+        'Reply-To: '   . $email,
+        'Content-Type: text/plain; charset=UTF-8',
+        'X-Mailer: '   . SITE_DOMAIN . '/contact',
+    ]);
+    @mail(ADMIN_ALLOWED_EMAIL, $mailSubj, $mailBody, $headers);
+
+    echo json_encode(['ok' => true, 'message' => "Thanks {$name}, your message was received."]);
     exit;
 }
 ?>
@@ -472,29 +492,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
       margin-bottom: 0.5rem;
     }
 
-    /* ── Contact (email card) ───────────────────────────────────────────────── */
-    .contact-email-card {
-      display: inline-flex; align-items: center; gap: 0.75rem;
-      margin: 0 auto 1.6rem;
-      padding: 1rem 2rem;
-      background: var(--surface);
-      border: 1px solid var(--border2);
-      border-radius: var(--radius);
-      color: var(--accent); text-decoration: none;
-      font-size: 1.05rem;
-      transition: border-color var(--tr), background var(--tr);
+    /* ── Contact form ───────────────────────────────────────────────────────── */
+    .contact-form { text-align: left; max-width: 540px; margin: 0 auto; }
+    .cf-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+    .cf-field { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1rem; }
+    .cf-field label { font-size: 0.78rem; color: var(--muted); font-family: var(--mono); }
+    .cf-field input,
+    .cf-field select,
+    .cf-field textarea {
+      background: var(--surface); border: 1px solid var(--border2);
+      border-radius: 6px; color: var(--text);
+      font-family: var(--sans); font-size: 0.92rem;
+      padding: 0.55rem 0.75rem; width: 100%; box-sizing: border-box;
+      transition: border-color var(--tr);
     }
-    .contact-email-card:hover { border-color: var(--accent); background: rgba(0,212,170,0.06); color: var(--accent); }
-    .contact-note { font-size: 0.82rem; color: var(--muted); margin-top: 0.5rem; line-height: 1.8; }
-    .coming-soon-badge {
-      display: inline-block;
-      font-family: var(--mono); font-size: 0.68rem;
-      letter-spacing: 0.08em; text-transform: uppercase;
-      padding: 0.2rem 0.65rem;
-      border-radius: 100px;
-      border: 1px solid var(--border2);
-      color: var(--muted);
+    .cf-field input:focus,
+    .cf-field select:focus,
+    .cf-field textarea:focus {
+      outline: none; border-color: var(--accent);
     }
+    .cf-field select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238b949e' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.75rem center; padding-right: 2rem; }
+    .cf-field textarea { resize: vertical; min-height: 130px; line-height: 1.55; }
+    .cf-error { font-size: 0.82rem; color: #f85149; margin-bottom: 0.75rem; min-height: 1.2em; }
+    .cf-success { font-size: 1rem; color: var(--accent); padding: 2rem 0; text-align: center; }
+    .cf-submit { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1.5rem; background: var(--accent); color: #0d1117; border: none; border-radius: 6px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: opacity var(--tr); }
+    .cf-submit:disabled { opacity: 0.5; cursor: default; }
+    @media (max-width: 520px) { .cf-row { grid-template-columns: 1fr; } }
 
     /* ── Footer ─────────────────────────────────────────────────────────────── */
     .site-footer {
@@ -614,7 +637,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
           <div class="about-links">
             <a href="https://github.com/belghouth" class="pill-link" target="_blank" rel="noopener">GitHub</a>
             <a href="https://www.linkedin.com/in/belghouth/" class="pill-link" target="_blank" rel="noopener">LinkedIn</a>
-            <a href="<?= 'mailto:' . CONTACT_EMAIL ?>" class="pill-link">Email</a>
+            <a href="#contact" class="pill-link">Contact</a>
           </div>
 
           <a href="https://www.linkedin.com/in/belghouth/" class="li-card" target="_blank" rel="noopener" aria-label="LinkedIn profile">
@@ -908,16 +931,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
   <section class="section" id="contact">
     <div class="container--sm" style="text-align:center;">
       <h2 class="section-heading">Get in Touch</h2>
-      <p class="section-sub">Questions about the tools, PKI consulting, or just want to connect.</p>
+      <p class="section-sub">Questions about the tools, a result that looks wrong, PKI consulting, or just want to connect.</p>
 
-      <a href="<?= 'mailto:' . CONTACT_EMAIL ?>" class="contact-email-card">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28"><path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
-        <span><?= CONTACT_EMAIL ?></span>
-      </a>
+      <form id="contact-form" class="contact-form" novalidate>
+        <input type="hidden" name="action" value="contact">
+        <input type="hidden" name="g_recaptcha_token" id="g_recaptcha_token">
 
-      <p class="contact-note">
-        <span class="coming-soon-badge">Contact form coming soon</span>
-      </p>
+        <div class="cf-row">
+          <div class="cf-field">
+            <label for="cf-name">Your name <span style="color:var(--err)">*</span></label>
+            <input type="text" id="cf-name" name="name" maxlength="120" autocomplete="name" required>
+          </div>
+          <div class="cf-field">
+            <label for="cf-email">Your email <span style="color:var(--err)">*</span></label>
+            <input type="email" id="cf-email" name="email" maxlength="254" autocomplete="email" required>
+          </div>
+        </div>
+
+        <div class="cf-field">
+          <label for="cf-topic">Topic <span style="color:var(--err)">*</span></label>
+          <select id="cf-topic" name="topic" required>
+            <option value="">— Select a topic —</option>
+            <?php foreach (CONTACT_TOPICS as $val => $lbl): ?>
+            <option value="<?= htmlspecialchars($val) ?>"><?= htmlspecialchars($lbl) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+
+        <div class="cf-field">
+          <label for="cf-message">Message <span style="color:var(--err)">*</span></label>
+          <textarea id="cf-message" name="message" maxlength="4000" required></textarea>
+        </div>
+
+        <div class="cf-error" id="cf-error" aria-live="polite"></div>
+
+        <button type="submit" class="cf-submit" id="cf-submit">Send Message</button>
+      </form>
     </div>
   </section>
 
@@ -933,7 +982,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     <a href="/community_tools.php">Community Tools</a>
     <a href="/references.php">References</a>
     <a href="/privacy.php">Privacy</a>
-    <a href="<?= 'mailto:' . CONTACT_EMAIL ?>"><?= CONTACT_EMAIL ?></a>
+    <a href="#contact">Contact</a>
   </div>
 </footer>
 
@@ -946,6 +995,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
 </button>
 
 <script>
+// ── Contact form ──────────────────────────────────────────────────────────────
+(function () {
+  var form  = document.getElementById('contact-form');
+  if (!form) return;
+  var errEl = document.getElementById('cf-error');
+  var btnEl = document.getElementById('cf-submit');
+
+  function doPost(token) {
+    var fd = new FormData(form);
+    fd.set('g_recaptcha_token', token || '');
+    fetch('/', { method: 'POST', body: fd })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.ok) {
+          form.innerHTML = '<p class="cf-success">' + d.message + '</p>';
+        } else {
+          errEl.textContent = d.error || 'Something went wrong.';
+          btnEl.disabled = false;
+          btnEl.textContent = 'Send Message';
+        }
+      })
+      .catch(function () {
+        errEl.textContent = 'Network error — please try again.';
+        btnEl.disabled = false;
+        btnEl.textContent = 'Send Message';
+      });
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    errEl.textContent = '';
+    btnEl.disabled = true;
+    btnEl.textContent = 'Sending…';
+    if (typeof grecaptcha !== 'undefined' && window.RECAPTCHA_SITE_KEY) {
+      grecaptcha.ready(function () {
+        grecaptcha.execute(window.RECAPTCHA_SITE_KEY, { action: 'contact' })
+          .then(doPost);
+      });
+    } else {
+      doPost('');
+    }
+  });
+})();
+
+// ── Back-to-top ───────────────────────────────────────────────────────────────
 (function () {
   var btn = document.getElementById('backTop');
   var threshold = document.getElementById('about');
