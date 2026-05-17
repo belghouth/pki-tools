@@ -1,4 +1,7 @@
 <?php
+// SOC AJAX fragment mode — buffer all output so we can extract just the live region
+$_soc_ajax = (($_GET['tab'] ?? '') === 'soc') && (($_GET['ajax'] ?? '') === '1');
+if ($_soc_ajax) { ob_start(); }
 define('ADMIN_NO_LOG', true);
 require_once __DIR__ . '/config.php';
 
@@ -1877,8 +1880,14 @@ if ($tab === 'soc' && $pdo) {
           </select>
         </div>
       </form>
+      <div style="display:flex;align-items:center;gap:.4rem;font-family:var(--mono);font-size:.62rem;color:#3d4f68;margin-left:auto;flex-shrink:0">
+        <span>↻</span><span id="soc-cd">30s</span>
+        <button id="soc-refresh-btn" title="Refresh now" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;padding:0 .15rem;line-height:1;transition:color 150ms ease" onmouseenter="this.style.color='var(--accent)'" onmouseleave="this.style.color='var(--muted)'">⟳</button>
+      </div>
     </div>
   </div>
+
+  <div id="soc-live"><!--soc-live-start-->
 
   <!-- ── Threat Level Banner ──────────────────────────────────────────────── -->
   <div class="threat-banner threat-<?= $soc_threat_level ?>">
@@ -2323,6 +2332,52 @@ if ($tab === 'soc' && $pdo) {
       <?php endif; ?>
     </div>
   </div>
+
+  <!--soc-live-end--></div><!-- #soc-live -->
+
+  <script>
+  (function () {
+    var live = document.getElementById('soc-live');
+    var cdEl = document.getElementById('soc-cd');
+    var btn  = document.getElementById('soc-refresh-btn');
+    if (!live || !cdEl || !btn) { return; }
+
+    var INTERVAL = 30;
+    var countdown = INTERVAL;
+    var period = <?= json_encode($soc_period_key) ?>;
+    var ipf    = <?= json_encode($ipf) ?>;
+
+    function buildUrl() {
+      return '?tab=soc&soc_period=' + encodeURIComponent(period)
+           + '&ipf=' + encodeURIComponent(ipf) + '&ajax=1';
+    }
+
+    function setCountdown(n) {
+      countdown = n;
+      cdEl.textContent = countdown + 's';
+    }
+
+    function doRefresh() {
+      countdown = INTERVAL;          // guard: prevent interval from re-firing during fetch
+      cdEl.textContent = '…';
+      fetch(buildUrl())
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+          live.innerHTML = html;
+          setCountdown(INTERVAL);
+        })
+        .catch(function () { setCountdown(INTERVAL); });
+    }
+
+    setInterval(function () {
+      if (document.hidden) { setCountdown(INTERVAL); return; }
+      setCountdown(countdown - 1);
+      if (countdown <= 0) { doRefresh(); }
+    }, 1000);
+
+    btn.addEventListener('click', doRefresh);
+  }());
+  </script>
 
   <?php endif; /* $tab === 'soc' */ ?>
 
@@ -2799,3 +2854,12 @@ document.addEventListener('click', function(e) {
 
 </body>
 </html>
+<?php
+if ($_soc_ajax) {
+    $full = ob_get_clean();
+    preg_match('/<!--soc-live-start-->(.*?)<!--soc-live-end-->/s', $full, $m);
+    header('Content-Type: text/html; charset=UTF-8');
+    echo $m[1] ?? '';
+    exit;
+}
+
