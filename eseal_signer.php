@@ -289,7 +289,7 @@ $navLabel = 'Meerkat — e-Seal Signer';
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap" rel="stylesheet">
-  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
+  <?php require_once __DIR__ . '/includes/adsense_head.php'; ?>
   <?php if (recaptcha_configured()): ?>
   <?= recaptcha_head() ?>
   <?php endif; ?>
@@ -448,7 +448,7 @@ $navLabel = 'Meerkat — e-Seal Signer';
 </head>
 <body>
 
-<?php require __DIR__ . '/includes/site_nav.php'; ?>
+<?php require_once __DIR__ . '/includes/site_nav.php'; ?>
 
 <main class="eit-page">
 
@@ -562,7 +562,7 @@ $navLabel = 'Meerkat — e-Seal Signer';
   </div>
   <?php endif; ?>
 
-  <?php require __DIR__ . '/includes/adsense_unit.php'; ?>
+  <?php require_once __DIR__ . '/includes/adsense_unit.php'; ?>
 
   <?php elseif ($xades_xml): ?>
 
@@ -600,7 +600,7 @@ $navLabel = 'Meerkat — e-Seal Signer';
     <textarea class="eit-b64-textarea" id="eitXml" rows="14" readonly spellcheck="false"><?= htmlspecialchars($xades_xml, ENT_NOQUOTES) ?></textarea>
   </div>
 
-  <?php require __DIR__ . '/includes/adsense_unit.php'; ?>
+  <?php require_once __DIR__ . '/includes/adsense_unit.php'; ?>
 
   <?php endif; ?>
 
@@ -616,7 +616,7 @@ $navLabel = 'Meerkat — e-Seal Signer';
   </div>
 </footer>
 
-<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
+<?php require_once __DIR__ . '/includes/cookie_banner.php'; ?>
 
 <script>
 var RECAPTCHA_SITE_KEY = <?= json_encode(recaptcha_configured() ? RECAPTCHA_SITE_KEY : '') ?>;

@@ -200,7 +200,7 @@ if (!defined('ADMIN_NO_LOG')) {
     $__ip = substr(trim(explode(',', $__raw)[0]), 0, 45);
     if ($__ip && is_ip_blocked($__ip)) {
         http_response_code(403);
-        require __DIR__ . '/errors/blocked.php';
+        require_once __DIR__ . '/errors/blocked.php';
         exit;
     }
     unset($__raw, $__ip);

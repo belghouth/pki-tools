@@ -218,7 +218,7 @@ $navLabel = 'Meerkat TSA';
 </head>
 <body>
 
-<?php require __DIR__ . '/includes/site_nav.php'; ?>
+<?php require_once __DIR__ . '/includes/site_nav.php'; ?>
 
 <main class="doc-wrap">
 
@@ -508,6 +508,6 @@ byte[] tsr = EntityUtils.toByteArray(response.getEntity());</div>
   </div>
 </footer>
 
-<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
+<?php require_once __DIR__ . '/includes/cookie_banner.php'; ?>
 </body>
 </html>

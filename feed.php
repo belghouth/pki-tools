@@ -167,11 +167,11 @@ if (file_exists($cacheFile)) {
       .feed-card { padding: 1rem; }
     }
   </style>
-  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
+  <?php require_once __DIR__ . '/includes/adsense_head.php'; ?>
 </head>
 <body>
 
-<?php require __DIR__ . '/includes/site_nav.php'; ?>
+<?php require_once __DIR__ . '/includes/site_nav.php'; ?>
 
 <main class="feed-page">
 
@@ -213,7 +213,7 @@ if (file_exists($cacheFile)) {
       <?php endforeach; ?>
     </div>
 
-    <?php require __DIR__ . '/includes/adsense_unit.php'; ?>
+    <?php require_once __DIR__ . '/includes/adsense_unit.php'; ?>
 
     <!-- Feed items -->
     <div class="feed-list" id="feedList">
@@ -264,7 +264,7 @@ if (file_exists($cacheFile)) {
   </div>
 </footer>
 
-<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
+<?php require_once __DIR__ . '/includes/cookie_banner.php'; ?>
 
 <script>
 (function () {

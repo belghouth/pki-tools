@@ -150,11 +150,11 @@ $navLabel = 'Community Tools';
       .toc { width: 100%; }
     }
   </style>
-  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
+  <?php require_once __DIR__ . '/includes/adsense_head.php'; ?>
 </head>
 <body>
 
-<?php require __DIR__ . '/includes/site_nav.php'; ?>
+<?php require_once __DIR__ . '/includes/site_nav.php'; ?>
 
 <main class="ct-page">
   <h1>Community PKI Tools</h1>
@@ -487,7 +487,7 @@ $navLabel = 'Community Tools';
   </div>
 </footer>
 
-<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
+<?php require_once __DIR__ . '/includes/cookie_banner.php'; ?>
 
 </body>
 </html>

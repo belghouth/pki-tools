@@ -1083,11 +1083,11 @@ seo_head([
     to   { opacity: 1; transform: translateY(0); }
   }
 </style>
-  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
+  <?php require_once __DIR__ . '/includes/adsense_head.php'; ?>
 </head>
 <body>
 
-<?php $navLabel = 'Certificate Linters'; require __DIR__ . '/includes/site_nav.php'; ?>
+<?php $navLabel = 'Certificate Linters'; require_once __DIR__ . '/includes/site_nav.php'; ?>
 
 <main>
 
@@ -1325,7 +1325,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
 </main>
 
-<?php require __DIR__ . '/includes/adsense_unit.php'; ?>
+<?php require_once __DIR__ . '/includes/adsense_unit.php'; ?>
 
 <footer>
   <p>PKI Certificate Linting Portal</p>
@@ -1343,7 +1343,7 @@ document.addEventListener('DOMContentLoaded', function () {
 ]) ?>
 <?php endif; ?>
 
-<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
+<?php require_once __DIR__ . '/includes/cookie_banner.php'; ?>
 <script>
 (function () {
   // Cert prefill from cert factory (Lint button)

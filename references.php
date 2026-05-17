@@ -130,11 +130,11 @@ $navLabel = 'PKI References';
       .toc { width: 100%; }
     }
   </style>
-  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
+  <?php require_once __DIR__ . '/includes/adsense_head.php'; ?>
 </head>
 <body>
 
-<?php require __DIR__ . '/includes/site_nav.php'; ?>
+<?php require_once __DIR__ . '/includes/site_nav.php'; ?>
 
 <main class="ref-page">
   <h1>PKI References</h1>
@@ -153,7 +153,7 @@ $navLabel = 'PKI References';
     </ol>
   </nav>
 
-  <?php require __DIR__ . '/includes/adsense_unit.php'; ?>
+  <?php require_once __DIR__ . '/includes/adsense_unit.php'; ?>
 
   <!-- ── 1. CA/Browser Forum ── -->
   <section class="ref-section" id="cabf">
@@ -556,6 +556,6 @@ $navLabel = 'PKI References';
   </div>
 </footer>
 
-<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
+<?php require_once __DIR__ . '/includes/cookie_banner.php'; ?>
 </body>
 </html>

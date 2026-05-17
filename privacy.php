@@ -52,11 +52,11 @@ $navLabel = 'Privacy Policy';
     .site-footer a:hover { color: var(--accent); }
     .site-footer-links { display: flex; gap: 1.5rem; }
   </style>
-  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
+  <?php require_once __DIR__ . '/includes/adsense_head.php'; ?>
 </head>
 <body>
 
-<?php require __DIR__ . '/includes/site_nav.php'; ?>
+<?php require_once __DIR__ . '/includes/site_nav.php'; ?>
 
 <div class="prose">
   <h1>Privacy Policy</h1>
@@ -126,6 +126,6 @@ $navLabel = 'Privacy Policy';
   </div>
 </footer>
 
-<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
+<?php require_once __DIR__ . '/includes/cookie_banner.php'; ?>
 </body>
 </html>

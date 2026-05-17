@@ -4,7 +4,7 @@
  *
  * Set $navLabel before including to show the current page name in the bar.
  *   $navLabel = 'Certificate Linters';
- *   require __DIR__ . '/includes/site_nav.php';
+ *   require_once __DIR__ . '/includes/site_nav.php';
  */
 $_navLabel = $navLabel ?? '';
 ?>

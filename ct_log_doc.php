@@ -185,7 +185,7 @@ $navLabel = 'Meerkat CT Log';
 </head>
 <body>
 
-<?php require __DIR__ . '/includes/site_nav.php'; ?>
+<?php require_once __DIR__ . '/includes/site_nav.php'; ?>
 
 <main class="doc-wrap">
 
@@ -488,6 +488,6 @@ $navLabel = 'Meerkat CT Log';
   </div>
 </footer>
 
-<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
+<?php require_once __DIR__ . '/includes/cookie_banner.php'; ?>
 </body>
 </html>

@@ -434,7 +434,7 @@ if ($secondsRemaining !== null) {
        <link rel="icon" type="image/x-icon" href="/favicon.ico">
        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
-  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
+  <?php require_once __DIR__ . '/includes/adsense_head.php'; ?>
 </head>
 <body>
 
@@ -457,7 +457,7 @@ if ($secondsRemaining !== null) {
     </header>
     -->	
    
-        <?php $navLabel = 'ACME Automation Test Endpoint'; require __DIR__ . '/includes/site_nav.php'; ?>
+        <?php $navLabel = 'ACME Automation Test Endpoint'; require_once __DIR__ . '/includes/site_nav.php'; ?>
     
     <div class="wrapper">
 
@@ -648,7 +648,7 @@ if ($secondsRemaining !== null) {
         </div>
     </div>
 
-    <?php require __DIR__ . '/includes/adsense_unit.php'; ?>
+    <?php require_once __DIR__ . '/includes/adsense_unit.php'; ?>
 
     <footer class="footer">
         <span>
@@ -674,6 +674,6 @@ if ($secondsRemaining !== null) {
     setInterval(updateClock, 1000);
 </script>
 
-<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
+<?php require_once __DIR__ . '/includes/cookie_banner.php'; ?>
 </body>
 </html>

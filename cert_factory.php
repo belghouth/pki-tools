@@ -1625,7 +1625,7 @@ $navLabel = 'Test CA';
 </head>
 <body>
 
-<?php require __DIR__ . '/includes/site_nav.php'; ?>
+<?php require_once __DIR__ . '/includes/site_nav.php'; ?>
 
 <main class="factory-wrap">
 
@@ -1826,7 +1826,7 @@ $navLabel = 'Test CA';
   </div>
 </footer>
 
-<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
+<?php require_once __DIR__ . '/includes/cookie_banner.php'; ?>
 
 <script>
 (function () {

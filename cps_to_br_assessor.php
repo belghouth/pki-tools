@@ -982,11 +982,11 @@ seo_head([
   @keyframes fadein  { from { opacity: 0; transform: translateY(6px);  } to { opacity: 1; transform: translateY(0); } }
   @keyframes slidein { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 </style>
-  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
+  <?php require_once __DIR__ . '/includes/adsense_head.php'; ?>
 </head>
 <body>
 
-<?php $navLabel = 'CP/CPS → BR Assessor'; require __DIR__ . '/includes/site_nav.php'; ?>
+<?php $navLabel = 'CP/CPS → BR Assessor'; require_once __DIR__ . '/includes/site_nav.php'; ?>
 
 <main>
 
@@ -1137,7 +1137,7 @@ seo_head([
 
 </main>
 
-<?php require __DIR__ . '/includes/adsense_unit.php'; ?>
+<?php require_once __DIR__ . '/includes/adsense_unit.php'; ?>
 
 <footer>
   <p>CP/CPS to BR Assessor &mdash; Coverage gap detection for auditors</p>
@@ -1145,6 +1145,6 @@ seo_head([
 </footer>
 
 <script src="assets/js/cps_assessor.js"></script>
-<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
+<?php require_once __DIR__ . '/includes/cookie_banner.php'; ?>
 </body>
 </html>

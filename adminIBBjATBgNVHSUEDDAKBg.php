@@ -937,7 +937,7 @@ if ($tab === 'soc' && $pdo) {
 </head>
 <body>
 
-<?php $navLabel = 'Admin Panel'; require __DIR__ . '/includes/site_nav.php'; ?>
+<?php $navLabel = 'Admin Panel'; require_once __DIR__ . '/includes/site_nav.php'; ?>
 <div class="admin-bar">
   <span class="admin-bar-user">Signed in as <span><?= htmlspecialchars($email) ?></span></span>
   <a href="<?= ADMIN_LOGIN_URL ?>?logout=1" class="admin-bar-logout">Sign out</a>

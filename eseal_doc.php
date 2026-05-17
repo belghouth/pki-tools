@@ -205,7 +205,7 @@ $navLabel = 'Meerkat e-Seal';
 </head>
 <body>
 
-<?php require __DIR__ . '/includes/site_nav.php'; ?>
+<?php require_once __DIR__ . '/includes/site_nav.php'; ?>
 
 <main class="doc-wrap">
 
@@ -646,6 +646,6 @@ fs.writeFileSync(<span class="str">'signature.cms'</span>, Buffer.from(await res
   </div>
 </footer>
 
-<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
+<?php require_once __DIR__ . '/includes/cookie_banner.php'; ?>
 </body>
 </html>
