@@ -876,9 +876,9 @@ if ($tab === 'soc' && $pdo) {
     /* Watch-tab status column text labels (boxed) */
     .badge--watch     { background: rgba(249,115,22,.08); color: #f97316; border: 1px solid rgba(249,115,22,.3); border-radius: 3px; padding: .1rem .3rem; font-size: .65rem; font-family: var(--mono); }
     .badge--candidate { background: rgba(239,68,68,.1); color: #f87171; border: 1px solid rgba(239,68,68,.3); border-radius: 3px; padding: .1rem .3rem; font-size: .65rem; font-family: var(--mono); }
-    #modal-watch { padding: 0; background: transparent; border: none; border-radius: 0; max-width: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; }
+    #modal-watch { padding: 0; background: transparent; border: none; border-radius: 0; max-width: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; color: var(--text); }
     #modal-watch::backdrop { background: rgba(0,0,0,.55); }
-    #modal-msg { padding: 0; background: transparent; border: none; border-radius: 0; max-width: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; width: min(600px, 94vw); }
+    #modal-msg { padding: 0; background: transparent; border: none; border-radius: 0; max-width: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; width: min(600px, 94vw); color: var(--text); }
     #modal-msg::backdrop { background: rgba(0,0,0,.6); }
     #modal-msg .modal-card { max-width: none; width: 100%; }
     .msg-row { cursor: pointer; }
@@ -887,7 +887,7 @@ if ($tab === 'soc' && $pdo) {
     .msg-row.msg-unread:hover td { background: rgba(0,212,170,.07); }
     .msg-meta-grid { display: grid; grid-template-columns: 80px 1fr; gap: .35rem .75rem; font-size: .83rem; align-items: baseline; }
     .msg-meta-grid .lbl { color: var(--muted); }
-    .msg-body { white-space: pre-wrap; font-size: .87rem; line-height: 1.65; max-height: 340px; overflow-y: auto; padding: .75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; }
+    .msg-body { white-space: pre-wrap; font-size: .87rem; line-height: 1.65; max-height: 340px; overflow-y: auto; padding: .75rem; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; color: var(--text); }
     .ua-x       { cursor: pointer; user-select: text; }
     .ua-x.ua-expanded { font-family: var(--mono); font-size: .65rem; color: var(--text); background: rgba(0,212,170,.06); border: 1px solid rgba(0,212,170,.2); border-radius: 3px; padding: .15rem .4rem; white-space: normal; word-break: break-all; max-width: 480px; display: inline-block; }
     .ts-x       { cursor: pointer; }
@@ -1045,7 +1045,7 @@ if ($tab === 'soc' && $pdo) {
     /* modal — [hidden] must win over display:flex */
     [hidden] { display: none !important; }
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.72); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
-    .modal-card { background: var(--surface); border: 1px solid var(--border2); border-radius: 8px; width: 100%; max-width: 440px; }
+    .modal-card { background: var(--surface); border: 1px solid var(--border2); border-radius: 8px; width: 100%; max-width: 440px; color: var(--text); }
     .modal-hd { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
     .modal-hd h3 { font-family: var(--mono); font-size: .75rem; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
     .modal-close { background: none; border: none; color: var(--muted); font-size: 1.3rem; cursor: pointer; line-height: 1; padding: 0 .2rem; transition: color var(--tr); }
