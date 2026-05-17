@@ -298,6 +298,11 @@ function _detect_bot_claim(string $ua): ?string {
     foreach ($BOTS as $sig => $name) {
         if (stripos($ua, $sig) !== false) return $name;
     }
+    // Generic self-identified bot: Mozilla/5.0 (compatible; BotName/ver; +https://contact-url)
+    // The +https:// convention is how well-behaved bots announce a contact/info URL.
+    if (preg_match('/\(compatible;\s*([a-z][a-z0-9._-]*\/[^\s;)]+)[^)]*\+https?:\/\//i', $ua, $m)) {
+        return strtolower(preg_replace('/[^a-z0-9._-]/', '-', $m[1]));
+    }
     return null;
 }
 
