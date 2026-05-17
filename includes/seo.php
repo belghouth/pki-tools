@@ -39,6 +39,7 @@ function seo_head(array $opts): void {
     echo "  <meta name=\"author\" content=\"Thameur Belghith\">\n";
     echo "  <meta name=\"robots\" content=\"{$bots}\">\n";
     echo "  <link rel=\"canonical\" href=\"{$url}\">\n";
+    echo "  <link rel=\"apple-touch-icon\" href=\"/apple-touch-icon.png\">\n";
 
     // Open Graph
     echo "  <meta property=\"og:type\"        content=\"{$type}\">\n";
