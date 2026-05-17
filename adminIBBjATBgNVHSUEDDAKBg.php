@@ -20,12 +20,14 @@ $tab = match($_GET['tab'] ?? '') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && _admin_csrf_ok()) {
     $__act = $_POST['action'] ?? '';
     if ($__act === 'block_ip') {
-        $__ip  = trim($_POST['ip']     ?? '');
-        $__rsn = trim($_POST['reason'] ?? '');
-        $__err = filter_var($__ip, FILTER_VALIDATE_IP)
+        $__ip    = trim($_POST['ip']     ?? '');
+        $__rsn   = trim($_POST['reason'] ?? '');
+        $__redir = in_array($_POST['redirect_tab'] ?? '', ['php','nginx','soc','blocked','users'])
+            ? ($_POST['redirect_tab']) : 'blocked';
+        $__err   = filter_var($__ip, FILTER_VALIDATE_IP)
             ? block_ip($__ip, $__rsn ?: null, $email)
             : 'Invalid IP address.';
-        header('Location: ?tab=blocked' . ($__err ? '&err=' . urlencode($__err) : '&ok=1'));
+        header('Location: ?tab=' . $__redir . ($__err ? '&err=' . urlencode($__err) : '&ok=1'));
         exit;
     }
     if ($__act === 'unblock_ip') {
@@ -1750,6 +1752,7 @@ if ($tab === 'soc' && $pdo) {
             <form method="post" style="display:inline">
               <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
               <input type="hidden" name="action" value="block_ip">
+              <input type="hidden" name="redirect_tab" value="soc">
               <input type="hidden" name="ip" value="<?= htmlspecialchars($ip) ?>">
               <input type="hidden" name="reason" value="SOC: score <?= $sc ?>">
               <button type="submit" class="btn-act danger" title="Block IP">Block</button>
@@ -1758,6 +1761,7 @@ if ($tab === 'soc' && $pdo) {
             <form method="post" style="display:inline">
               <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
               <input type="hidden" name="action" value="unblock_ip">
+              <input type="hidden" name="redirect_tab" value="soc">
               <input type="hidden" name="ip" value="<?= htmlspecialchars($ip) ?>">
               <button type="submit" class="btn-act warn-act">Unblock</button>
             </form>
