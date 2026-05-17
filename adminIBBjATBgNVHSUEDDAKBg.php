@@ -42,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && _admin_csrf_ok()) {
     if ($__act === 'unblock_ip') {
         $__ip  = trim($_POST['ip'] ?? '');
         $__err = $__ip ? unblock_ip($__ip) : 'Invalid IP.';
+        if (!$__err && $__ip) { watchIp($__ip, 'Unblocked — continued monitoring', 'manual', 0); }
         header('Location: ?tab=blocked' . ($__err ? '&err=' . urlencode($__err) : '&ok=1'));
         exit;
     }
@@ -204,8 +205,8 @@ function watchBadge(string $ip, array $ws): string {
     if (!isset($ws[$ip])) return '';
     $tip = htmlspecialchars($ws[$ip]['reason'] ?? 'Watched', ENT_QUOTES);
     return $ws[$ip]['status'] === 'candidate'
-        ? " <span class=\"badge badge--candidate\" title=\"Candidate for blocking: $tip\">⚡</span>"
-        : " <span class=\"badge badge--watch\" title=\"Watching: $tip\">◉</span>";
+        ? " <span class=\"ip-act ip-act-w on\" style=\"cursor:default\" title=\"Candidate for blocking: $tip\">⚡</span>"
+        : " <span class=\"ip-act ip-act-w on\" style=\"cursor:default\" title=\"Watching: $tip\">◉</span>";
 }
 function watchBtn(string $ip, array $ws, string $redirectTab, string $autoReason = '', string $source = 'manual', int $score = 0): string {
     $csrf = _admin_csrf_token();
@@ -217,14 +218,14 @@ function watchBtn(string $ip, array $ws, string $redirectTab, string $autoReason
              . "<input type=\"hidden\" name=\"action\" value=\"unwatch_ip\">"
              . "<input type=\"hidden\" name=\"ip\" value=\"$hip\">"
              . "<input type=\"hidden\" name=\"redirect_tab\" value=\"$hrtab\">"
-             . "<button type=\"submit\" class=\"btn-watch-sm btn-watch-sm--on\" title=\"Stop watching\">◉</button>"
+             . "<button type=\"submit\" class=\"ip-act ip-act-w on\" title=\"Stop watching\">◉</button>"
              . "</form>";
     }
     $jsIp  = htmlspecialchars(json_encode($ip), ENT_QUOTES);
     $jsRsn = htmlspecialchars(json_encode($autoReason), ENT_QUOTES);
     $jsSrc = htmlspecialchars(json_encode($source), ENT_QUOTES);
     $jsTab = htmlspecialchars(json_encode($redirectTab), ENT_QUOTES);
-    return "<button type=\"button\" class=\"btn-watch-sm\" title=\"Watch this IP\""
+    return "<button type=\"button\" class=\"ip-act ip-act-w\" title=\"Watch this IP\""
          . " onclick=\"openWatchModal($jsIp,$jsRsn,$jsSrc,$score,$jsTab)\">◎</button>";
 }
 function ua_label(string $ua): string {
@@ -835,12 +836,18 @@ if ($tab === 'soc' && $pdo) {
     .badge--oth  { background: rgba(255,255,255,.04); color: var(--muted);  border: 1px solid var(--border); }
     .ua-bot     { font-family: var(--mono); font-size: .65rem; color: var(--err);  background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2); border-radius: 3px; padding: .1rem .35rem; }
     .ua-browser { font-family: var(--mono); font-size: .65rem; color: var(--muted); }
+    /* Unified action icons (watch + block) — no boxes, placed left of IP */
+    .ip-act { display: inline-block; background: none; border: none; font-size: 1.15rem; padding: .1rem .35rem; cursor: pointer; line-height: 1; transition: color var(--tr); vertical-align: middle; }
+    .ip-act-w           { color: #4a2a08; }
+    .ip-act-w:hover     { color: #f97316; }
+    .ip-act-w.on        { color: #f97316; }
+    .ip-act-b           { color: #2a3040; }
+    .ip-act-b:hover     { color: var(--err); }
+    .ip-act-blocked     { color: var(--err); cursor: default; opacity: .85; }
+    /* Watch-tab status column text labels (boxed) */
     .badge--watch     { background: rgba(249,115,22,.08); color: #f97316; border: 1px solid rgba(249,115,22,.3); border-radius: 3px; padding: .1rem .3rem; font-size: .65rem; font-family: var(--mono); }
     .badge--candidate { background: rgba(239,68,68,.1); color: #f87171; border: 1px solid rgba(239,68,68,.3); border-radius: 3px; padding: .1rem .3rem; font-size: .65rem; font-family: var(--mono); }
-    .btn-watch-sm      { background: none; border: none; cursor: pointer; color: #3a2010; font-size: .72rem; padding: 0 .2rem; line-height: 1; transition: color var(--tr); vertical-align: middle; }
-    .btn-watch-sm:hover { color: #f97316; }
-    .btn-watch-sm--on   { color: #f97316; }
-    #modal-watch { padding: 0; background: transparent; border: none; border-radius: 0; max-width: none; }
+    #modal-watch { padding: 0; background: transparent; border: none; border-radius: 0; max-width: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; }
     #modal-watch::backdrop { background: rgba(0,0,0,.55); }
     .ua-x       { cursor: pointer; user-select: text; }
     .ua-x.ua-expanded { font-family: var(--mono); font-size: .65rem; color: var(--text); background: rgba(0,212,170,.06); border: 1px solid rgba(0,212,170,.2); border-radius: 3px; padding: .15rem .4rem; white-space: normal; word-break: break-all; max-width: 480px; display: inline-block; }
@@ -907,8 +914,6 @@ if ($tab === 'soc' && $pdo) {
     .badge--disabled { background: rgba(239,68,68,.08);  border: 1px solid rgba(239,68,68,.2);  color: #fca5a5;       font-size: .62rem; padding: .1rem .4rem; border-radius: 3px; font-family: var(--mono); }
 
     /* inline block button (activity table IP cell) */
-    .btn-block-sm { background: none; border: none; cursor: pointer; color: #2a3040; font-size: .72rem; padding: 0 .2rem; line-height: 1; transition: color var(--tr); vertical-align: middle; }
-    .btn-block-sm:hover { color: var(--err); }
     .badge--blocked-sm { font-family: var(--mono); font-size: .65rem; color: rgba(239,68,68,.5); vertical-align: middle; margin-left: .15rem; cursor: default; }
 
     /* ── SOC styles ─────────────────────────────────────────────────────────── */
@@ -1210,13 +1215,15 @@ if ($tab === 'soc' && $pdo) {
           <tr>
             <td><?= tsSpan($r['created_at']) ?></td>
             <td style="white-space:nowrap">
-              <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?><?= watchBadge($r['ip'], $watch_set) ?>
-              <?php if (isset($blocked_set[$r['ip']])): ?>
-              <span class="badge--blocked-sm" title="Blocked">⊘</span>
-              <?php else: ?>
-              <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($r['ip'])) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="ip" value="<?= htmlspecialchars($r['ip']) ?>"><button type="submit" class="btn-block-sm" title="Block this IP">⊘</button></form>
-              <?php endif; ?>
+              <?php if (!isset($blocked_set[$r['ip']])): ?>
               <?= watchBtn($r['ip'], $watch_set, 'php') ?>
+              <?php endif; ?>
+              <?php if (isset($blocked_set[$r['ip']])): ?>
+              <span class="ip-act ip-act-blocked" title="Blocked">⊘</span>
+              <?php else: ?>
+              <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($r['ip'])) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="ip" value="<?= htmlspecialchars($r['ip']) ?>"><button type="submit" class="ip-act ip-act-b" title="Block this IP">⊘</button></form>
+              <?php endif; ?>
+              <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?>
             </td>
             <td><?= geo_label($r['ip'], $geo) ?></td>
             <td><?= method_badge($r['method']) ?></td>
@@ -1490,13 +1497,15 @@ if ($tab === 'soc' && $pdo) {
           <tr>
             <td><?= tsSpan($r['created_at']) ?></td>
             <td style="white-space:nowrap">
-              <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?><?= watchBadge($r['ip'], $watch_set) ?>
-              <?php if (isset($blocked_set[$r['ip']])): ?>
-              <span class="badge--blocked-sm" title="Blocked">⊘</span>
-              <?php else: ?>
-              <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($r['ip'])) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="ip" value="<?= htmlspecialchars($r['ip']) ?>"><button type="submit" class="btn-block-sm" title="Block this IP">⊘</button></form>
-              <?php endif; ?>
+              <?php if (!isset($blocked_set[$r['ip']])): ?>
               <?= watchBtn($r['ip'], $watch_set, 'nginx') ?>
+              <?php endif; ?>
+              <?php if (isset($blocked_set[$r['ip']])): ?>
+              <span class="ip-act ip-act-blocked" title="Blocked">⊘</span>
+              <?php else: ?>
+              <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($r['ip'])) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="ip" value="<?= htmlspecialchars($r['ip']) ?>"><button type="submit" class="ip-act ip-act-b" title="Block this IP">⊘</button></form>
+              <?php endif; ?>
+              <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?>
             </td>
             <td><?= geo_label($r['ip'], $ng_geo) ?></td>
             <td><?= method_badge($r['method']) ?></td>
@@ -2030,7 +2039,9 @@ if ($tab === 'soc' && $pdo) {
           <td><?= (int)$r['rate_5m'] > 0 ? '<span style="color:#c084fc">' . (int)$r['rate_5m'] . '</span>' : '<span class="muted">—</span>' ?></td>
           <td><?= tsSpan($r['last_seen']) ?></td>
           <td style="white-space:nowrap">
+            <?php if (!$r['is_blocked']): ?>
             <?= watchBtn($ip, $watch_set, 'soc', 'Threat IP: score ' . $sc, 'soc_event', $sc) ?>
+            <?php endif; ?>
             <?php if (!$r['is_blocked']): ?>
             <form method="post" style="display:inline">
               <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
@@ -2194,7 +2205,7 @@ if ($tab === 'soc' && $pdo) {
             <td><?= uriLink($h['uri'], null, 40) ?></td>
             <td><?= status_badge((int)$h['status']) ?></td>
             <td><?= ua_label($h['user_agent'] ?? '') ?></td>
-            <td><?= watchBtn($hip, $watch_set, 'soc', $h_reason, 'soc_honeypot') ?></td>
+            <td><?php if (!isset($blocked_set[$hip])): ?><?= watchBtn($hip, $watch_set, 'soc', $h_reason, 'soc_honeypot') ?><?php endif; ?></td>
           </tr>
           <?php endforeach; ?>
           </tbody>
@@ -2235,7 +2246,7 @@ if ($tab === 'soc' && $pdo) {
           <td><?= uriLink($ev['uri'], null, 60) ?></td>
           <td><?= status_badge((int)$ev['status']) ?></td>
           <td><?= ua_label($ev['user_agent'] ?? '') ?></td>
-          <td><?= watchBtn($eip, $watch_set, 'soc', $e_reason, 'soc_event') ?></td>
+          <td><?php if (!isset($blocked_set[$eip])): ?><?= watchBtn($eip, $watch_set, 'soc', $e_reason, 'soc_event') ?><?php endif; ?></td>
         </tr>
         <?php endforeach; ?>
         </tbody>
@@ -2446,7 +2457,7 @@ if ($tab === 'soc' && $pdo) {
           <a href="?tab=nginx&ip=<?= urlencode($wr['ip']) ?>" class="ip-link"><?= htmlspecialchars($wr['ip']) ?></a>
           <?= me_badge($wr['ip'], $my_ips_set) ?>
           <?php if (isset($blocked_set[$wr['ip']])): ?>
-          <span class="badge--blocked-sm" title="Blocked">⊘</span>
+          <span class="ip-act ip-act-blocked" title="Blocked">⊘</span>
           <?php endif; ?>
         </td>
         <td><?= $wcc ? '<span class="geo">' . flag($wcc) . ' <span class="geo-cc">' . htmlspecialchars($wcc) . '</span></span>' : '<span class="muted">—</span>' ?></td>
@@ -2475,7 +2486,7 @@ if ($tab === 'soc' && $pdo) {
             <button type="submit" class="btn-act danger" style="font-size:.62rem;padding:.1rem .4rem">Block</button>
           </form>
           <?php else: ?>
-          <span class="badge--blocked-sm" title="Blocked">⊘</span>
+          <span class="ip-act ip-act-blocked" title="Blocked">⊘</span>
           <?php endif; ?>
         </td>
       </tr>
