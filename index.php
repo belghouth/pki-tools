@@ -92,9 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
           'name'     => 'Thameur Belghith',
           'jobTitle' => 'PKI & Trust Services Engineer',
           'url'      => SITE_BASE_URL . '/',
-          'email'    => 'mailto:' . CONTACT_EMAIL,
           'sameAs'   => [
-            'https://github.com/belghouth',
             'https://www.linkedin.com/in/belghouth/',
           ],
         ],
@@ -635,7 +633,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
           <p>I work in PKI and Trust Services. Day-to-day: certificate profile engineering, CA system design, CPS/CP authoring, compliance against the CA/Browser Forum Baseline Requirements, audit support. These tools started as internal utilities for problems I kept running into. I open-sourced them because the gap between what the BRs require and what most teams have available to check against it is real — and not worth solving from scratch every time.</p>
 
           <div class="about-links">
-            <a href="https://github.com/belghouth" class="pill-link" target="_blank" rel="noopener">GitHub</a>
             <a href="https://www.linkedin.com/in/belghouth/" class="pill-link" target="_blank" rel="noopener">LinkedIn</a>
             <a href="#contact" class="pill-link">Contact</a>
           </div>
@@ -976,7 +973,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
 <footer class="site-footer">
   <span class="site-footer-left">&copy; <?= date('Y') ?> Thameur Belghith</span>
   <div class="site-footer-links">
-    <a href="https://github.com/belghouth" target="_blank" rel="noopener">GitHub</a>
     <a href="https://www.linkedin.com/in/belghouth/" target="_blank" rel="noopener">LinkedIn</a>
     <a href="/feed.php">PKI News</a>
     <a href="/community_tools.php">Community Tools</a>
