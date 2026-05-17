@@ -298,6 +298,11 @@ function rel_time(string $dt): string {
     if ($d < 86400) return floor($d/3600) . 'h ago';
     return floor($d/86400) . 'd ago';
 }
+function tsSpan(string $dt): string {
+    $esc = htmlspecialchars($dt, ENT_QUOTES);
+    $rel = rel_time($dt);
+    return "<span class=\"ts ts-x\" data-ts=\"$esc\" data-label=\"$rel\" title=\"$esc\">$rel</span>";
+}
 function q(array $over = [], array $drop = []): string {
     $p = array_filter($_GET, fn($v) => $v !== '');
     foreach ($drop as $k) unset($p[$k]);
@@ -781,6 +786,8 @@ if ($tab === 'soc' && $pdo) {
     .ua-browser { font-family: var(--mono); font-size: .65rem; color: var(--muted); }
     .ua-x       { cursor: pointer; user-select: text; }
     .ua-x.ua-expanded { font-family: var(--mono); font-size: .65rem; color: var(--text); background: rgba(0,212,170,.06); border: 1px solid rgba(0,212,170,.2); border-radius: 3px; padding: .15rem .4rem; white-space: normal; word-break: break-all; max-width: 480px; display: inline-block; }
+    .ts-x       { cursor: pointer; }
+    .ts-x.ts-expanded { font-family: var(--mono); font-size: .72rem; color: var(--text); background: rgba(0,212,170,.06); border: 1px solid rgba(0,212,170,.2); border-radius: 3px; padding: .1rem .4rem; white-space: nowrap; }
 
     /* pagination */
     .pager { display: flex; gap: .35rem; flex-wrap: wrap; margin-top: .85rem; align-items: center; }
@@ -1142,7 +1149,7 @@ if ($tab === 'soc' && $pdo) {
           <tbody>
           <?php foreach ($rows as $r): ?>
           <tr>
-            <td><span class="ts" title="<?= htmlspecialchars($r['created_at']) ?> UTC"><?= rel_time($r['created_at']) ?></span></td>
+            <td><?= tsSpan($r['created_at']) ?></td>
             <td style="white-space:nowrap">
               <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?>
               <?php if (isset($blocked_set[$r['ip']])): ?>
@@ -1213,7 +1220,7 @@ if ($tab === 'soc' && $pdo) {
         <tbody>
         <?php foreach ($err_rows as $e): ?>
         <tr>
-          <td><span class="ts" title="<?= htmlspecialchars($e['created_at']) ?> UTC"><?= rel_time($e['created_at']) ?></span></td>
+          <td><?= tsSpan($e['created_at']) ?></td>
           <td><a href="<?= q(['ip' => $e['ip']]) ?>" class="ip-link"><?= htmlspecialchars($e['ip']) ?></a><?= me_badge($e['ip'], $my_ips_set) ?></td>
           <td><span class="badge badge--warn"><?= htmlspecialchars($e['error_type']) ?></span></td>
           <td><?= uriLink($e['uri']) ?></td>
@@ -1421,7 +1428,7 @@ if ($tab === 'soc' && $pdo) {
           <tbody>
           <?php foreach ($ng_rows as $r): ?>
           <tr>
-            <td><span class="ts" title="<?= htmlspecialchars($r['created_at']) ?> UTC"><?= rel_time($r['created_at']) ?></span></td>
+            <td><?= tsSpan($r['created_at']) ?></td>
             <td style="white-space:nowrap">
               <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?>
               <?php if (isset($blocked_set[$r['ip']])): ?>
@@ -1666,10 +1673,10 @@ if ($tab === 'soc' && $pdo) {
             <?php else: ?><span class="muted">—</span><?php endif; ?>
           </td>
           <td><?= $b['total_req'] ? number_format((int)$b['total_req']) : '<span class="muted">—</span>' ?></td>
-          <td><?= $b['last_seen'] ? rel_time($b['last_seen']) : '<span class="muted">—</span>' ?></td>
+          <td><?= $b['last_seen'] ? tsSpan($b['last_seen']) : '<span class="muted">—</span>' ?></td>
           <td class="<?= (int)$b['err_pct'] > 30 ? 'epct-warn' : 'muted' ?>"><?= $b['total_req'] ? (int)$b['err_pct'] . '%' : '<span class="muted">—</span>' ?></td>
           <td><span class="muted" style="font-size:.72rem"><?= htmlspecialchars($b['blocked_by']) ?></span></td>
-          <td><span class="ts" title="<?= htmlspecialchars($b['blocked_at']) ?> UTC"><?= rel_time($b['blocked_at']) ?></span></td>
+          <td><?= tsSpan($b['blocked_at']) ?></td>
           <td><span class="muted" style="font-family:var(--mono);font-size:.68rem;max-width:180px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="<?= htmlspecialchars($b['reason'] ?? '') ?>"><?= $b['reason'] ? htmlspecialchars($b['reason']) : '—' ?></span></td>
           <td>
             <form method="POST" style="display:inline" onsubmit="return confirm('Unblock <?= htmlspecialchars(addslashes($b['ip'])) ?>?')">
@@ -1960,7 +1967,7 @@ if ($tab === 'soc' && $pdo) {
           <td><?= (int)$r['c5xx'] > 0 ? '<span class="badge badge--err">'  . (int)$r['c5xx'] . '</span>' : '<span class="muted">0</span>' ?></td>
           <td><?= (int)$r['php_errs'] > 0 ? '<span style="color:var(--warn)">' . (int)$r['php_errs'] . '</span>' : '<span class="muted">0</span>' ?></td>
           <td><?= (int)$r['rate_5m'] > 0 ? '<span style="color:#c084fc">' . (int)$r['rate_5m'] . '</span>' : '<span class="muted">—</span>' ?></td>
-          <td class="ts" title="<?= htmlspecialchars($r['last_seen']) ?>"><?= rel_time($r['last_seen']) ?></td>
+          <td><?= tsSpan($r['last_seen']) ?></td>
           <td>
             <?php if (!$r['is_blocked']): ?>
             <form method="post" style="display:inline">
@@ -2052,7 +2059,7 @@ if ($tab === 'soc' && $pdo) {
             }
         ?>
         <tr>
-          <td class="ts" title="<?= htmlspecialchars($s['session_start']) ?>"><?= rel_time($s['session_start']) ?></td>
+          <td><?= tsSpan($s['session_start']) ?></td>
           <td><a href="?tab=nginx&ip=<?= urlencode($sip) ?>" class="ip-link"><?= htmlspecialchars($sip) ?></a><?= me_badge($sip, $my_ips_set) ?></td>
           <td><?= $scc ? geo_label($sip, $soc_sess_geo) : '<span class="muted">—</span>' ?></td>
           <td style="white-space:normal;min-width:130px"><?= $pvdr ?: '<span class="muted">—</span>' ?></td>
@@ -2091,7 +2098,7 @@ if ($tab === 'soc' && $pdo) {
             <td><?= uriLink($d['uri'], null, 50) ?></td>
             <td><span class="badge badge--err"><?= (int)$d['c_ips'] ?></span></td>
             <td class="ts"><?= number_format((int)$d['c_hits']) ?></td>
-            <td class="ts" title="<?= htmlspecialchars($d['first_seen']) ?> → <?= htmlspecialchars($d['last_seen']) ?>"><?= rel_time($d['first_seen']) ?></td>
+            <td><?= tsSpan($d['first_seen']) ?></td>
           </tr>
           <?php endforeach; ?>
           </tbody>
@@ -2117,7 +2124,7 @@ if ($tab === 'soc' && $pdo) {
               $hcc = $soc_geo[$hip] ?? $h['country'] ?? '';
           ?>
           <tr>
-            <td class="ts" title="<?= htmlspecialchars($h['created_at']) ?>"><?= rel_time($h['created_at']) ?></td>
+            <td><?= tsSpan($h['created_at']) ?></td>
             <td>
               <a href="?tab=soc&soc_period=<?= $soc_period_key ?>" class="ip-link"><?= htmlspecialchars($hip) ?></a><?= me_badge($hip, $my_ips_set) ?>
               <?php if ($hcc): ?> <?= flag($hcc) ?><?php endif; ?>
@@ -2156,7 +2163,7 @@ if ($tab === 'soc' && $pdo) {
             $et  = $ev['ev_type'];
         ?>
         <tr>
-          <td class="ts" title="<?= htmlspecialchars($ev['created_at']) ?>"><?= rel_time($ev['created_at']) ?></td>
+          <td><?= tsSpan($ev['created_at']) ?></td>
           <td><a href="?tab=soc&soc_period=<?= $soc_period_key ?>" class="ip-link"><?= htmlspecialchars($eip) ?></a><?= me_badge($eip, $my_ips_set) ?></td>
           <td><?= $ecc ? '<span class="geo" title="' . htmlspecialchars($ecc) . '">' . flag($ecc) . ' <span class="geo-cc">' . htmlspecialchars($ecc) . '</span></span>' : '<span class="muted">—</span>' ?></td>
           <td><span class="ev-pill ev-<?= htmlspecialchars($et) ?>"><?= htmlspecialchars($ev_label[$et] ?? $et) ?></span></td>
@@ -2217,8 +2224,8 @@ if ($tab === 'soc' && $pdo) {
             <span class="badge badge--redir" style="font-size:.6rem">manual</span>
             <?php endif; ?>
           </td>
-          <td class="ts" title="<?= htmlspecialchars($mrow['first_seen']) ?> UTC"><?= rel_time($mrow['first_seen']) ?></td>
-          <td class="ts" title="<?= htmlspecialchars($mrow['last_seen']) ?> UTC"><?= rel_time($mrow['last_seen']) ?></td>
+          <td><?= tsSpan($mrow['first_seen']) ?></td>
+          <td><?= tsSpan($mrow['last_seen']) ?></td>
           <td style="white-space:nowrap">
             <button onclick="openEditMyIp(<?= htmlspecialchars(json_encode($mip)) ?>, <?= htmlspecialchars(json_encode($mrow['label'] ?? '')) ?>)"
                     class="btn-act primary" style="margin-right:.3rem">Edit</button>
@@ -2302,11 +2309,29 @@ if ($tab === 'soc' && $pdo) {
 
 <script>
 // Convert UTC timestamps to local time on hover title
-document.querySelectorAll('.ts').forEach(function(el) {
-  var utc = el.title;
+document.querySelectorAll('.ts-x').forEach(function(el) {
+  var utc = el.dataset.ts;
   if (!utc) return;
   var d = new Date(utc.replace(' ', 'T') + 'Z');
   el.title = d.toLocaleString();
+});
+// TS expand/collapse — click to show local yyyy-mm-dd HH:MM:SS
+function _fmtLocal(utcStr) {
+  var d = new Date(utcStr.replace(' ', 'T') + 'Z');
+  var p = function(n) { return String(n).padStart(2, '0'); };
+  return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) +
+         ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+document.addEventListener('click', function(e) {
+  var el = e.target.closest('.ts-x');
+  if (!el) return;
+  if (el.classList.contains('ts-expanded')) {
+    el.classList.remove('ts-expanded');
+    el.textContent = el.dataset.label;
+  } else {
+    el.classList.add('ts-expanded');
+    el.textContent = _fmtLocal(el.dataset.ts);
+  }
 });
 // Auto-submit selects
 document.querySelectorAll('.filter-bar select').forEach(function(s) {
