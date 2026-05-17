@@ -236,6 +236,14 @@ function schemaIntel(PDO $pdo): void {
         INDEX idx_status (status),
         INDEX idx_added  (added_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS alert_cursor (
+        id            INT UNSIGNED PRIMARY KEY DEFAULT 1,
+        last_run_at   DATETIME     NOT NULL DEFAULT '2000-01-01 00:00:00',
+        last_alert_at DATETIME     DEFAULT NULL,
+        updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                            ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
 function adminSchema(PDO $pdo): void {
