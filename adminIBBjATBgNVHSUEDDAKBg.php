@@ -1,7 +1,12 @@
 <?php
 // SOC AJAX fragment mode — buffer all output so we can extract just the live region
-$_soc_ajax = (($_GET['tab'] ?? '') === 'soc') && (($_GET['ajax'] ?? '') === '1');
-if ($_soc_ajax) { ob_start(); }
+// AJAX fragment mode: buffer output so we can extract just the live region
+$_ajax_tab = null;
+if (($_GET['ajax'] ?? '') === '1') {
+    $t = $_GET['tab'] ?? 'php';
+    if (in_array($t, ['php', 'nginx', 'soc'], true)) { $_ajax_tab = $t; }
+}
+if ($_ajax_tab !== null) { ob_start(); }
 define('ADMIN_NO_LOG', true);
 require_once __DIR__ . '/config.php';
 
@@ -1103,12 +1108,20 @@ if ($tab === 'soc' && $pdo) {
   <!-- ── Header ──────────────────────────────────────────────────────────────── -->
   <div class="page-hd">
     <h1>PHP Activity</h1>
-    <div class="period-tabs">
-      <?php foreach (['1h' => 'Last hour', '24h' => 'Last 24 h', '7d' => '7 days', '30d' => '30 days'] as $k => $lbl): ?>
-      <a href="<?= q(['period' => $k]) ?>" class="<?= $period === $k ? 'active' : '' ?>"><?= $lbl ?></a>
-      <?php endforeach; ?>
+    <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <div class="period-tabs">
+        <?php foreach (['1h' => 'Last hour', '24h' => 'Last 24 h', '7d' => '7 days', '30d' => '30 days'] as $k => $lbl): ?>
+        <a href="<?= q(['period' => $k]) ?>" class="<?= $period === $k ? 'active' : '' ?>"><?= $lbl ?></a>
+        <?php endforeach; ?>
+      </div>
+      <div style="display:flex;align-items:center;gap:.4rem;font-family:var(--mono);font-size:.62rem;color:#3d4f68;flex-shrink:0">
+        <span>↻</span><span id="php-cd">30s</span>
+        <button id="php-refresh-btn" title="Refresh now" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;padding:0 .15rem;line-height:1;transition:color 150ms ease" onmouseenter="this.style.color='var(--accent)'" onmouseleave="this.style.color='var(--muted)'">⟳</button>
+      </div>
     </div>
   </div>
+
+  <div id="php-live"><!--php-live-start-->
 
   <!-- ── Stats ───────────────────────────────────────────────────────────────── -->
   <div class="stats-grid">
@@ -1374,18 +1387,59 @@ if ($tab === 'soc' && $pdo) {
     <?php endif; ?>
   </div>
 
+  <!--php-live-end--></div><!-- #php-live -->
+
+  <script>
+  (function () {
+    var live = document.getElementById('php-live');
+    var cdEl = document.getElementById('php-cd');
+    var btn  = document.getElementById('php-refresh-btn');
+    if (!live || !cdEl || !btn) { return; }
+    var INTERVAL = 30;
+    var countdown = INTERVAL;
+    function buildUrl() {
+      var params = new URLSearchParams(window.location.search);
+      params.set('ajax', '1');
+      return window.location.pathname + '?' + params.toString();
+    }
+    function setCountdown(n) { countdown = n; cdEl.textContent = countdown + 's'; }
+    function doRefresh() {
+      countdown = INTERVAL;
+      cdEl.textContent = '…';
+      fetch(buildUrl())
+        .then(function (r) { return r.text(); })
+        .then(function (html) { live.innerHTML = html; setCountdown(INTERVAL); })
+        .catch(function () { setCountdown(INTERVAL); });
+    }
+    setInterval(function () {
+      if (document.hidden) { setCountdown(INTERVAL); return; }
+      setCountdown(countdown - 1);
+      if (countdown <= 0) { doRefresh(); }
+    }, 1000);
+    btn.addEventListener('click', doRefresh);
+  }());
+  </script>
+
   <?php endif; /* $tab === 'php' */ ?>
 
   <?php if ($tab === 'nginx'): ?>
   <!-- ── Header ──────────────────────────────────────────────────────────────── -->
   <div class="page-hd">
     <h1>Server Activity</h1>
-    <div class="period-tabs">
-      <?php foreach (['1h' => 'Last hour', '24h' => 'Last 24 h', '7d' => '7 days', '30d' => '30 days'] as $k => $lbl): ?>
-      <a href="<?= q(['period' => $k]) ?>" class="<?= $period === $k ? 'active' : '' ?>"><?= $lbl ?></a>
-      <?php endforeach; ?>
+    <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <div class="period-tabs">
+        <?php foreach (['1h' => 'Last hour', '24h' => 'Last 24 h', '7d' => '7 days', '30d' => '30 days'] as $k => $lbl): ?>
+        <a href="<?= q(['period' => $k]) ?>" class="<?= $period === $k ? 'active' : '' ?>"><?= $lbl ?></a>
+        <?php endforeach; ?>
+      </div>
+      <div style="display:flex;align-items:center;gap:.4rem;font-family:var(--mono);font-size:.62rem;color:#3d4f68;flex-shrink:0">
+        <span>↻</span><span id="nginx-cd">30s</span>
+        <button id="nginx-refresh-btn" title="Refresh now" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:1rem;padding:0 .15rem;line-height:1;transition:color 150ms ease" onmouseenter="this.style.color='var(--accent)'" onmouseleave="this.style.color='var(--muted)'">⟳</button>
+      </div>
     </div>
   </div>
+
+  <div id="nginx-live"><!--nginx-live-start-->
 
   <!-- ── Stats ───────────────────────────────────────────────────────────────── -->
   <div class="stats-grid">
@@ -1610,6 +1664,39 @@ if ($tab === 'soc' && $pdo) {
 
     </div>
   </div><!-- server activity card -->
+
+  <!--nginx-live-end--></div><!-- #nginx-live -->
+
+  <script>
+  (function () {
+    var live = document.getElementById('nginx-live');
+    var cdEl = document.getElementById('nginx-cd');
+    var btn  = document.getElementById('nginx-refresh-btn');
+    if (!live || !cdEl || !btn) { return; }
+    var INTERVAL = 30;
+    var countdown = INTERVAL;
+    function buildUrl() {
+      var params = new URLSearchParams(window.location.search);
+      params.set('ajax', '1');
+      return window.location.pathname + '?' + params.toString();
+    }
+    function setCountdown(n) { countdown = n; cdEl.textContent = countdown + 's'; }
+    function doRefresh() {
+      countdown = INTERVAL;
+      cdEl.textContent = '…';
+      fetch(buildUrl())
+        .then(function (r) { return r.text(); })
+        .then(function (html) { live.innerHTML = html; setCountdown(INTERVAL); })
+        .catch(function () { setCountdown(INTERVAL); });
+    }
+    setInterval(function () {
+      if (document.hidden) { setCountdown(INTERVAL); return; }
+      setCountdown(countdown - 1);
+      if (countdown <= 0) { doRefresh(); }
+    }, 1000);
+    btn.addEventListener('click', doRefresh);
+  }());
+  </script>
 
   <?php endif; /* $tab === 'nginx' */ ?>
 
@@ -2344,12 +2431,11 @@ if ($tab === 'soc' && $pdo) {
 
     var INTERVAL = 30;
     var countdown = INTERVAL;
-    var period = <?= json_encode($soc_period_key) ?>;
-    var ipf    = <?= json_encode($ipf) ?>;
 
     function buildUrl() {
-      return '?tab=soc&soc_period=' + encodeURIComponent(period)
-           + '&ipf=' + encodeURIComponent(ipf) + '&ajax=1';
+      var params = new URLSearchParams(window.location.search);
+      params.set('ajax', '1');
+      return window.location.pathname + '?' + params.toString();
     }
 
     function setCountdown(n) {
@@ -2855,9 +2941,9 @@ document.addEventListener('click', function(e) {
 </body>
 </html>
 <?php
-if ($_soc_ajax) {
+if ($_ajax_tab !== null) {
     $full = ob_get_clean();
-    preg_match('/<!--soc-live-start-->(.*?)<!--soc-live-end-->/s', $full, $m);
+    preg_match('/<!--' . $_ajax_tab . '-live-start-->(.*?)<!--' . $_ajax_tab . '-live-end-->/s', $full, $m);
     header('Content-Type: text/html; charset=UTF-8');
     echo $m[1] ?? '';
     exit;
