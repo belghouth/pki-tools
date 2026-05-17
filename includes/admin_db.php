@@ -208,6 +208,17 @@ function _admin_schema(PDO $pdo): void {
         last_analyzed DATETIME(3)  NOT NULL DEFAULT '2000-01-01 00:00:00.000',
         updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    // Admin's own IPs — recorded on each admin page load for "me" badge in dashboards
+    $pdo->exec("CREATE TABLE IF NOT EXISTS my_ips (
+        ip         VARCHAR(45)                     PRIMARY KEY,
+        label      VARCHAR(60)                     DEFAULT NULL,
+        type       ENUM('auto','manual')  NOT NULL DEFAULT 'auto',
+        first_seen DATETIME               NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        last_seen  DATETIME               NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_type      (type),
+        INDEX idx_last_seen (last_seen)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
 // Validate admin cookie; returns email on success or null.
@@ -579,6 +590,58 @@ function ip_intel_get(array $ips): array {
         foreach ($st->fetchAll() as $r) $out[$r['ip']] = $r;
         return $out;
     } catch (Throwable) { return []; }
+}
+
+// ── My IPs ────────────────────────────────────────────────────────────────────
+
+// Record admin IP automatically (type=auto); updates last_seen on revisit.
+function my_ip_record(string $ip): void {
+    if ($ip === '') return;
+    try {
+        admin_pdo()?->prepare(
+            "INSERT INTO my_ips (ip, type) VALUES (?, 'auto')
+             ON DUPLICATE KEY UPDATE last_seen=NOW()"
+        )->execute([$ip]);
+    } catch (Throwable) {}
+}
+
+// Return all known admin IPs as an [ip => row] map for fast lookup.
+function my_ips_load(): array {
+    try {
+        $rows = admin_pdo()?->query(
+            "SELECT ip, label, type, first_seen, last_seen FROM my_ips ORDER BY last_seen DESC"
+        )?->fetchAll() ?? [];
+        $out = [];
+        foreach ($rows as $r) $out[$r['ip']] = $r;
+        return $out;
+    } catch (Throwable) { return []; }
+}
+
+function my_ips_add(string $ip, string $label): string {
+    if (!filter_var($ip, FILTER_VALIDATE_IP)) return 'Invalid IP address.';
+    try {
+        admin_pdo()?->prepare(
+            "INSERT INTO my_ips (ip, label, type) VALUES (?, ?, 'manual')
+             ON DUPLICATE KEY UPDATE label=VALUES(label), type='manual', last_seen=NOW()"
+        )->execute([$ip, $label !== '' ? $label : null]);
+        return '';
+    } catch (Throwable) { return 'Failed to add IP.'; }
+}
+
+function my_ips_update(string $ip, string $label): string {
+    try {
+        admin_pdo()?->prepare(
+            "UPDATE my_ips SET label=? WHERE ip=?"
+        )->execute([$label !== '' ? $label : null, $ip]);
+        return '';
+    } catch (Throwable) { return 'Failed to update.'; }
+}
+
+function my_ips_delete(string $ip): string {
+    try {
+        admin_pdo()?->prepare("DELETE FROM my_ips WHERE ip=?")->execute([$ip]);
+        return '';
+    } catch (Throwable) { return 'Failed to delete.'; }
 }
 
 // Auto-register visit logger + PHP error capture (skipped on admin pages)

@@ -7,12 +7,20 @@ if (!$email) { header('Location: ' . ADMIN_LOGIN_URL, true, 302); exit; }
 
 $pdo = admin_pdo();
 
+// Record admin's current IP as "mine" on every page load
+$_admin_ip = substr(trim(explode(',',
+    $_SERVER['HTTP_CF_CONNECTING_IP'] ?? $_SERVER['HTTP_X_REAL_IP'] ??
+    $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '')[0]), 0, 45);
+if ($_admin_ip !== '') my_ip_record($_admin_ip);
+$my_ips_set = my_ips_load(); // [ip => row] — used everywhere for "me" badge
+
 // ── Tab ────────────────────────────────────────────────────────────────────────
 $tab = match($_GET['tab'] ?? '') {
     'users'   => 'users',
     'blocked' => 'blocked',
     'nginx'   => 'nginx',
     'soc'     => 'soc',
+    'myips'   => 'myips',
     default   => 'php',
 };
 
@@ -47,6 +55,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && _admin_csrf_ok()) {
         header('Location: ' . ($_SERVER['HTTP_REFERER'] ?? '?'));
         exit;
     }
+}
+
+// ── My IPs CRUD (POST) ───────────────────────────────────────────────────────
+$mi_flash = ''; $mi_flash_ok = true;
+if ($tab === 'myips' && $_SERVER['REQUEST_METHOD'] === 'POST' && _admin_csrf_ok()) {
+    $act = $_POST['action'] ?? '';
+    $err = '';
+    if ($act === 'add_myip') {
+        $mi_ip  = trim($_POST['ip']    ?? '');
+        $mi_lbl = trim($_POST['label'] ?? '');
+        $err = my_ips_add($mi_ip, $mi_lbl);
+    } elseif ($act === 'update_myip') {
+        $mi_ip  = trim($_POST['ip']    ?? '');
+        $mi_lbl = trim($_POST['label'] ?? '');
+        $err = $mi_ip ? my_ips_update($mi_ip, $mi_lbl) : 'Invalid IP.';
+    } elseif ($act === 'delete_myip') {
+        $mi_ip = trim($_POST['ip'] ?? '');
+        $err = $mi_ip ? my_ips_delete($mi_ip) : 'Invalid IP.';
+    }
+    header('Location: ?tab=myips' . ($err ? '&err=' . urlencode($err) : '&ok=1'));
+    exit;
+}
+if ($tab === 'myips') {
+    if (isset($_GET['ok']))  { $mi_flash = 'Done.';                              $mi_flash_ok = true; }
+    if (isset($_GET['err'])) { $mi_flash = htmlspecialchars($_GET['err'] ?? ''); $mi_flash_ok = false; }
+    $my_ips_set = my_ips_load(); // reload after any mutation
 }
 
 // ── Users CRUD (POST) ─────────────────────────────────────────────────────────
@@ -136,6 +170,12 @@ function status_badge(int $s): string {
 function method_badge(string $m): string {
     $c = match($m) { 'GET' => 'get', 'POST' => 'post', default => 'oth' };
     return "<span class=\"badge badge--$c\">$m</span>";
+}
+function me_badge(string $ip, array $set): string {
+    if (!isset($set[$ip])) return '';
+    $lbl = $set[$ip]['label'] ?? '';
+    $tip = $lbl !== '' ? htmlspecialchars($lbl) : 'my IP';
+    return " <span class=\"badge badge--me\" title=\"$tip\">me</span>";
 }
 function ua_label(string $ua): string {
     if ($ua === '') return '<span class="muted">—</span>';
@@ -607,7 +647,7 @@ if ($tab === 'soc' && $pdo) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><?= match($tab) { 'users' => 'Users', 'blocked' => 'Blocked IPs', 'nginx' => 'Server Activity', 'soc' => 'SOC', default => 'PHP Activity' } ?> — <?= SITE_DOMAIN ?></title>
+  <title><?= match($tab) { 'users' => 'Users', 'blocked' => 'Blocked IPs', 'nginx' => 'Server Activity', 'soc' => 'SOC', 'myips' => 'My IPs', default => 'PHP Activity' } ?> — <?= SITE_DOMAIN ?></title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -760,6 +800,7 @@ if ($tab === 'soc' && $pdo) {
     .btn-act.danger:hover { background: rgba(239,68,68,.1); border-color: var(--err); }
 
     /* user status/role badges */
+    .badge--me       { background: rgba(0,212,170,.18);  border: 1px solid rgba(0,212,170,.5);  color: var(--accent); font-size: .58rem; padding: .1rem .35rem; border-radius: 3px; font-family: var(--mono); font-weight: 600; letter-spacing: .04em; }
     .badge--root     { background: rgba(0,212,170,.08);  border: 1px solid rgba(0,212,170,.2);  color: var(--accent); font-size: .62rem; padding: .1rem .4rem; border-radius: 3px; font-family: var(--mono); }
     .badge--active   { background: rgba(34,197,94,.08);  border: 1px solid rgba(34,197,94,.2);  color: var(--ok);     font-size: .62rem; padding: .1rem .4rem; border-radius: 3px; font-family: var(--mono); }
     .badge--disabled { background: rgba(239,68,68,.08);  border: 1px solid rgba(239,68,68,.2);  color: #fca5a5;       font-size: .62rem; padding: .1rem .4rem; border-radius: 3px; font-family: var(--mono); }
@@ -883,6 +924,7 @@ if ($tab === 'soc' && $pdo) {
   <a href="?tab=nginx" class="<?= $tab === 'nginx' ? 'active' : '' ?>">Server Activity</a>
   <a href="?tab=soc" class="<?= $tab === 'soc' ? 'active' : '' ?>" style="color:<?= $tab !== 'soc' ? 'var(--warn)' : '' ?>">SOC</a>
   <a href="?tab=blocked" class="<?= $tab === 'blocked' ? 'active' : '' ?>">Blocked IPs <?php if ($blocked_set): ?><span style="font-size:.6rem;opacity:.6">(<?= count($blocked_set) ?>)</span><?php endif; ?></a>
+  <a href="?tab=myips" class="<?= $tab === 'myips' ? 'active' : '' ?>">My IPs <?php if ($my_ips_set): ?><span style="font-size:.6rem;opacity:.6">(<?= count($my_ips_set) ?>)</span><?php endif; ?></a>
   <a href="?tab=users" class="<?= $tab === 'users' ? 'active' : '' ?>">Users</a>
 </nav>
 
@@ -952,7 +994,7 @@ if ($tab === 'soc' && $pdo) {
           <?php if ($top_ips): ?>
           <?php foreach ($top_ips as $row): ?>
           <tr>
-            <td><a href="<?= q(['ip' => $row['ip']]) ?>" class="ip-link"><?= htmlspecialchars($row['ip']) ?></a></td>
+            <td><a href="<?= q(['ip' => $row['ip']]) ?>" class="ip-link"><?= htmlspecialchars($row['ip']) ?></a><?= me_badge($row['ip'], $my_ips_set) ?></td>
             <td><?= geo_label($row['ip'], $geo) ?></td>
             <td><?= number_format($row['c']) ?></td>
             <td class="<?= (int)$row['epct'] > 30 ? 'epct-warn' : '' ?> muted"><?= (int)$row['epct'] ?>%</td>
@@ -1057,7 +1099,7 @@ if ($tab === 'soc' && $pdo) {
           <tr>
             <td><span class="ts" title="<?= htmlspecialchars($r['created_at']) ?> UTC"><?= rel_time($r['created_at']) ?></span></td>
             <td style="white-space:nowrap">
-              <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a>
+              <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?>
               <?php if (isset($blocked_set[$r['ip']])): ?>
               <span class="badge--blocked-sm" title="Blocked">⊘</span>
               <?php else: ?>
@@ -1129,7 +1171,7 @@ if ($tab === 'soc' && $pdo) {
         <?php foreach ($err_rows as $e): ?>
         <tr>
           <td><span class="ts" title="<?= htmlspecialchars($e['created_at']) ?> UTC"><?= rel_time($e['created_at']) ?></span></td>
-          <td><a href="<?= q(['ip' => $e['ip']]) ?>" class="ip-link"><?= htmlspecialchars($e['ip']) ?></a></td>
+          <td><a href="<?= q(['ip' => $e['ip']]) ?>" class="ip-link"><?= htmlspecialchars($e['ip']) ?></a><?= me_badge($e['ip'], $my_ips_set) ?></td>
           <td><span class="badge badge--warn"><?= htmlspecialchars($e['error_type']) ?></span></td>
           <td><span class="uri"><?= htmlspecialchars($e['uri']) ?></span></td>
           <td><span class="err-msg"><?= htmlspecialchars($e['error_msg']) ?></span></td>
@@ -1218,7 +1260,7 @@ if ($tab === 'soc' && $pdo) {
           <?php if ($ng_top_ips): ?>
           <?php foreach ($ng_top_ips as $row): ?>
           <tr>
-            <td><a href="<?= q(['ip' => $row['ip']]) ?>" class="ip-link"><?= htmlspecialchars($row['ip']) ?></a></td>
+            <td><a href="<?= q(['ip' => $row['ip']]) ?>" class="ip-link"><?= htmlspecialchars($row['ip']) ?></a><?= me_badge($row['ip'], $my_ips_set) ?></td>
             <td><?= geo_label($row['ip'], $ng_geo) ?></td>
             <td><?= number_format($row['c']) ?></td>
             <td class="<?= (int)$row['epct'] > 30 ? 'epct-warn' : '' ?> muted"><?= (int)$row['epct'] ?>%</td>
@@ -1330,7 +1372,7 @@ if ($tab === 'soc' && $pdo) {
           <tr>
             <td><span class="ts" title="<?= htmlspecialchars($r['created_at']) ?> UTC"><?= rel_time($r['created_at']) ?></span></td>
             <td style="white-space:nowrap">
-              <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a>
+              <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?>
               <?php if (isset($blocked_set[$r['ip']])): ?>
               <span class="badge--blocked-sm" title="Blocked">⊘</span>
               <?php else: ?>
@@ -1547,7 +1589,7 @@ if ($tab === 'soc' && $pdo) {
         <?php foreach ($blocked_list as $b): ?>
         <tr>
           <td>
-            <a href="?ip=<?= urlencode($b['ip']) ?>" class="ip-link" title="View activity for this IP"><?= htmlspecialchars($b['ip']) ?></a>
+            <a href="?ip=<?= urlencode($b['ip']) ?>" class="ip-link" title="View activity for this IP"><?= htmlspecialchars($b['ip']) ?></a><?= me_badge($b['ip'], $my_ips_set) ?>
           </td>
           <td>
             <?php if ($b['country'] && $b['country'] !== 'XX'): ?>
@@ -1797,7 +1839,7 @@ if ($tab === 'soc' && $pdo) {
         ?>
         <tr>
           <td>
-            <a href="?tab=nginx&ip=<?= urlencode($ip) ?>" class="ip-link"><?= htmlspecialchars($ip) ?></a>
+            <a href="?tab=nginx&ip=<?= urlencode($ip) ?>" class="ip-link"><?= htmlspecialchars($ip) ?></a><?= me_badge($ip, $my_ips_set) ?>
             <?php if ($r['is_blocked']): ?>
             <span class="badge--blocked-sm">blocked</span>
             <?php endif; ?>
@@ -1927,7 +1969,7 @@ if ($tab === 'soc' && $pdo) {
         ?>
         <tr>
           <td class="ts" title="<?= htmlspecialchars($s['session_start']) ?>"><?= rel_time($s['session_start']) ?></td>
-          <td><a href="?tab=nginx&ip=<?= urlencode($sip) ?>" class="ip-link"><?= htmlspecialchars($sip) ?></a></td>
+          <td><a href="?tab=nginx&ip=<?= urlencode($sip) ?>" class="ip-link"><?= htmlspecialchars($sip) ?></a><?= me_badge($sip, $my_ips_set) ?></td>
           <td><?= $scc ? geo_label($sip, $soc_sess_geo) : '<span class="muted">—</span>' ?></td>
           <td style="white-space:normal;min-width:130px"><?= $pvdr ?: '<span class="muted">—</span>' ?></td>
           <td><span class="cls-badge cls-<?= htmlspecialchars($cls) ?>"><?= htmlspecialchars($cls) ?></span></td>
@@ -1993,7 +2035,7 @@ if ($tab === 'soc' && $pdo) {
           <tr>
             <td class="ts" title="<?= htmlspecialchars($h['created_at']) ?>"><?= rel_time($h['created_at']) ?></td>
             <td>
-              <a href="?tab=soc&soc_period=<?= $soc_period_key ?>" class="ip-link"><?= htmlspecialchars($hip) ?></a>
+              <a href="?tab=soc&soc_period=<?= $soc_period_key ?>" class="ip-link"><?= htmlspecialchars($hip) ?></a><?= me_badge($hip, $my_ips_set) ?>
               <?php if ($hcc): ?> <?= flag($hcc) ?><?php endif; ?>
             </td>
             <td class="uri" title="<?= htmlspecialchars($h['uri']) ?>"><?= htmlspecialchars(substr($h['uri'], 0, 40)) ?><?= strlen($h['uri']) > 40 ? '…' : '' ?></td>
@@ -2031,7 +2073,7 @@ if ($tab === 'soc' && $pdo) {
         ?>
         <tr>
           <td class="ts" title="<?= htmlspecialchars($ev['created_at']) ?>"><?= rel_time($ev['created_at']) ?></td>
-          <td><a href="?tab=soc&soc_period=<?= $soc_period_key ?>" class="ip-link"><?= htmlspecialchars($eip) ?></a></td>
+          <td><a href="?tab=soc&soc_period=<?= $soc_period_key ?>" class="ip-link"><?= htmlspecialchars($eip) ?></a><?= me_badge($eip, $my_ips_set) ?></td>
           <td><?= $ecc ? '<span class="geo" title="' . htmlspecialchars($ecc) . '">' . flag($ecc) . ' <span class="geo-cc">' . htmlspecialchars($ecc) . '</span></span>' : '<span class="muted">—</span>' ?></td>
           <td><span class="ev-pill ev-<?= htmlspecialchars($et) ?>"><?= htmlspecialchars($ev_label[$et] ?? $et) ?></span></td>
           <td><?= method_badge($ev['method']) ?></td>
@@ -2049,6 +2091,128 @@ if ($tab === 'soc' && $pdo) {
   </div>
 
   <?php endif; /* $tab === 'soc' */ ?>
+
+  <?php if ($tab === 'myips'): ?>
+
+  <!-- ── My IPs ─────────────────────────────────────────────────────────────── -->
+  <div class="users-hd" style="margin-bottom:1.25rem">
+    <h1>My IPs</h1>
+    <button onclick="document.getElementById('modal-add-myip').hidden=false" class="btn-act primary">+ Add IP manually</button>
+  </div>
+
+  <?php if ($mi_flash): ?>
+  <div class="flash flash--<?= $mi_flash_ok ? 'ok' : 'err' ?>"><?= $mi_flash ?></div>
+  <?php endif; ?>
+
+  <div class="card">
+    <div class="card-hd">
+      <h2>Known Admin IPs</h2>
+      <span class="card-meta"><?= count($my_ips_set) ?> IPs · auto-detected on login + manually pinned</span>
+    </div>
+    <?php if ($my_ips_set): ?>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>IP</th><th>Label</th><th>Type</th><th>First seen</th><th>Last seen</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+        <?php foreach ($my_ips_set as $mip => $mrow): ?>
+        <tr>
+          <td style="font-family:var(--mono);font-size:.78rem"><?= htmlspecialchars($mip) ?></td>
+          <td>
+            <?php if ($mrow['label']): ?>
+            <span style="font-size:.78rem"><?= htmlspecialchars($mrow['label']) ?></span>
+            <?php else: ?><span class="muted">—</span><?php endif; ?>
+          </td>
+          <td>
+            <?php if ($mrow['type'] === 'auto'): ?>
+            <span class="badge badge--ok" style="font-size:.6rem">auto</span>
+            <?php else: ?>
+            <span class="badge badge--redir" style="font-size:.6rem">manual</span>
+            <?php endif; ?>
+          </td>
+          <td class="ts" title="<?= htmlspecialchars($mrow['first_seen']) ?> UTC"><?= rel_time($mrow['first_seen']) ?></td>
+          <td class="ts" title="<?= htmlspecialchars($mrow['last_seen']) ?> UTC"><?= rel_time($mrow['last_seen']) ?></td>
+          <td style="white-space:nowrap">
+            <button onclick="openEditMyIp(<?= htmlspecialchars(json_encode($mip)) ?>, <?= htmlspecialchars(json_encode($mrow['label'] ?? '')) ?>)"
+                    class="btn-act primary" style="margin-right:.3rem">Edit</button>
+            <form method="POST" style="display:inline" onsubmit="return confirm('Remove <?= htmlspecialchars(addslashes($mip)) ?> from My IPs?')">
+              <input type="hidden" name="_csrf"   value="<?= _admin_csrf_token() ?>">
+              <input type="hidden" name="action"  value="delete_myip">
+              <input type="hidden" name="ip"      value="<?= htmlspecialchars($mip) ?>">
+              <button type="submit" class="btn-act danger">Remove</button>
+            </form>
+          </td>
+        </tr>
+        <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+    <?php else: ?>
+    <div class="empty-state">No IPs recorded yet — they appear automatically on each admin page load.</div>
+    <?php endif; ?>
+  </div>
+
+  <!-- Add IP modal -->
+  <div id="modal-add-myip" class="modal-overlay" hidden>
+    <div class="modal-card">
+      <div class="modal-hd">
+        <h3>Add IP manually</h3>
+        <button class="modal-close" onclick="document.getElementById('modal-add-myip').hidden=true">×</button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="_csrf"   value="<?= _admin_csrf_token() ?>">
+        <input type="hidden" name="action"  value="add_myip">
+        <div class="modal-body">
+          <div class="form-row">
+            <label>IP address</label>
+            <input type="text" name="ip" placeholder="203.0.113.42" required autocomplete="off">
+          </div>
+          <div class="form-row">
+            <label>Label <span style="color:var(--muted)">(optional)</span></label>
+            <input type="text" name="label" placeholder="Home router, VPN exit node, …" maxlength="60">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-act" onclick="document.getElementById('modal-add-myip').hidden=true">Cancel</button>
+          <button type="submit" class="btn-act primary">Add IP</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit label modal -->
+  <div id="modal-edit-myip" class="modal-overlay" hidden>
+    <div class="modal-card">
+      <div class="modal-hd">
+        <h3>Edit label</h3>
+        <button class="modal-close" onclick="document.getElementById('modal-edit-myip').hidden=true">×</button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="_csrf"   value="<?= _admin_csrf_token() ?>">
+        <input type="hidden" name="action"  value="update_myip">
+        <input type="hidden" name="ip"      id="edit-myip-ip">
+        <div class="modal-body">
+          <div class="form-row">
+            <label>IP address</label>
+            <input type="text" id="edit-myip-ip-display" readonly style="opacity:.5">
+          </div>
+          <div class="form-row">
+            <label>Label</label>
+            <input type="text" name="label" id="edit-myip-label" placeholder="Home router, VPN exit node, …" maxlength="60">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-act" onclick="document.getElementById('modal-edit-myip').hidden=true">Cancel</button>
+          <button type="submit" class="btn-act primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <?php endif; /* $tab === 'myips' */ ?>
 
 </div><!-- .wrap -->
 
@@ -2071,6 +2235,13 @@ function openEditModal(id, name, email, attrs) {
   document.getElementById('edit-email').value = email;
   document.getElementById('edit-attrs').value = attrs;
   document.getElementById('modal-edit').hidden = false;
+}
+// My IPs edit modal
+function openEditMyIp(ip, label) {
+  document.getElementById('edit-myip-ip').value         = ip;
+  document.getElementById('edit-myip-ip-display').value = ip;
+  document.getElementById('edit-myip-label').value      = label;
+  document.getElementById('modal-edit-myip').hidden     = false;
 }
 </script>
 
