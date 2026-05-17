@@ -841,9 +841,9 @@ if ($tab === 'soc' && $pdo) {
     .ip-act-w           { color: #8c5a20; }
     .ip-act-w:hover     { color: #f97316; }
     .ip-act-w.on        { color: #f97316; }
-    .ip-act-b           { color: #7a8fa8; font-size: 1.45rem; }
+    .ip-act-b           { color: #7a8fa8; }
     .ip-act-b:hover     { color: var(--err); }
-    .ip-act-blocked     { color: var(--err); cursor: default; font-size: 1.45rem; }
+    .ip-act-blocked     { color: var(--err); cursor: default; }
     .ip-act-disabled    { color: #7a8fa8; cursor: not-allowed; opacity: .3; }
     /* Watch-tab status column text labels (boxed) */
     .badge--watch     { background: rgba(249,115,22,.08); color: #f97316; border: 1px solid rgba(249,115,22,.3); border-radius: 3px; padding: .1rem .3rem; font-size: .65rem; font-family: var(--mono); }
@@ -1222,9 +1222,9 @@ if ($tab === 'soc' && $pdo) {
               <?= watchBtn($r['ip'], $watch_set, 'php') ?>
               <?php endif; ?>
               <?php if (isset($blocked_set[$r['ip']])): ?>
-              <span class="ip-act ip-act-blocked" title="Blocked">⊘</span>
+              <span class="ip-act ip-act-blocked" title="Blocked">◉</span>
               <?php else: ?>
-              <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($r['ip'])) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="ip" value="<?= htmlspecialchars($r['ip']) ?>"><button type="submit" class="ip-act ip-act-b" title="Block this IP">⊘</button></form>
+              <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($r['ip'])) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="ip" value="<?= htmlspecialchars($r['ip']) ?>"><button type="submit" class="ip-act ip-act-b" title="Block this IP">◎</button></form>
               <?php endif; ?>
               <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?>
             </td>
@@ -1506,9 +1506,9 @@ if ($tab === 'soc' && $pdo) {
               <?= watchBtn($r['ip'], $watch_set, 'nginx') ?>
               <?php endif; ?>
               <?php if (isset($blocked_set[$r['ip']])): ?>
-              <span class="ip-act ip-act-blocked" title="Blocked">⊘</span>
+              <span class="ip-act ip-act-blocked" title="Blocked">◉</span>
               <?php else: ?>
-              <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($r['ip'])) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="ip" value="<?= htmlspecialchars($r['ip']) ?>"><button type="submit" class="ip-act ip-act-b" title="Block this IP">⊘</button></form>
+              <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($r['ip'])) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="ip" value="<?= htmlspecialchars($r['ip']) ?>"><button type="submit" class="ip-act ip-act-b" title="Block this IP">◎</button></form>
               <?php endif; ?>
               <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?>
             </td>
@@ -2011,9 +2011,9 @@ if ($tab === 'soc' && $pdo) {
             <?= watchBtn($ip, $watch_set, 'soc', 'Threat IP: score ' . $sc, 'soc_event', $sc) ?>
             <?php endif; ?>
             <?php if ($r['is_blocked']): ?>
-            <span class="ip-act ip-act-blocked" title="Blocked">⊘</span>
+            <span class="ip-act ip-act-blocked" title="Blocked">◉</span>
             <?php else: ?>
-            <form method="post" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($ip)) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="redirect_tab" value="soc"><input type="hidden" name="ip" value="<?= htmlspecialchars($ip) ?>"><input type="hidden" name="reason" value="SOC: score <?= $sc ?>"><button type="submit" class="ip-act ip-act-b" title="Block this IP">⊘</button></form>
+            <form method="post" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($ip)) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="redirect_tab" value="soc"><input type="hidden" name="ip" value="<?= htmlspecialchars($ip) ?>"><input type="hidden" name="reason" value="SOC: score <?= $sc ?>"><button type="submit" class="ip-act ip-act-b" title="Block this IP">◎</button></form>
             <?php endif; ?>
             <a href="?tab=nginx&ip=<?= urlencode($ip) ?>" class="ip-link"><?= htmlspecialchars($ip) ?></a><?= me_badge($ip, $my_ips_set) ?>
           </td>
@@ -2196,9 +2196,9 @@ if ($tab === 'soc' && $pdo) {
               <?= watchBtn($hip, $watch_set, 'soc', $h_reason, 'soc_honeypot') ?>
               <?php endif; ?>
               <?php if (isset($blocked_set[$hip])): ?>
-              <span class="ip-act ip-act-blocked" title="Blocked">⊘</span>
+              <span class="ip-act ip-act-blocked" title="Blocked">◉</span>
               <?php else: ?>
-              <form method="post" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($hip)) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="redirect_tab" value="soc"><input type="hidden" name="ip" value="<?= htmlspecialchars($hip) ?>"><input type="hidden" name="reason" value="<?= htmlspecialchars($h_reason) ?>"><button type="submit" class="ip-act ip-act-b" title="Block this IP">⊘</button></form>
+              <form method="post" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($hip)) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="redirect_tab" value="soc"><input type="hidden" name="ip" value="<?= htmlspecialchars($hip) ?>"><input type="hidden" name="reason" value="<?= htmlspecialchars($h_reason) ?>"><button type="submit" class="ip-act ip-act-b" title="Block this IP">◎</button></form>
               <?php endif; ?>
               <a href="?tab=soc&soc_period=<?= $soc_period_key ?>" class="ip-link"><?= htmlspecialchars($hip) ?></a><?= me_badge($hip, $my_ips_set) ?>
             </td>
@@ -2245,9 +2245,9 @@ if ($tab === 'soc' && $pdo) {
             <?= watchBtn($eip, $watch_set, 'soc', $e_reason, 'soc_event') ?>
             <?php endif; ?>
             <?php if (isset($blocked_set[$eip])): ?>
-            <span class="ip-act ip-act-blocked" title="Blocked">⊘</span>
+            <span class="ip-act ip-act-blocked" title="Blocked">◉</span>
             <?php else: ?>
-            <form method="post" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($eip)) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="redirect_tab" value="soc"><input type="hidden" name="ip" value="<?= htmlspecialchars($eip) ?>"><input type="hidden" name="reason" value="<?= htmlspecialchars($e_reason) ?>"><button type="submit" class="ip-act ip-act-b" title="Block this IP">⊘</button></form>
+            <form method="post" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($eip)) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="redirect_tab" value="soc"><input type="hidden" name="ip" value="<?= htmlspecialchars($eip) ?>"><input type="hidden" name="reason" value="<?= htmlspecialchars($e_reason) ?>"><button type="submit" class="ip-act ip-act-b" title="Block this IP">◎</button></form>
             <?php endif; ?>
             <a href="?tab=soc&soc_period=<?= $soc_period_key ?>" class="ip-link"><?= htmlspecialchars($eip) ?></a><?= me_badge($eip, $my_ips_set) ?>
           </td>
@@ -2467,7 +2467,7 @@ if ($tab === 'soc' && $pdo) {
           <a href="?tab=nginx&ip=<?= urlencode($wr['ip']) ?>" class="ip-link"><?= htmlspecialchars($wr['ip']) ?></a>
           <?= me_badge($wr['ip'], $my_ips_set) ?>
           <?php if (isset($blocked_set[$wr['ip']])): ?>
-          <span class="ip-act ip-act-blocked" title="Blocked">⊘</span>
+          <span class="ip-act ip-act-blocked" title="Blocked">◉</span>
           <?php endif; ?>
         </td>
         <td><?= $wcc ? '<span class="geo">' . flag($wcc) . ' <span class="geo-cc">' . htmlspecialchars($wcc) . '</span></span>' : '<span class="muted">—</span>' ?></td>
@@ -2496,7 +2496,7 @@ if ($tab === 'soc' && $pdo) {
             <button type="submit" class="btn-act danger" style="font-size:.62rem;padding:.1rem .4rem">Block</button>
           </form>
           <?php else: ?>
-          <span class="ip-act ip-act-blocked" title="Blocked">⊘</span>
+          <span class="ip-act ip-act-blocked" title="Blocked">◉</span>
           <?php endif; ?>
         </td>
       </tr>
