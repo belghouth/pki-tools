@@ -903,6 +903,7 @@ if ($tab === 'soc' && $pdo) {
     .cls-crawler    { background:rgba(107,122,144,.06); color:var(--muted); border:1px solid var(--border2); }
     .cls-scanner    { background:rgba(249,115,22,.1);   color:#f97316;      border:1px solid rgba(249,115,22,.3); }
     .cls-attacker   { background:rgba(239,68,68,.12);   color:var(--err);   border:1px solid rgba(239,68,68,.3); }
+    .cls-social     { background:rgba(99,102,241,.08);  color:#818cf8;      border:1px solid rgba(99,102,241,.25); }
     .cls-unknown    { background:rgba(255,255,255,.03); color:var(--muted); border:1px solid var(--border); }
 
     /* provider / ASN badges */

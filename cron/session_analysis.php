@@ -82,7 +82,7 @@ foreach ($ips as $ip) {
     if (!$reqs) continue;
 
     foreach (_split_sessions($reqs) as $sess) {
-        $a = _analyze_session($sess);
+        $a = analyzeSession($sess);
         $upsert->execute([
             $ip, $a['session_start'], $a['session_end'], $a['duration_s'],
             $a['req_count'], $a['uniq_paths'], $a['ua_count'],
@@ -131,117 +131,158 @@ function _split_sessions(array $reqs): array {
     return $out;
 }
 
-function _analyze_session(array $reqs): array {
-    $start     = strtotime($reqs[0]['created_at']);
-    $end       = strtotime(end($reqs)['created_at']);
-    $duration  = max($end - $start, 1);
-    $req_count = count($reqs);
-    $req_rate  = $req_count / max($duration / 60, 0.1); // req/min
+// Standard web resources often absent but legitimately probed by OS/social platforms.
+const NORMAL_MISS_PATHS = [
+    '/favicon.ico', '/favicon-16.png', '/favicon-32.png',
+    '/apple-touch-icon.png', '/apple-touch-icon-precomposed.png',
+    '/robots.txt', '/sitemap.xml', '/sitemap_index.xml',
+    '/img/og-social.png',
+];
 
-    $paths     = array_column($reqs, 'uri');
-    $statuses  = array_column($reqs, 'status');
-    $raw_uas   = array_column($reqs, 'user_agent');
-    $uas       = array_unique(array_filter($raw_uas, fn($u) => $u !== '' && $u !== '-'));
-
-    $c404           = count(array_filter($statuses, fn($s) => (int)$s === 404));
-    $c5xx           = count(array_filter($statuses, fn($s) => (int)$s >= 500));
-    $uniq_paths     = count(array_unique($paths));
-    $uniq_404_paths = count(array_unique(array_map(
-        fn($r) => (int)$r['status'] === 404 ? $r['uri'] : null,
-        $reqs
-    )) - [null]);
-
-    // UA count (>1 = identity switching)
-    $ua_count = max(1, count($uas));
-
-    // Scanner UA
-    $has_scanner    = false;
-    $scanner_rx     = '/nikto|nmap|sqlmap|masscan|zgrab|gobuster|nuclei|whatweb|wapiti|burp|acunetix|nessus|openvas|hydra|metasploit|feroxbuster|ffuf|wfuzz|dirsearch/i';
-    foreach ($uas as $ua) {
-        if (preg_match($scanner_rx, $ua)) { $has_scanner = true; break; }
-    }
-
-    // Bot claim detection (UA strings that impersonate known crawlers)
-    $bot_claimed = null;
-    foreach ($uas as $ua) {
-        $bc = _detect_bot_claim($ua);
-        if ($bc) { $bot_claimed = $bc; break; }
-    }
-
-    // Exploit probe paths
+function detectThreats(array $paths, array $uas): array {
+    $scanner_rx  = '/nikto|nmap|sqlmap|masscan|zgrab|gobuster|nuclei|whatweb|wapiti|'
+                 . 'burp|acunetix|nessus|openvas|hydra|metasploit|feroxbuster|ffuf|wfuzz|dirsearch/i';
     $exploit_rx  = '/\.(env|git|htaccess|htpasswd|bak|backup|sql|zip)($|\?)|'
                  . '(wp-admin|wp-login\.php|xmlrpc\.php|phpinfo|phpmyadmin|adminer|'
                  . '\/shell\.php|\/cmd\.php|webshell|c99\.php|r57\.php|'
                  . '\/etc\/passwd|\/proc\/self)|'
                  . 'UNION.{1,20}SELECT|<script|base64_decode/i';
-    $exploit_hits = count(array_filter($paths, fn($p) => preg_match($exploit_rx, $p)));
+    $pki_rx      = '\/(cert_factory|mpca_factory|x509parse|artifact_parser|'
+                 . 'cps_to_br_assessor|csr_generator|ct_log|tsa|eseal|linters|revocation)\.php';
 
-    // PKI surface hits
-    $pki_rx   = '\/(cert_factory|mpca_factory|x509parse|artifact_parser|'
-              . 'cps_to_br_assessor|csr_generator|ct_log|tsa|eseal|linters|revocation)\.php';
-    $pki_hits = count(array_filter($paths, fn($p) => preg_match("/$pki_rx/i", $p)));
+    $has_scanner     = false;
+    $bot_claimed     = null;
+    $social_platform = null;
+    foreach ($uas as $ua) {
+        if (!$has_scanner && preg_match($scanner_rx, $ua)) { $has_scanner = true; }
+        if (!$bot_claimed)     { $bot_claimed     = _detect_bot_claim($ua); }
+        if (!$social_platform) { $social_platform = detectSocialPlatform($ua); }
+    }
 
-    // Replay detection — same uri+qs appearing ≥2 times (skip common paths)
+    return [
+        'has_scanner'     => $has_scanner,
+        'bot_claimed'     => $bot_claimed,
+        'social_platform' => $social_platform,
+        'exploit_hits'    => count(array_filter($paths, fn($p) => preg_match($exploit_rx, $p))),
+        'pki_hits'        => count(array_filter($paths, fn($p) => preg_match("/$pki_rx/i", $p))),
+    ];
+}
+
+function scoreSession(array $reqs, array $paths, int $ua_count, int $c5xx,
+                      float $req_rate, array $threats): array {
+    $has_scanner  = $threats['has_scanner'];
+    $exploit_hits = $threats['exploit_hits'];
+    $pki_hits     = $threats['pki_hits'];
+
+    // 404 enumeration — exclude standard missing resources (favicon, OG, robots, etc.)
+    $scan_404_uris  = array_unique(array_filter(array_map(
+        fn($r) => (int)$r['status'] === 404 && !in_array($r['uri'], NORMAL_MISS_PATHS) ? $r['uri'] : null,
+        $reqs
+    )));
+    $uniq_scan_404s = count($scan_404_uris);
+
+    // Replay detection — same uri+qs ≥2 times (skip trivial paths)
     $skip_replay = ['/', '/index.php', '/favicon.ico', '/robots.txt'];
     $uri_freq    = [];
     foreach ($reqs as $r) {
-        if (in_array($r['uri'], $skip_replay)) continue;
+        if (in_array($r['uri'], $skip_replay)) { continue; }
         $key = $r['uri'] . '?' . ($r['query_string'] ?? '');
         $uri_freq[$key] = ($uri_freq[$key] ?? 0) + 1;
     }
     $replay_pairs = count(array_filter($uri_freq, fn($c) => $c >= 2));
 
-    // Recon sequence — visited robots.txt or sitemap near session start
-    $first5        = array_slice($paths, 0, 5);
-    $recon_seq     = (bool)array_filter($first5, fn($p) => preg_match('/robots\.txt|sitemap/i', $p));
+    // Recon sequence — robots.txt or sitemap in first 5 requests
+    $first5    = array_slice($paths, 0, 5);
+    $recon_seq = (bool)array_filter($first5, fn($p) => preg_match('/robots\.txt|sitemap/i', $p));
 
-    // ── Scoring ───────────────────────────────────────────────────────────────
-    $s_ua_switch = $ua_count > 1  ? 30 : 0;
-    $s_scanner   = $has_scanner   ? 25 : 0;
+    if ($req_rate > 100)    { $s_rate = 20; }
+    elseif ($req_rate > 30) { $s_rate = 10; }
+    else                    { $s_rate = 0; }
+
+    if ($pki_hits > 20)     { $s_pki = 15; }
+    elseif ($pki_hits > 10) { $s_pki = 8; }
+    else                    { $s_pki = 0; }
+
+    $s_ua_switch = $ua_count > 1 ? 30 : 0;
+    $s_scanner   = $has_scanner  ? 25 : 0;
     $s_probe     = min($exploit_hits * 15, 45);
-    $s_enum      = min($uniq_404_paths * 8, 40);
+    $s_enum      = min($uniq_scan_404s * 8, 40);
     $s_5xx       = min($c5xx * 5, 20);
-    $s_rate      = $req_rate > 100 ? 20 : ($req_rate > 30 ? 10 : 0);
     $s_replay    = min($replay_pairs * 8, 24);
-    $s_pki       = $pki_hits > 20 ? 15 : ($pki_hits > 10 ? 8 : 0);
-    $s_recon     = $recon_seq     ? 8  : 0;
-    $score       = min($s_ua_switch + $s_scanner + $s_probe + $s_enum
-                     + $s_5xx + $s_rate + $s_replay + $s_pki + $s_recon, 100);
+    $s_recon     = $recon_seq ? 8 : 0;
 
-    // ── Classification ────────────────────────────────────────────────────────
+    return [
+        'replay_pairs' => $replay_pairs,
+        'score'        => min($s_ua_switch + $s_scanner + $s_probe + $s_enum
+                            + $s_5xx + $s_rate + $s_replay + $s_pki + $s_recon, 100),
+        'signals'      => [
+            'ua_switch' => $s_ua_switch, 'scanner' => $s_scanner,
+            'probe'     => $s_probe,     'enum'    => $s_enum,
+            '5xx'       => $s_5xx,       'rate'    => $s_rate,
+            'replay'    => $s_replay,    'pki'     => $s_pki,
+            'recon'     => $s_recon,
+        ],
+    ];
+}
+
+function analyzeSession(array $reqs): array {
+    $start     = strtotime($reqs[0]['created_at']);
+    $end       = strtotime(end($reqs)['created_at']);
+    $duration  = max($end - $start, 1);
+    $req_count = count($reqs);
+    $req_rate  = $req_count / max($duration / 60, 0.1);
+
+    $paths    = array_column($reqs, 'uri');
+    $statuses = array_column($reqs, 'status');
+    $uas      = array_unique(array_filter(
+        array_column($reqs, 'user_agent'),
+        fn($u) => $u !== '' && $u !== '-'
+    ));
+
+    $c404       = count(array_filter($statuses, fn($s) => (int)$s === 404));
+    $c5xx       = count(array_filter($statuses, fn($s) => (int)$s >= 500));
+    $uniq_paths = count(array_unique($paths));
+    $ua_count   = max(1, count($uas));
+
+    $threats = detectThreats($paths, $uas);
+    $scored  = scoreSession($reqs, $paths, $ua_count, $c5xx, $req_rate, $threats);
+
+    $score           = $scored['score'];
+    $has_scanner     = $threats['has_scanner'];
+    $exploit_hits    = $threats['exploit_hits'];
+    $bot_claimed     = $threats['bot_claimed'];
+    $social_platform = $threats['social_platform'];
+
     $class = match(true) {
         ($has_scanner || $exploit_hits > 0) && $score >= 50 => 'attacker',
-        $score >= 70 => 'attacker',
-        $score >= 40 => 'scanner',
-        $score >= 15 => 'researcher',
-        $bot_claimed !== null => 'crawler',       // pending verification
-        $req_count <= 5 && $score < 10 => 'human',
-        default => 'unknown',
+        $score >= 70                                         => 'attacker',
+        $score >= 40                                         => 'scanner',
+        $score >= 15                                         => 'researcher',
+        $social_platform !== null && $score < 15            => 'social_probe',
+        $bot_claimed !== null                                => 'crawler',
+        $req_count <= 5 && $score < 10                      => 'human',
+        default                                              => 'unknown',
     };
 
     return [
-        'session_start' => $reqs[0]['created_at'],
-        'session_end'   => end($reqs)['created_at'],
-        'duration_s'    => $duration,
-        'req_count'     => $req_count,
-        'uniq_paths'    => $uniq_paths,
-        'ua_count'      => $ua_count,
-        'c404'          => $c404,
-        'c5xx'          => $c5xx,
-        'exploit_hits'  => $exploit_hits,
-        'has_scanner'   => $has_scanner ? 1 : 0,
-        'replay_pairs'  => $replay_pairs,
-        'pki_hits'      => $pki_hits,
-        'score'         => $score,
+        'session_start'  => $reqs[0]['created_at'],
+        'session_end'    => end($reqs)['created_at'],
+        'duration_s'     => $duration,
+        'req_count'      => $req_count,
+        'uniq_paths'     => $uniq_paths,
+        'ua_count'       => $ua_count,
+        'c404'           => $c404,
+        'c5xx'           => $c5xx,
+        'exploit_hits'   => $exploit_hits,
+        'has_scanner'    => $has_scanner ? 1 : 0,
+        'replay_pairs'   => $scored['replay_pairs'],
+        'pki_hits'       => $threats['pki_hits'],
+        'score'          => $score,
         'classification' => $class,
-        'bot_claimed'   => $bot_claimed,
-        'signals'       => json_encode([
-            'ua_switch' => $s_ua_switch, 'scanner'  => $s_scanner,
-            'probe'     => $s_probe,     'enum'      => $s_enum,
-            '5xx'       => $s_5xx,       'rate'      => $s_rate,
-            'replay'    => $s_replay,    'pki'       => $s_pki,
-            'recon'     => $s_recon,
-        ]),
+        'bot_claimed'    => $bot_claimed,
+        'signals'        => json_encode(
+            $scored['signals'] + ['social' => $social_platform]
+        ),
     ];
 }
 
@@ -256,6 +297,27 @@ function _detect_bot_claim(string $ua): ?string {
     ];
     foreach ($BOTS as $sig => $name) {
         if (stripos($ua, $sig) !== false) return $name;
+    }
+    return null;
+}
+
+function detectSocialPlatform(string $ua): ?string {
+    static $PLATFORMS = [
+        'LinkedInBot'         => 'linkedin',
+        'LinkedInApp'         => 'linkedin',
+        'facebookexternalhit' => 'facebook',
+        'Facebot'             => 'facebook',
+        'Twitterbot'          => 'twitter',
+        'Instagram'           => 'instagram',
+        'WhatsApp'            => 'whatsapp',
+        'Slackbot'            => 'slack',
+        'TelegramBot'         => 'telegram',
+        'NetworkingExtension' => 'ios_os',
+        'Discordbot'          => 'discord',
+        'Pinterest'           => 'pinterest',
+    ];
+    foreach ($PLATFORMS as $sig => $name) {
+        if (stripos($ua, $sig) !== false) { return $name; }
     }
     return null;
 }

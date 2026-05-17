@@ -24,7 +24,7 @@ function admin_pdo(): ?PDO {
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ]);
         @unlink($flag);
-        _admin_schema($pdo);
+        adminSchema($pdo);
     } catch (Throwable) {
         $pdo = null;
         @touch($flag);
@@ -32,11 +32,15 @@ function admin_pdo(): ?PDO {
     return $pdo;
 }
 
-function _admin_schema(PDO $pdo): void {
-    static $done = false;
-    if ($done) return;
-    $done = true;
+function schemaMigrate(PDO $pdo, string $sql): void {
+    try {
+        $pdo->exec($sql);
+    } catch (Throwable) {
+        // Column/index/value already exists — idempotent, safe to ignore
+    }
+}
 
+function schemaActivity(PDO $pdo): void {
     $pdo->exec("CREATE TABLE IF NOT EXISTS visits (
         id           BIGINT UNSIGNED  AUTO_INCREMENT PRIMARY KEY,
         created_at   DATETIME(3)      NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -72,14 +76,13 @@ function _admin_schema(PDO $pdo): void {
         INDEX idx_type       (error_type)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-    // Migrate: add status column if this is an older schema
-    try { $pdo->exec("ALTER TABLE visits ADD COLUMN status SMALLINT UNSIGNED NOT NULL DEFAULT 200 AFTER accept_lang"); } catch (Throwable) {}
-    try { $pdo->exec("ALTER TABLE visits ADD INDEX idx_status (status)"); } catch (Throwable) {}
+    schemaMigrate($pdo, "ALTER TABLE visits ADD COLUMN status SMALLINT UNSIGNED NOT NULL DEFAULT 200 AFTER accept_lang");
+    schemaMigrate($pdo, "ALTER TABLE visits ADD INDEX idx_status (status)");
+    schemaMigrate($pdo, "ALTER TABLE errors ADD COLUMN acknowledged_at DATETIME NULL DEFAULT NULL AFTER error_line");
+    schemaMigrate($pdo, "ALTER TABLE errors ADD INDEX idx_ack (acknowledged_at)");
+}
 
-    // Migrate: add acknowledged_at to errors
-    try { $pdo->exec("ALTER TABLE errors ADD COLUMN acknowledged_at DATETIME NULL DEFAULT NULL AFTER error_line"); } catch (Throwable) {}
-    try { $pdo->exec("ALTER TABLE errors ADD INDEX idx_ack (acknowledged_at)"); } catch (Throwable) {}
-
+function schemaInfra(PDO $pdo): void {
     $pdo->exec("CREATE TABLE IF NOT EXISTS geoip_cache (
         ip         VARCHAR(45) PRIMARY KEY,
         country    CHAR(3)     NOT NULL DEFAULT 'XX',
@@ -156,8 +159,9 @@ function _admin_schema(PDO $pdo): void {
         log_offset BIGINT UNSIGNED NOT NULL DEFAULT 0,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+}
 
-    // IP threat intelligence — ASN, provider type, bot verification, rDNS
+function schemaIntel(PDO $pdo): void {
     $pdo->exec("CREATE TABLE IF NOT EXISTS ip_intel (
         ip            VARCHAR(45)  PRIMARY KEY,
         asn           VARCHAR(20)  DEFAULT NULL,
@@ -176,7 +180,6 @@ function _admin_schema(PDO $pdo): void {
         INDEX idx_bot      (bot_claimed, bot_verified)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-    // Attributed request sessions per IP
     $pdo->exec("CREATE TABLE IF NOT EXISTS sessions (
         id             BIGINT UNSIGNED   AUTO_INCREMENT PRIMARY KEY,
         ip             VARCHAR(45)       NOT NULL,
@@ -193,7 +196,7 @@ function _admin_schema(PDO $pdo): void {
         replay_pairs   INT UNSIGNED      NOT NULL DEFAULT 0,
         pki_hits       INT UNSIGNED      NOT NULL DEFAULT 0,
         score          SMALLINT UNSIGNED NOT NULL DEFAULT 0,
-        classification ENUM('human','researcher','crawler','scanner','attacker','unknown') NOT NULL DEFAULT 'unknown',
+        classification ENUM('human','researcher','crawler','scanner','attacker','unknown','social_probe') NOT NULL DEFAULT 'unknown',
         signals        JSON,
         analyzed_at    DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY uniq_session (ip, session_start),
@@ -209,7 +212,6 @@ function _admin_schema(PDO $pdo): void {
         updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-    // Admin's own IPs — recorded on each admin page load for "me" badge in dashboards
     $pdo->exec("CREATE TABLE IF NOT EXISTS my_ips (
         ip         VARCHAR(45)                     PRIMARY KEY,
         label      VARCHAR(60)                     DEFAULT NULL,
@@ -219,6 +221,18 @@ function _admin_schema(PDO $pdo): void {
         INDEX idx_type      (type),
         INDEX idx_last_seen (last_seen)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    schemaMigrate($pdo, "ALTER TABLE sessions MODIFY classification ENUM('human','researcher','crawler','scanner','attacker','unknown','social_probe') NOT NULL DEFAULT 'unknown'");
+}
+
+function adminSchema(PDO $pdo): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+
+    schemaActivity($pdo);
+    schemaInfra($pdo);
+    schemaIntel($pdo);
 }
 
 // Validate admin cookie; returns email on success or null.
