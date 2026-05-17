@@ -605,6 +605,7 @@ if ($tab === 'soc' && $pdo) {
             FROM nginx_visits n
             LEFT JOIN geoip_cache g ON g.ip = n.ip
             WHERE n.created_at >= $soc_win {$ipf_sql('n')}
+              AND n.uri NOT IN ('/errors/404.html', '/errors/403.html', '/errors/50x.html')
               AND (
                 n.status >= 400
                 OR n.user_agent REGEXP 'nikto|nmap|sqlmap|masscan|zgrab|gobuster|nuclei|burp|acunetix|nessus|hydra|metasploit|feroxbuster|ffuf|wfuzz|dirsearch'
