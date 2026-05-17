@@ -61,7 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     $mailBody   = "Topic  : {$topicLabel}\nName   : {$name}\nEmail  : {$email}\nIP     : {$ip}\n\n"
                 . wordwrap($message, 72);
     $headers = implode("\r\n", [
-        'From: '       . NOREPLY_EMAIL,
+        'From: '       . SITE_DOMAIN . ' Contact <' . NOREPLY_EMAIL . '>',
         'Reply-To: '   . $email,
         'Content-Type: text/plain; charset=UTF-8',
         'X-Mailer: '   . SITE_DOMAIN . '/contact',
