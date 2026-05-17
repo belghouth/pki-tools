@@ -97,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,600;1,300&display=swap" rel="stylesheet">
 
-  <?php require __DIR__ . '/includes/adsense_head.php'; ?>
+  <?php require_once __DIR__ . '/includes/adsense_head.php'; ?>
 
   <?php if (recaptcha_configured()): ?>
   <?= recaptcha_head() ?>
@@ -570,7 +570,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
 </head>
 <body>
 
-<?php require __DIR__ . '/includes/site_nav.php'; ?>
+<?php require_once __DIR__ . '/includes/site_nav.php'; ?>
 
 <main>
 
@@ -902,7 +902,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     </div>
   </section>
 
-  <?php require __DIR__ . '/includes/adsense_unit.php'; ?>
+  <?php require_once __DIR__ . '/includes/adsense_unit.php'; ?>
 
   <!-- ── Contact ────────────────────────────────────────────────────────────── -->
   <section class="section" id="contact">
@@ -937,7 +937,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
   </div>
 </footer>
 
-<?php require __DIR__ . '/includes/cookie_banner.php'; ?>
+<?php require_once __DIR__ . '/includes/cookie_banner.php'; ?>
 
 <button class="back-top" id="backTop" aria-label="Back to top">
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
