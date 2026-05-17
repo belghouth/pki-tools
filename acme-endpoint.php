@@ -100,7 +100,7 @@ if ($conn) {
 
         if ($oidPos !== false) {
             $pos = $oidPos + strlen($sctOid);
-            if (isset($der[$pos]) && ord($der[$pos]) === 0x01) $pos += 3;
+            if (isset($der[$pos]) && ord($der[$pos]) === 0x01) { $pos += 3; }
             if (isset($der[$pos]) && ord($der[$pos]) === 0x04) {
                 $pos++;
                 $pos += (ord($der[$pos]) & 0x80) ? (ord($der[$pos]) & 0x7f) + 1 : 1;
@@ -119,7 +119,7 @@ if ($conn) {
                     $sctLen = unpack('n', substr($der, $pos, 2))[1];
                     $pos   += 2;
                     $sctEnd = $pos + $sctLen;
-                    if ($pos + $sctLen > strlen($der)) break;
+                    if ($pos + $sctLen > strlen($der)) { break; }
 
                     $version  = ord($der[$pos]); $pos++;
                     $logIdBin = substr($der, $pos, 32); $pos += 32;
@@ -175,9 +175,9 @@ $tlsVersion = $_SERVER['SSL_PROTOCOL'] ?? 'TLS (version unavailable)';
 $serverSoft = $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown';
 
 if ($secondsRemaining !== null) {
-    if ($secondsRemaining <= 259200)     $renewalStatus = 'Critical'; // ≤3 days
-    elseif ($secondsRemaining <= 604800) $renewalStatus = 'Warning';  // ≤7 days
-    else                                 $renewalStatus = 'Valid';
+    if ($secondsRemaining <= 259200)     { $renewalStatus = 'Critical'; } // ≤3 days
+    elseif ($secondsRemaining <= 604800) { $renewalStatus = 'Warning'; }  // ≤7 days
+    else                                 { $renewalStatus = 'Valid'; }
 }
 ?>
 <!DOCTYPE html>
@@ -442,7 +442,7 @@ if ($secondsRemaining !== null) {
 <div class="glow-orb2"></div>
 
 
-        <?php $navLabel = 'ACME Automation Test Endpoint'; require_once __DIR__ . '/includes/site_nav.php'; ?>
+    <?php $navLabel = 'ACME Automation Test Endpoint'; require_once __DIR__ . '/includes/site_nav.php'; ?>
     
     <div class="wrapper">
 
@@ -576,7 +576,7 @@ if ($secondsRemaining !== null) {
                             foreach ($certPolicyOIDs as $oid) {
                                 $label = $oidLabels[$oid] ?? null;
                                 echo '<div style="margin-bottom:4px;"><span style="color:var(--accent);font-weight:600;">' . htmlspecialchars($oid) . '</span>';
-                                if ($label) echo ' <span style="color:var(--text-dim);font-size:11px;">— ' . htmlspecialchars($label) . '</span>';
+                                if ($label) { echo ' <span style="color:var(--text-dim);font-size:11px;">— ' . htmlspecialchars($label) . '</span>'; }
                                 echo '</div>';
                             }
                         } else { echo '<span style="color:var(--text-dim)">Not available</span>'; }
