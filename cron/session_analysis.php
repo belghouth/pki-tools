@@ -142,11 +142,8 @@ const NORMAL_MISS_PATHS = [
 function detectThreats(array $paths, array $uas): array {
     $scanner_rx  = '/nikto|nmap|sqlmap|masscan|zgrab|gobuster|nuclei|whatweb|wapiti|'
                  . 'burp|acunetix|nessus|openvas|hydra|metasploit|feroxbuster|ffuf|wfuzz|dirsearch/i';
-    $exploit_rx  = '/\.(env|git|htaccess|htpasswd|bak|backup|sql|zip)($|\?)|'
-                 . '(wp-admin|wp-login\.php|xmlrpc\.php|phpinfo|phpmyadmin|adminer|'
-                 . '\/shell\.php|\/cmd\.php|webshell|c99\.php|r57\.php|'
-                 . '\/etc\/passwd|\/proc\/self)|'
-                 . 'UNION.{1,20}SELECT|<script|base64_decode/i';
+    $exploit_rx  = '#' . honeypot_php_fragment()
+                 . '|UNION.{1,20}SELECT|<script|base64_decode#i';
     $pki_rx      = '\/(cert_factory|mpca_factory|x509parse|artifact_parser|'
                  . 'cps_to_br_assessor|csr_generator|ct_log|tsa|eseal|linters|revocation)\.php';
 

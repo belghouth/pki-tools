@@ -189,6 +189,7 @@ define('CT_LOG_META', [
 // Included here so every page that loads config.php auto-logs visits + PHP errors.
 // Admin pages define ADMIN_NO_LOG before including config.php to opt out.
 require_once __DIR__ . '/includes/admin_db.php';
+require_once __DIR__ . '/includes/threat_patterns.php';
 
 // ── IP block gate ──────────────────────────────────────────────────────────────
 // Admin pages are excluded so a blocked IP cannot lock out an admin session.

@@ -715,7 +715,7 @@ if ($tab === 'soc' && $pdo) {
             FROM nginx_visits n
             LEFT JOIN geoip_cache g ON g.ip = n.ip
             WHERE n.created_at >= $soc_win {$ipf_sql('n')}
-              AND n.uri REGEXP '(wp-login[.]php|wp-admin|xmlrpc[.]php|phpinfo|phpmyadmin|adminer|[.]env$|[.]git/|shell[.]php|cmd[.]php|c99[.]php|r57[.]php|webshell|setup[.]php|install[.]php|/etc/passwd|/proc/self|/backup[./])'
+              AND n.uri REGEXP '" . honeypot_mysql_regexp() . "'
             ORDER BY n.created_at DESC
             LIMIT 40
         ")->fetchAll();
