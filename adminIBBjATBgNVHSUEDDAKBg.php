@@ -2512,6 +2512,37 @@ if ($tab === 'soc' && $pdo) {
 
 </div><!-- .wrap -->
 
+<!-- Watch IP modal — before <script> so getElementById finds it at parse time -->
+<dialog id="modal-watch" aria-labelledby="modal-watch-title">
+  <div class="modal-card" style="margin:0">
+    <div class="modal-hd">
+      <h3 id="modal-watch-title">Watch IP</h3>
+      <button class="modal-close" onclick="document.getElementById('modal-watch').close()">×</button>
+    </div>
+    <form method="POST">
+      <input type="hidden" name="_csrf"        value="<?= _admin_csrf_token() ?>">
+      <input type="hidden" name="action"       value="watch_ip">
+      <input type="hidden" name="source"       id="watch-source">
+      <input type="hidden" name="score"        id="watch-score">
+      <input type="hidden" name="redirect_tab" id="watch-redirect">
+      <div class="modal-body">
+        <div class="form-row">
+          <label for="watch-ip">IP address</label>
+          <input type="text" name="ip" id="watch-ip" required autocomplete="off" placeholder="203.0.113.42">
+        </div>
+        <div class="form-row">
+          <label for="watch-reason">Reason <span style="color:var(--muted)">(optional)</span></label>
+          <textarea name="reason" id="watch-reason" rows="3" placeholder="Why are you watching this IP?" style="resize:vertical"></textarea>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-act" onclick="document.getElementById('modal-watch').close()">Cancel</button>
+        <button type="submit" class="btn-act primary">Watch</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
 <script>
 // Convert UTC timestamps to local time on hover title
 document.querySelectorAll('.ts-x').forEach(function(el) {
@@ -2587,37 +2618,6 @@ document.addEventListener('click', function(e) {
   }
 });
 </script>
-
-<!-- Watch IP modal — outside all tab blocks so it's always in the DOM -->
-<dialog id="modal-watch" aria-labelledby="modal-watch-title">
-  <div class="modal-card" style="margin:0">
-    <div class="modal-hd">
-      <h3 id="modal-watch-title">Watch IP</h3>
-      <button class="modal-close" onclick="document.getElementById('modal-watch').close()">×</button>
-    </div>
-    <form method="POST">
-      <input type="hidden" name="_csrf"        value="<?= _admin_csrf_token() ?>">
-      <input type="hidden" name="action"       value="watch_ip">
-      <input type="hidden" name="source"       id="watch-source">
-      <input type="hidden" name="score"        id="watch-score">
-      <input type="hidden" name="redirect_tab" id="watch-redirect">
-      <div class="modal-body">
-        <div class="form-row">
-          <label for="watch-ip">IP address</label>
-          <input type="text" name="ip" id="watch-ip" required autocomplete="off" placeholder="203.0.113.42">
-        </div>
-        <div class="form-row">
-          <label for="watch-reason">Reason <span style="color:var(--muted)">(optional)</span></label>
-          <textarea name="reason" id="watch-reason" rows="3" placeholder="Why are you watching this IP?" style="resize:vertical"></textarea>
-        </div>
-      </div>
-      <div class="form-actions">
-        <button type="button" class="btn-act" onclick="document.getElementById('modal-watch').close()">Cancel</button>
-        <button type="submit" class="btn-act primary">Watch</button>
-      </div>
-    </form>
-  </div>
-</dialog>
 
 </body>
 </html>
