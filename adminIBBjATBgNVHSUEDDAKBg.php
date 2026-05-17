@@ -275,6 +275,14 @@ function flag(string $cc): string {
     if (!preg_match('/^[A-Z]{2}$/', $cc) || $cc === 'XX') return '';
     return mb_chr(0x1F1E6 + ord($cc[0]) - 65) . mb_chr(0x1F1E6 + ord($cc[1]) - 65);
 }
+function uriLink(string $uri, ?string $qs = null, int $max = 60): string {
+    $full = $uri . ($qs !== null && $qs !== '' ? '?' . $qs : '');
+    $disp = strlen($full) > $max ? substr($full, 0, $max) . '…' : $full;
+    $href = htmlspecialchars('https://' . SITE_DOMAIN . $full, ENT_QUOTES);
+    $tip  = htmlspecialchars($full, ENT_QUOTES);
+    $txt  = htmlspecialchars($disp);
+    return "<a href=\"$href\" class=\"uri\" target=\"_blank\" rel=\"noopener noreferrer\" title=\"$tip\">$txt</a>";
+}
 function geo_label(string $ip, array $geo): string {
     $cc = $geo[$ip] ?? '';
     if (!$cc || $cc === 'XX') return '<span class="muted">—</span>';
@@ -1139,9 +1147,7 @@ if ($tab === 'soc' && $pdo) {
             </td>
             <td><?= geo_label($r['ip'], $geo) ?></td>
             <td><?= method_badge($r['method']) ?></td>
-            <td><span class="uri" title="<?= htmlspecialchars($r['uri'] . ($r['query_string'] ? '?'.$r['query_string'] : '')) ?>">
-              <?= htmlspecialchars($r['uri']) ?>
-            </span></td>
+            <td><?= uriLink($r['uri'], $r['query_string'] ?: null) ?></td>
             <td><?= status_badge((int)$r['status']) ?></td>
             <td><span class="muted"><?= htmlspecialchars($tool_name($r['script_name'])) ?></span></td>
             <td><?= ua_label($r['user_agent']) ?></td>
@@ -1204,7 +1210,7 @@ if ($tab === 'soc' && $pdo) {
           <td><span class="ts" title="<?= htmlspecialchars($e['created_at']) ?> UTC"><?= rel_time($e['created_at']) ?></span></td>
           <td><a href="<?= q(['ip' => $e['ip']]) ?>" class="ip-link"><?= htmlspecialchars($e['ip']) ?></a><?= me_badge($e['ip'], $my_ips_set) ?></td>
           <td><span class="badge badge--warn"><?= htmlspecialchars($e['error_type']) ?></span></td>
-          <td><span class="uri"><?= htmlspecialchars($e['uri']) ?></span></td>
+          <td><?= uriLink($e['uri']) ?></td>
           <td><span class="err-msg"><?= htmlspecialchars($e['error_msg']) ?></span></td>
           <td><span class="err-file" title="<?= htmlspecialchars($e['error_file']) ?>"><?= htmlspecialchars(basename($e['error_file'])) ?> : <?= (int)$e['error_line'] ?></span></td>
           <td>
@@ -1256,7 +1262,7 @@ if ($tab === 'soc' && $pdo) {
       <div class="stat-sub"><?= number_format($ng_stats['errs']) ?> requests</div>
     </div>
     <div class="stat-card">
-      <div class="stat-val" style="font-size:.85rem;line-height:1.5;word-break:break-all"><?= htmlspecialchars($ng_stats['top_uri']) ?></div>
+      <div class="stat-val" style="font-size:.85rem;line-height:1.5;word-break:break-all"><?= $ng_stats['top_uri'] !== '—' ? uriLink($ng_stats['top_uri'], null, 80) : '—' ?></div>
       <div class="stat-lbl">Top URI</div>
       <div class="stat-sub"><?= number_format($ng_stats['top_cnt']) ?> requests</div>
     </div>
@@ -1272,7 +1278,7 @@ if ($tab === 'soc' && $pdo) {
         <div style="max-height:290px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border2) transparent;padding-right:.25rem">
         <?php foreach ($ng_top_uris as $t): ?>
         <div class="tool-row">
-          <span class="tool-lbl" title="<?= htmlspecialchars($t['uri']) ?>"><?= htmlspecialchars($t['uri']) ?></span>
+          <?= uriLink($t['uri'], null, 40) ?>
           <div class="tool-bar-bg"><div class="tool-bar-fill" style="width:<?= round($t['c']/$ng_uri_max*100) ?>%"></div></div>
           <span class="tool-cnt"><?= number_format($t['c']) ?></span>
         </div>
@@ -1421,7 +1427,7 @@ if ($tab === 'soc' && $pdo) {
             <td><?= geo_label($r['ip'], $ng_geo) ?></td>
             <td><?= method_badge($r['method']) ?></td>
             <td><span class="muted" style="font-family:var(--mono);font-size:.68rem"><?= htmlspecialchars($r['host']) ?></span></td>
-            <td><span class="uri" title="<?= htmlspecialchars($r['uri'] . ($r['query_string'] ? '?'.$r['query_string'] : '')) ?>"><?= htmlspecialchars($r['uri']) ?></span></td>
+            <td><?= uriLink($r['uri'], $r['query_string'] ?: null) ?></td>
             <td><?= status_badge((int)$r['status']) ?></td>
             <td><?= ua_label($r['user_agent']) ?></td>
             <td class="muted" style="font-family:var(--mono);font-size:.68rem;text-align:right"><?= $r['bytes_sent'] !== null ? number_format((int)$r['bytes_sent']) : '—' ?></td>
@@ -1813,7 +1819,7 @@ if ($tab === 'soc' && $pdo) {
       <div class="signal-body">
         <?php if ($soc_probe_paths): foreach (array_slice($soc_probe_paths, 0, 5) as $r): ?>
         <div class="signal-item">
-          <span class="signal-ip uri" style="max-width:180px" title="<?= htmlspecialchars($r['uri']) ?>"><?= htmlspecialchars(substr($r['uri'], 0, 32)) ?><?= strlen($r['uri']) > 32 ? '…' : '' ?></span>
+          <?= uriLink($r['uri'], null, 32) ?>
           <span class="signal-val"><?= (int)$r['hits'] ?>×, <?= (int)$r['ips'] ?> IP<?= (int)$r['ips'] !== 1 ? 's' : '' ?></span>
         </div>
         <?php endforeach; else: ?>
@@ -2076,7 +2082,7 @@ if ($tab === 'soc' && $pdo) {
           <tbody>
           <?php foreach ($soc_distrib as $d): ?>
           <tr>
-            <td class="uri" title="<?= htmlspecialchars($d['uri']) ?>"><?= htmlspecialchars(substr($d['uri'], 0, 50)) ?><?= strlen($d['uri']) > 50 ? '…' : '' ?></td>
+            <td><?= uriLink($d['uri'], null, 50) ?></td>
             <td><span class="badge badge--err"><?= (int)$d['c_ips'] ?></span></td>
             <td class="ts"><?= number_format((int)$d['c_hits']) ?></td>
             <td class="ts" title="<?= htmlspecialchars($d['first_seen']) ?> → <?= htmlspecialchars($d['last_seen']) ?>"><?= rel_time($d['first_seen']) ?></td>
@@ -2110,7 +2116,7 @@ if ($tab === 'soc' && $pdo) {
               <a href="?tab=soc&soc_period=<?= $soc_period_key ?>" class="ip-link"><?= htmlspecialchars($hip) ?></a><?= me_badge($hip, $my_ips_set) ?>
               <?php if ($hcc): ?> <?= flag($hcc) ?><?php endif; ?>
             </td>
-            <td class="uri" title="<?= htmlspecialchars($h['uri']) ?>"><?= htmlspecialchars(substr($h['uri'], 0, 40)) ?><?= strlen($h['uri']) > 40 ? '…' : '' ?></td>
+            <td><?= uriLink($h['uri'], null, 40) ?></td>
             <td><?= status_badge((int)$h['status']) ?></td>
             <td><?= ua_label($h['user_agent'] ?? '') ?></td>
           </tr>
@@ -2149,7 +2155,7 @@ if ($tab === 'soc' && $pdo) {
           <td><?= $ecc ? '<span class="geo" title="' . htmlspecialchars($ecc) . '">' . flag($ecc) . ' <span class="geo-cc">' . htmlspecialchars($ecc) . '</span></span>' : '<span class="muted">—</span>' ?></td>
           <td><span class="ev-pill ev-<?= htmlspecialchars($et) ?>"><?= htmlspecialchars($ev_label[$et] ?? $et) ?></span></td>
           <td><?= method_badge($ev['method']) ?></td>
-          <td class="uri" title="<?= htmlspecialchars($ev['uri']) ?>"><?= htmlspecialchars(substr($ev['uri'], 0, 60)) ?><?= strlen($ev['uri']) > 60 ? '…' : '' ?></td>
+          <td><?= uriLink($ev['uri'], null, 60) ?></td>
           <td><?= status_badge((int)$ev['status']) ?></td>
           <td><?= ua_label($ev['user_agent'] ?? '') ?></td>
         </tr>

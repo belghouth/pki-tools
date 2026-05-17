@@ -105,7 +105,12 @@ while (($line = fgets($fh)) !== false) {
     $bytes = isset($d['bytes']) && is_numeric($d['bytes']) ? (int)$d['bytes']   : null;
 
     // Optional strings — treat nginx placeholder '-' as empty
-    $qs  = ($d['query']   ?? '-') === '-' ? '' : ($d['query']   ?? '');
+    // $request_uri already contains the query string; split it out cleanly.
+    $raw_uri    = $d['uri'] ?? '/';
+    $qpos       = strpos($raw_uri, '?');
+    $uri_path   = $qpos !== false ? substr($raw_uri, 0, $qpos) : $raw_uri;
+    $legacy_qs  = ($d['query'] ?? '-') === '-' ? '' : ($d['query'] ?? '');
+    $qs         = $qpos !== false ? substr($raw_uri, $qpos + 1) : $legacy_qs;
     $ref = ($d['referer'] ?? '-') === '-' ? '' : ($d['referer'] ?? '');
 
     $batch[] = [
@@ -114,7 +119,7 @@ while (($line = fgets($fh)) !== false) {
         substr($d['method'] ?? 'GET', 0, 10),
         substr($d['host']   ?? '',    0, 255),
         substr($d['vhost']  ?? '',    0, 255),
-        substr($d['uri']    ?? '/',   0, 2048),
+        substr($uri_path, 0, 2048),
         $qs  !== '' ? substr($qs,  0, 2048) : null,
         (int)($d['status'] ?? 200),
         $bytes,
