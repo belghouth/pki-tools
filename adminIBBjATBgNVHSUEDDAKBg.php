@@ -838,13 +838,13 @@ if ($tab === 'soc' && $pdo) {
     .ua-browser { font-family: var(--mono); font-size: .65rem; color: var(--muted); }
     /* Unified action icons (watch + block) — no boxes, placed left of IP */
     .ip-act { display: inline-block; background: none; border: none; font-size: 1.15rem; padding: .1rem .35rem; cursor: pointer; line-height: 1; transition: color var(--tr); vertical-align: middle; }
-    .ip-act-w           { color: #4a2a08; }
+    .ip-act-w           { color: #8c5a20; }
     .ip-act-w:hover     { color: #f97316; }
     .ip-act-w.on        { color: #f97316; }
-    .ip-act-b           { color: #2a3040; }
+    .ip-act-b           { color: #7a8fa8; }
     .ip-act-b:hover     { color: var(--err); }
-    .ip-act-blocked     { color: var(--err); cursor: default; opacity: .85; }
-    .ip-act-disabled    { color: #2a3040; cursor: not-allowed; opacity: .3; }
+    .ip-act-blocked     { color: var(--err); cursor: default; }
+    .ip-act-disabled    { color: #7a8fa8; cursor: not-allowed; opacity: .3; }
     /* Watch-tab status column text labels (boxed) */
     .badge--watch     { background: rgba(249,115,22,.08); color: #f97316; border: 1px solid rgba(249,115,22,.3); border-radius: 3px; padding: .1rem .3rem; font-size: .65rem; font-family: var(--mono); }
     .badge--candidate { background: rgba(239,68,68,.1); color: #f87171; border: 1px solid rgba(239,68,68,.3); border-radius: 3px; padding: .1rem .3rem; font-size: .65rem; font-family: var(--mono); }
