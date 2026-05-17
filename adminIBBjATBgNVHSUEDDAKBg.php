@@ -313,6 +313,22 @@ if (isset($_GET['pp']) && in_array($pp, $_pp_opts)) {
 }
 unset($_pp_opts);
 
+// IP scope filter — persisted as a session cookie (expires when browser closes)
+$_ipf_opts = ['all', 'mine', 'others'];
+$ipf = in_array($_GET['ipf'] ?? '', $_ipf_opts) ? $_GET['ipf']
+    : (in_array($_COOKIE['mkt_ipf'] ?? '', $_ipf_opts) ? $_COOKIE['mkt_ipf'] : 'all');
+if (isset($_GET['ipf']) && in_array($ipf, $_ipf_opts)) {
+    setcookie('mkt_ipf', $ipf, ['path' => '/', 'secure' => true, 'httponly' => true, 'samesite' => 'Lax']);
+}
+unset($_ipf_opts);
+// Build SQL snippet for the IP scope filter. Uses a subquery so no extra bound params needed.
+// $ipf_sql(alias) — alias is the table alias prefixed to the ip column (empty = bare column).
+$ipf_sql = fn(string $a = '') => match($ipf) {
+    'mine'   => 'AND ' . ($a ? "$a." : '') . 'ip IN (SELECT ip FROM my_ips)',
+    'others' => 'AND ' . ($a ? "$a." : '') . 'ip NOT IN (SELECT ip FROM my_ips)',
+    default  => '',
+};
+
 if (!in_array($fmethod, ['', 'GET', 'POST', 'DELETE', 'PUT', 'HEAD', 'OPTIONS'])) $fmethod = '';
 if (!preg_match('/^(\d{3}|\dxx)$/', $fstatus)) $fstatus = '';
 
@@ -332,6 +348,7 @@ if ($fstatus !== '') {
         $w[] = 'status BETWEEN ? AND ?'; $bp[] = $lo; $bp[] = $hi;
     } else { $w[] = 'status = ?'; $bp[] = (int)$fstatus; }
 }
+if ($ipf !== 'all') $w[] = ltrim($ipf_sql(), 'AND ');
 $wsql = implode(' AND ', $w);
 
 // nginx WHERE clause (same base filters + optional vhost)
@@ -345,6 +362,7 @@ if ($fstatus !== '') {
         $nw[] = 'status BETWEEN ? AND ?'; $nbp[] = $lo; $nbp[] = $hi;
     } else { $nw[] = 'status = ?'; $nbp[] = (int)$fstatus; }
 }
+if ($ipf !== 'all') $nw[] = ltrim($ipf_sql(), 'AND ');
 $nwsql = implode(' AND ', $nw);
 
 // ── Data ──────────────────────────────────────────────────────────────────────
@@ -377,10 +395,10 @@ if ($tab === 'php' && $pdo) {
     $tool_usage = $pdo->query("SELECT script_name, COUNT(*) AS c FROM visits WHERE created_at >= $pstart AND script_name != '' GROUP BY script_name ORDER BY c DESC LIMIT 40")->fetchAll();
 
     // Top IPs (blocked IPs excluded so they don't crowd out active ones)
-    $top_ips = $pdo->query("SELECT ip, COUNT(*) AS c, MAX(created_at) AS last, ROUND(SUM(status>=400)/COUNT(*)*100) AS epct FROM visits WHERE created_at >= $pstart AND ip NOT IN (SELECT ip FROM blocked_ips) GROUP BY ip ORDER BY c DESC LIMIT 40")->fetchAll();
+    $top_ips = $pdo->query("SELECT ip, COUNT(*) AS c, MAX(created_at) AS last, ROUND(SUM(status>=400)/COUNT(*)*100) AS epct FROM visits WHERE created_at >= $pstart {$ipf_sql()} AND ip NOT IN (SELECT ip FROM blocked_ips) GROUP BY ip ORDER BY c DESC LIMIT 40")->fetchAll();
 
     // Errors (unacknowledged only)
-    $err_rows = $pdo->query("SELECT id,created_at,ip,uri,error_type,error_msg,error_file,error_line FROM errors WHERE acknowledged_at IS NULL ORDER BY created_at DESC LIMIT 25")->fetchAll();
+    $err_rows = $pdo->query("SELECT id,created_at,ip,uri,error_type,error_msg,error_file,error_line FROM errors WHERE acknowledged_at IS NULL {$ipf_sql()} ORDER BY created_at DESC LIMIT 25")->fetchAll();
 }
 
 $total_pages = max(1, (int)ceil($total_rows / $pp));
@@ -417,7 +435,7 @@ if ($tab === 'nginx' && $pdo) {
 
         $ng_top_uris = $pdo->query("SELECT uri, COUNT(*) AS c FROM nginx_visits WHERE created_at >= $pstart AND uri != '' GROUP BY uri ORDER BY c DESC LIMIT 40")->fetchAll();
 
-        $ng_top_ips = $pdo->query("SELECT ip, COUNT(*) AS c, MAX(created_at) AS last, ROUND(SUM(status>=400)/COUNT(*)*100) AS epct FROM nginx_visits WHERE created_at >= $pstart AND ip != '' AND ip NOT IN (SELECT ip FROM blocked_ips) GROUP BY ip ORDER BY c DESC LIMIT 40")->fetchAll();
+        $ng_top_ips = $pdo->query("SELECT ip, COUNT(*) AS c, MAX(created_at) AS last, ROUND(SUM(status>=400)/COUNT(*)*100) AS epct FROM nginx_visits WHERE created_at >= $pstart AND ip != '' {$ipf_sql()} AND ip NOT IN (SELECT ip FROM blocked_ips) GROUP BY ip ORDER BY c DESC LIMIT 40")->fetchAll();
     } catch (Throwable) {}
 }
 
@@ -430,6 +448,11 @@ $ng_geo     = $pdo ? geoip_country($ng_geo_ips) : [];
 
 $users        = $tab === 'users'   ? user_list()        : [];
 $blocked_list = $tab === 'blocked' ? blocked_ip_list()  : [];
+if ($ipf !== 'all' && $blocked_list) {
+    $blocked_list = array_values(array_filter($blocked_list,
+        fn($b) => $ipf === 'mine' ? isset($my_ips_set[$b['ip']]) : !isset($my_ips_set[$b['ip']])
+    ));
+}
 $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fetchAll(PDO::FETCH_COLUMN)) : [];
 
 // ── SOC data ──────────────────────────────────────────────────────────────────
@@ -455,7 +478,7 @@ if ($tab === 'soc' && $pdo) {
         $php_err_lookup = [];
         foreach ($pdo->query(
             "SELECT ip, COUNT(*) AS cnt FROM errors
-             WHERE created_at >= $soc_win AND ip != '' GROUP BY ip"
+             WHERE created_at >= $soc_win AND ip != '' {$ipf_sql()} GROUP BY ip"
         )->fetchAll() as $r) {
             $php_err_lookup[$r['ip']] = (int)$r['cnt'];
         }
@@ -464,7 +487,7 @@ if ($tab === 'soc' && $pdo) {
         $rate_lookup = [];
         foreach ($pdo->query(
             "SELECT ip, COUNT(*) AS reqs FROM nginx_visits
-             WHERE created_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE) AND ip != ''
+             WHERE created_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE) AND ip != '' {$ipf_sql()}
              GROUP BY ip HAVING reqs >= 15"
         )->fetchAll() as $r) {
             $rate_lookup[$r['ip']] = (int)$r['reqs'];
@@ -496,7 +519,7 @@ if ($tab === 'soc' && $pdo) {
                        THEN 1 ELSE 0 END)                            AS exploit_hits
             FROM nginx_visits n
             LEFT JOIN geoip_cache g ON g.ip = n.ip
-            WHERE n.created_at >= $soc_win AND n.ip != ''
+            WHERE n.created_at >= $soc_win AND n.ip != '' {$ipf_sql('n')}
             GROUP BY n.ip
             ORDER BY COUNT(*) DESC
             LIMIT 200
@@ -554,7 +577,7 @@ if ($tab === 'soc' && $pdo) {
                    COALESCE(MAX(g.country), MAX(nv.country), '') AS country
             FROM nginx_visits nv
             LEFT JOIN geoip_cache g ON g.ip = nv.ip
-            WHERE nv.created_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE) AND nv.ip != ''
+            WHERE nv.created_at >= DATE_SUB(NOW(), INTERVAL 5 MINUTE) AND nv.ip != '' {$ipf_sql('nv')}
             GROUP BY nv.ip HAVING reqs >= 15
             ORDER BY reqs DESC LIMIT 10
         ")->fetchAll();
@@ -573,7 +596,7 @@ if ($tab === 'soc' && $pdo) {
                    END AS ev_type
             FROM nginx_visits n
             LEFT JOIN geoip_cache g ON g.ip = n.ip
-            WHERE n.created_at >= $soc_win
+            WHERE n.created_at >= $soc_win {$ipf_sql('n')}
               AND (
                 n.status >= 400
                 OR n.user_agent REGEXP 'nikto|nmap|sqlmap|masscan|zgrab|gobuster|nuclei|burp|acunetix|nessus|hydra|metasploit|feroxbuster|ffuf|wfuzz|dirsearch'
@@ -594,7 +617,7 @@ if ($tab === 'soc' && $pdo) {
             FROM sessions s
             LEFT JOIN geoip_cache g ON g.ip = s.ip
             LEFT JOIN ip_intel i    ON i.ip = s.ip
-            WHERE s.session_start >= $soc_win
+            WHERE s.session_start >= $soc_win {$ipf_sql('s')}
             ORDER BY s.score DESC, s.session_start DESC
             LIMIT 40
         ")->fetchAll();
@@ -623,7 +646,7 @@ if ($tab === 'soc' && $pdo) {
                    n.method, n.uri, n.status, n.user_agent
             FROM nginx_visits n
             LEFT JOIN geoip_cache g ON g.ip = n.ip
-            WHERE n.created_at >= $soc_win
+            WHERE n.created_at >= $soc_win {$ipf_sql('n')}
               AND n.uri REGEXP '(wp-login[.]php|wp-admin|xmlrpc[.]php|phpinfo|phpmyadmin|adminer|[.]env$|[.]git/|shell[.]php|cmd[.]php|c99[.]php|r57[.]php|webshell|setup[.]php|install[.]php|/etc/passwd|/proc/self|/backup[./])'
             ORDER BY n.created_at DESC
             LIMIT 40
@@ -1071,6 +1094,14 @@ if ($tab === 'soc' && $pdo) {
           </select>
         </div>
         <div class="flt">
+          <label>View</label>
+          <select name="ipf" style="width:110px" <?= !$my_ips_set ? 'disabled title="Add IPs in My IPs tab first"' : '' ?>>
+            <option value="all"    <?= $ipf === 'all'    ? 'selected' : '' ?>>All IPs</option>
+            <option value="mine"   <?= $ipf === 'mine'   ? 'selected' : '' ?>>My IPs only</option>
+            <option value="others" <?= $ipf === 'others' ? 'selected' : '' ?>>Exclude mine</option>
+          </select>
+        </div>
+        <div class="flt">
           <label>Display</label>
           <select name="pp" style="width:80px">
             <?php foreach ([50, 100, 200] as $opt): ?>
@@ -1345,6 +1376,14 @@ if ($tab === 'soc' && $pdo) {
           </select>
         </div>
         <div class="flt">
+          <label>View</label>
+          <select name="ipf" style="width:110px" <?= !$my_ips_set ? 'disabled title="Add IPs in My IPs tab first"' : '' ?>>
+            <option value="all"    <?= $ipf === 'all'    ? 'selected' : '' ?>>All IPs</option>
+            <option value="mine"   <?= $ipf === 'mine'   ? 'selected' : '' ?>>My IPs only</option>
+            <option value="others" <?= $ipf === 'others' ? 'selected' : '' ?>>Exclude mine</option>
+          </select>
+        </div>
+        <div class="flt">
           <label>Display</label>
           <select name="pp" style="width:80px">
             <?php foreach ([50, 100, 200] as $opt): ?>
@@ -1563,7 +1602,19 @@ if ($tab === 'soc' && $pdo) {
   <!-- Manual block form -->
   <div class="users-hd" style="align-items:flex-end;flex-wrap:wrap;gap:.75rem">
     <h1>Blocked IPs</h1>
-    <form method="POST" style="display:flex;align-items:flex-end;gap:.5rem;flex-wrap:wrap;margin-left:auto">
+    <form method="GET" style="display:flex;align-items:flex-end;gap:.4rem;margin-left:auto">
+      <input type="hidden" name="tab" value="blocked">
+      <div class="flt" style="margin:0">
+        <label style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:#3d4f68">View</label>
+        <select name="ipf" style="width:110px" <?= !$my_ips_set ? 'disabled' : '' ?>
+                onchange="this.form.submit()">
+          <option value="all"    <?= $ipf === 'all'    ? 'selected' : '' ?>>All IPs</option>
+          <option value="mine"   <?= $ipf === 'mine'   ? 'selected' : '' ?>>My IPs only</option>
+          <option value="others" <?= $ipf === 'others' ? 'selected' : '' ?>>Exclude mine</option>
+        </select>
+      </div>
+    </form>
+    <form method="POST" style="display:flex;align-items:flex-end;gap:.5rem;flex-wrap:wrap">
       <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
       <input type="hidden" name="action" value="block_ip">
       <div class="flt">
@@ -1579,6 +1630,12 @@ if ($tab === 'soc' && $pdo) {
   </div>
 
   <div class="card">
+    <?php if ($ipf !== 'all'): ?>
+    <div class="card-hd" style="background:rgba(0,212,170,.04)">
+      <h2>Blocked IPs</h2>
+      <span class="card-meta"><?= $ipf === 'mine' ? 'Showing my IPs only' : 'Excluding my IPs' ?> · <?= count($blocked_list) ?> matched</span>
+    </div>
+    <?php endif; ?>
     <div class="tbl-wrap">
       <table>
         <thead>
@@ -1650,10 +1707,25 @@ if ($tab === 'soc' && $pdo) {
   <!-- ── SOC Header ───────────────────────────────────────────────────────── -->
   <div class="page-hd">
     <h1>Security Operations</h1>
-    <div class="period-tabs">
-      <?php foreach ($soc_period_labels as $k => $lbl): ?>
-      <a href="?tab=soc&soc_period=<?= $k ?>" class="<?= $soc_period_key === $k ? 'active' : '' ?>"><?= $lbl ?></a>
-      <?php endforeach; ?>
+    <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <div class="period-tabs">
+        <?php foreach ($soc_period_labels as $k => $lbl): ?>
+        <a href="?tab=soc&soc_period=<?= $k ?>&ipf=<?= urlencode($ipf) ?>" class="<?= $soc_period_key === $k ? 'active' : '' ?>"><?= $lbl ?></a>
+        <?php endforeach; ?>
+      </div>
+      <form method="GET" style="display:flex;align-items:center;gap:.4rem">
+        <input type="hidden" name="tab"        value="soc">
+        <input type="hidden" name="soc_period" value="<?= htmlspecialchars($soc_period_key) ?>">
+        <div class="flt" style="margin:0">
+          <label style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:#3d4f68">View</label>
+          <select name="ipf" style="width:110px" <?= !$my_ips_set ? 'disabled title="Add IPs in My IPs tab first"' : '' ?>
+                  onchange="this.form.submit()">
+            <option value="all"    <?= $ipf === 'all'    ? 'selected' : '' ?>>All IPs</option>
+            <option value="mine"   <?= $ipf === 'mine'   ? 'selected' : '' ?>>My IPs only</option>
+            <option value="others" <?= $ipf === 'others' ? 'selected' : '' ?>>Exclude mine</option>
+          </select>
+        </div>
+      </form>
     </div>
   </div>
 
