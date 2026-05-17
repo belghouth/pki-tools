@@ -223,6 +223,19 @@ function schemaIntel(PDO $pdo): void {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
     schemaMigrate($pdo, "ALTER TABLE sessions MODIFY classification ENUM('human','researcher','crawler','scanner','attacker','unknown','social_probe') NOT NULL DEFAULT 'unknown'");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS ip_watchlist (
+        ip               VARCHAR(45)       NOT NULL PRIMARY KEY,
+        added_at         DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        source           VARCHAR(32)       NOT NULL DEFAULT 'manual',
+        reason           TEXT,
+        score_at_add     SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+        status           ENUM('watching','candidate') NOT NULL DEFAULT 'watching',
+        escalated_at     DATETIME          DEFAULT NULL,
+        escalated_reason TEXT              DEFAULT NULL,
+        INDEX idx_status (status),
+        INDEX idx_added  (added_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
 function adminSchema(PDO $pdo): void {
@@ -499,6 +512,51 @@ function unblock_ip(string $ip): string {
         admin_pdo()?->prepare("DELETE FROM blocked_ips WHERE ip=?")->execute([$ip]);
         return '';
     } catch (Throwable) { return 'Failed to unblock IP.'; }
+}
+
+// ── Watchlist ─────────────────────────────────────────────────────────────────
+function watchlistLoad(): array {
+    try {
+        $rows = admin_pdo()?->query(
+            "SELECT ip, added_at, source, reason, score_at_add, status,
+                    escalated_at, escalated_reason
+             FROM ip_watchlist ORDER BY FIELD(status,'candidate','watching'), added_at DESC"
+        )?->fetchAll() ?? [];
+        $out = [];
+        foreach ($rows as $r) { $out[$r['ip']] = $r; }
+        return $out;
+    } catch (Throwable) { return []; }
+}
+
+function watchIp(string $ip, string $reason = '', string $source = 'manual', int $score = 0): string {
+    try {
+        admin_pdo()?->prepare(
+            "INSERT INTO ip_watchlist (ip, reason, source, score_at_add)
+             VALUES (?,?,?,?)
+             ON DUPLICATE KEY UPDATE reason=VALUES(reason), source=VALUES(source),
+             score_at_add=VALUES(score_at_add), status='watching',
+             added_at=CURRENT_TIMESTAMP, escalated_at=NULL, escalated_reason=NULL"
+        )->execute([$ip, $reason, $source, $score]);
+        return '';
+    } catch (Throwable) { return 'Failed to watch IP.'; }
+}
+
+function unwatchIp(string $ip): string {
+    try {
+        admin_pdo()?->prepare("DELETE FROM ip_watchlist WHERE ip=?")->execute([$ip]);
+        return '';
+    } catch (Throwable) { return 'Failed to unwatch IP.'; }
+}
+
+function watchlistEscalate(string $ip, string $reason): void {
+    try {
+        admin_pdo()?->prepare(
+            "UPDATE ip_watchlist SET status='candidate', escalated_at=NOW(), escalated_reason=?
+             WHERE ip=? AND status='watching'"
+        )->execute([$reason, $ip]);
+    } catch (Throwable) {
+        // Escalation is best-effort — ignore if watchlist entry was deleted concurrently
+    }
 }
 
 function blocked_ip_list(): array {

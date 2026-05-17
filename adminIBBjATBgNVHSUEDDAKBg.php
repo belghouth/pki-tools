@@ -21,6 +21,7 @@ $tab = match($_GET['tab'] ?? '') {
     'nginx'   => 'nginx',
     'soc'     => 'soc',
     'myips'   => 'myips',
+    'watch'   => 'watch',
     default   => 'php',
 };
 
@@ -42,6 +43,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && _admin_csrf_ok()) {
         $__ip  = trim($_POST['ip'] ?? '');
         $__err = $__ip ? unblock_ip($__ip) : 'Invalid IP.';
         header('Location: ?tab=blocked' . ($__err ? '&err=' . urlencode($__err) : '&ok=1'));
+        exit;
+    }
+    if ($__act === 'watch_ip') {
+        $__ip  = trim($_POST['ip']     ?? '');
+        $__rsn = trim($_POST['reason'] ?? '');
+        $__src = in_array($_POST['source'] ?? '', ['manual','soc_honeypot','soc_event']) ? $_POST['source'] : 'manual';
+        $__sc  = max(0, (int)($_POST['score'] ?? 0));
+        $__redir = in_array($_POST['redirect_tab'] ?? '', ['php','nginx','soc','watch']) ? $_POST['redirect_tab'] : 'watch';
+        $__err = filter_var($__ip, FILTER_VALIDATE_IP) ? watchIp($__ip, $__rsn, $__src, $__sc) : 'Invalid IP address.';
+        header('Location: ?tab=' . $__redir . ($__err ? '&err=' . urlencode($__err) : '&ok=1'));
+        exit;
+    }
+    if ($__act === 'unwatch_ip') {
+        $__ip    = trim($_POST['ip'] ?? '');
+        $__redir = in_array($_POST['redirect_tab'] ?? '', ['php','nginx','soc','watch']) ? $_POST['redirect_tab'] : 'watch';
+        $__err   = $__ip ? unwatchIp($__ip) : 'Invalid IP.';
+        header('Location: ?tab=' . $__redir . ($__err ? '&err=' . urlencode($__err) : '&ok=1'));
         exit;
     }
     if ($__act === 'ack_error') {
@@ -134,6 +152,11 @@ if ($tab === 'blocked') {
     if (isset($_GET['ok']))  { $b_flash = 'Done.';                              $b_flash_ok = true; }
     if (isset($_GET['err'])) { $b_flash = htmlspecialchars($_GET['err'] ?? ''); $b_flash_ok = false; }
 }
+$w_flash = ''; $w_flash_ok = true;
+if ($tab === 'watch') {
+    if (isset($_GET['ok']))  { $w_flash = 'Done.';                              $w_flash_ok = true; }
+    if (isset($_GET['err'])) { $w_flash = htmlspecialchars($_GET['err'] ?? ''); $w_flash_ok = false; }
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 $TOOL_NAMES = [
@@ -176,6 +199,33 @@ function me_badge(string $ip, array $set): string {
     $lbl = $set[$ip]['label'] ?? '';
     $tip = $lbl !== '' ? htmlspecialchars($lbl) : 'my IP';
     return " <span class=\"badge badge--me\" title=\"$tip\">me</span>";
+}
+function watchBadge(string $ip, array $ws): string {
+    if (!isset($ws[$ip])) return '';
+    $tip = htmlspecialchars($ws[$ip]['reason'] ?? 'Watched', ENT_QUOTES);
+    return $ws[$ip]['status'] === 'candidate'
+        ? " <span class=\"badge badge--candidate\" title=\"Candidate for blocking: $tip\">⚡</span>"
+        : " <span class=\"badge badge--watch\" title=\"Watching: $tip\">◉</span>";
+}
+function watchBtn(string $ip, array $ws, string $redirectTab, string $autoReason = '', string $source = 'manual', int $score = 0): string {
+    $csrf = _admin_csrf_token();
+    $hip  = htmlspecialchars($ip, ENT_QUOTES);
+    $hrtab = htmlspecialchars($redirectTab, ENT_QUOTES);
+    if (isset($ws[$ip])) {
+        return "<form method=\"POST\" style=\"display:inline\">"
+             . "<input type=\"hidden\" name=\"_csrf\" value=\"$csrf\">"
+             . "<input type=\"hidden\" name=\"action\" value=\"unwatch_ip\">"
+             . "<input type=\"hidden\" name=\"ip\" value=\"$hip\">"
+             . "<input type=\"hidden\" name=\"redirect_tab\" value=\"$hrtab\">"
+             . "<button type=\"submit\" class=\"btn-watch-sm btn-watch-sm--on\" title=\"Stop watching\">◉</button>"
+             . "</form>";
+    }
+    $jsIp  = htmlspecialchars(json_encode($ip), ENT_QUOTES);
+    $jsRsn = htmlspecialchars(json_encode($autoReason), ENT_QUOTES);
+    $jsSrc = htmlspecialchars(json_encode($source), ENT_QUOTES);
+    $jsTab = htmlspecialchars(json_encode($redirectTab), ENT_QUOTES);
+    return "<button type=\"button\" class=\"btn-watch-sm\" title=\"Watch this IP\""
+         . " onclick=\"openWatchModal($jsIp,$jsRsn,$jsSrc,$score,$jsTab)\">◎</button>";
 }
 function ua_label(string $ua): string {
     if ($ua === '') return '<span class="muted">—</span>';
@@ -469,6 +519,7 @@ if ($ipf !== 'all' && $blocked_list) {
     ));
 }
 $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fetchAll(PDO::FETCH_COLUMN)) : [];
+$watch_set    = watchlistLoad(); // [ip => row] — loaded globally for badges on every tab
 
 // ── SOC data ──────────────────────────────────────────────────────────────────
 $soc_threat_ips   = [];
@@ -784,6 +835,11 @@ if ($tab === 'soc' && $pdo) {
     .badge--oth  { background: rgba(255,255,255,.04); color: var(--muted);  border: 1px solid var(--border); }
     .ua-bot     { font-family: var(--mono); font-size: .65rem; color: var(--err);  background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2); border-radius: 3px; padding: .1rem .35rem; }
     .ua-browser { font-family: var(--mono); font-size: .65rem; color: var(--muted); }
+    .badge--watch     { background: rgba(6,182,212,.08); color: #22d3ee; border: 1px solid rgba(6,182,212,.25); border-radius: 3px; padding: .1rem .3rem; font-size: .65rem; font-family: var(--mono); }
+    .badge--candidate { background: rgba(251,191,36,.1); color: #fbbf24; border: 1px solid rgba(251,191,36,.3); border-radius: 3px; padding: .1rem .3rem; font-size: .65rem; font-family: var(--mono); }
+    .btn-watch-sm      { background: none; border: none; cursor: pointer; color: #1e3a4a; font-size: .72rem; padding: 0 .2rem; line-height: 1; transition: color var(--tr); vertical-align: middle; }
+    .btn-watch-sm:hover { color: #22d3ee; }
+    .btn-watch-sm--on   { color: #22d3ee; }
     .ua-x       { cursor: pointer; user-select: text; }
     .ua-x.ua-expanded { font-family: var(--mono); font-size: .65rem; color: var(--text); background: rgba(0,212,170,.06); border: 1px solid rgba(0,212,170,.2); border-radius: 3px; padding: .15rem .4rem; white-space: normal; word-break: break-all; max-width: 480px; display: inline-block; }
     .ts-x       { cursor: pointer; }
@@ -967,6 +1023,7 @@ if ($tab === 'soc' && $pdo) {
   <a href="?" class="<?= $tab === 'php' ? 'active' : '' ?>">PHP Activity</a>
   <a href="?tab=nginx" class="<?= $tab === 'nginx' ? 'active' : '' ?>">Server Activity</a>
   <a href="?tab=soc" class="<?= $tab === 'soc' ? 'active' : '' ?>" style="color:<?= $tab !== 'soc' ? 'var(--warn)' : '' ?>">SOC</a>
+  <a href="?tab=watch" class="<?= $tab === 'watch' ? 'active' : '' ?>" style="color:<?= $tab !== 'watch' && $watch_set ? 'var(--accent)' : '' ?>">Watch<?php if ($watch_set): ?> <span style="font-size:.6rem;opacity:.6">(<?= count($watch_set) ?>)</span><?php endif; ?></a>
   <a href="?tab=blocked" class="<?= $tab === 'blocked' ? 'active' : '' ?>">Blocked IPs <?php if ($blocked_set): ?><span style="font-size:.6rem;opacity:.6">(<?= count($blocked_set) ?>)</span><?php endif; ?></a>
   <a href="?tab=myips" class="<?= $tab === 'myips' ? 'active' : '' ?>">My IPs <?php if ($my_ips_set): ?><span style="font-size:.6rem;opacity:.6">(<?= count($my_ips_set) ?>)</span><?php endif; ?></a>
   <a href="?tab=users" class="<?= $tab === 'users' ? 'active' : '' ?>">Users</a>
@@ -1151,12 +1208,13 @@ if ($tab === 'soc' && $pdo) {
           <tr>
             <td><?= tsSpan($r['created_at']) ?></td>
             <td style="white-space:nowrap">
-              <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?>
+              <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?><?= watchBadge($r['ip'], $watch_set) ?>
               <?php if (isset($blocked_set[$r['ip']])): ?>
               <span class="badge--blocked-sm" title="Blocked">⊘</span>
               <?php else: ?>
               <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($r['ip'])) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="ip" value="<?= htmlspecialchars($r['ip']) ?>"><button type="submit" class="btn-block-sm" title="Block this IP">⊘</button></form>
               <?php endif; ?>
+              <?= watchBtn($r['ip'], $watch_set, 'php') ?>
             </td>
             <td><?= geo_label($r['ip'], $geo) ?></td>
             <td><?= method_badge($r['method']) ?></td>
@@ -1430,12 +1488,13 @@ if ($tab === 'soc' && $pdo) {
           <tr>
             <td><?= tsSpan($r['created_at']) ?></td>
             <td style="white-space:nowrap">
-              <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?>
+              <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?><?= watchBadge($r['ip'], $watch_set) ?>
               <?php if (isset($blocked_set[$r['ip']])): ?>
               <span class="badge--blocked-sm" title="Blocked">⊘</span>
               <?php else: ?>
               <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($r['ip'])) ?>?')"><input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>"><input type="hidden" name="action" value="block_ip"><input type="hidden" name="ip" value="<?= htmlspecialchars($r['ip']) ?>"><button type="submit" class="btn-block-sm" title="Block this IP">⊘</button></form>
               <?php endif; ?>
+              <?= watchBtn($r['ip'], $watch_set, 'nginx') ?>
             </td>
             <td><?= geo_label($r['ip'], $ng_geo) ?></td>
             <td><?= method_badge($r['method']) ?></td>
@@ -2117,21 +2176,23 @@ if ($tab === 'soc' && $pdo) {
       <div class="tbl-wrap">
         <?php if ($soc_honeypot): ?>
         <table>
-          <thead><tr><th>Time</th><th>IP</th><th>Path</th><th>Status</th><th>UA</th></tr></thead>
+          <thead><tr><th>Time</th><th>IP</th><th>Path</th><th>Status</th><th>UA</th><th></th></tr></thead>
           <tbody>
           <?php foreach ($soc_honeypot as $h):
               $hip = $h['ip'];
               $hcc = $soc_geo[$hip] ?? $h['country'] ?? '';
+              $h_reason = 'Honeypot hit: ' . $h['uri'];
           ?>
           <tr>
             <td><?= tsSpan($h['created_at']) ?></td>
             <td>
-              <a href="?tab=soc&soc_period=<?= $soc_period_key ?>" class="ip-link"><?= htmlspecialchars($hip) ?></a><?= me_badge($hip, $my_ips_set) ?>
+              <a href="?tab=soc&soc_period=<?= $soc_period_key ?>" class="ip-link"><?= htmlspecialchars($hip) ?></a><?= me_badge($hip, $my_ips_set) ?><?= watchBadge($hip, $watch_set) ?>
               <?php if ($hcc): ?> <?= flag($hcc) ?><?php endif; ?>
             </td>
             <td><?= uriLink($h['uri'], null, 40) ?></td>
             <td><?= status_badge((int)$h['status']) ?></td>
             <td><?= ua_label($h['user_agent'] ?? '') ?></td>
+            <td><?= watchBtn($hip, $watch_set, 'soc', $h_reason, 'soc_honeypot') ?></td>
           </tr>
           <?php endforeach; ?>
           </tbody>
@@ -2154,23 +2215,25 @@ if ($tab === 'soc' && $pdo) {
       <?php if ($soc_events): ?>
       <table>
         <thead>
-          <tr><th>Time</th><th>IP</th><th>CC</th><th>Type</th><th>M</th><th>Path</th><th>Status</th><th>UA</th></tr>
+          <tr><th>Time</th><th>IP</th><th>CC</th><th>Type</th><th>M</th><th>Path</th><th>Status</th><th>UA</th><th></th></tr>
         </thead>
         <tbody>
         <?php foreach ($soc_events as $ev):
-            $eip = $ev['ip'];
-            $ecc = $soc_geo[$eip] ?? $ev['country'] ?? '';
-            $et  = $ev['ev_type'];
+            $eip    = $ev['ip'];
+            $ecc    = $soc_geo[$eip] ?? $ev['country'] ?? '';
+            $et     = $ev['ev_type'];
+            $e_reason = ($ev_label[$et] ?? $et) . ': ' . $ev['uri'];
         ?>
         <tr>
           <td><?= tsSpan($ev['created_at']) ?></td>
-          <td><a href="?tab=soc&soc_period=<?= $soc_period_key ?>" class="ip-link"><?= htmlspecialchars($eip) ?></a><?= me_badge($eip, $my_ips_set) ?></td>
+          <td><a href="?tab=soc&soc_period=<?= $soc_period_key ?>" class="ip-link"><?= htmlspecialchars($eip) ?></a><?= me_badge($eip, $my_ips_set) ?><?= watchBadge($eip, $watch_set) ?></td>
           <td><?= $ecc ? '<span class="geo" title="' . htmlspecialchars($ecc) . '">' . flag($ecc) . ' <span class="geo-cc">' . htmlspecialchars($ecc) . '</span></span>' : '<span class="muted">—</span>' ?></td>
           <td><span class="ev-pill ev-<?= htmlspecialchars($et) ?>"><?= htmlspecialchars($ev_label[$et] ?? $et) ?></span></td>
           <td><?= method_badge($ev['method']) ?></td>
           <td><?= uriLink($ev['uri'], null, 60) ?></td>
           <td><?= status_badge((int)$ev['status']) ?></td>
           <td><?= ua_label($ev['user_agent'] ?? '') ?></td>
+          <td><?= watchBtn($eip, $watch_set, 'soc', $e_reason, 'soc_event') ?></td>
         </tr>
         <?php endforeach; ?>
         </tbody>
@@ -2274,6 +2337,37 @@ if ($tab === 'soc' && $pdo) {
     </div>
   </div>
 
+  <!-- Watch IP modal -->
+  <div id="modal-watch" class="modal-overlay" hidden onclick="if(event.target===this)this.hidden=true">
+    <div class="modal-card">
+      <div class="modal-hd">
+        <h3>Watch IP</h3>
+        <button class="modal-close" onclick="document.getElementById('modal-watch').hidden=true">×</button>
+      </div>
+      <form method="POST">
+        <input type="hidden" name="_csrf"        value="<?= _admin_csrf_token() ?>">
+        <input type="hidden" name="action"       value="watch_ip">
+        <input type="hidden" name="source"       id="watch-source">
+        <input type="hidden" name="score"        id="watch-score">
+        <input type="hidden" name="redirect_tab" id="watch-redirect">
+        <div class="modal-body">
+          <div class="form-row">
+            <label>IP address</label>
+            <input type="text" name="ip" id="watch-ip" required autocomplete="off" placeholder="203.0.113.42">
+          </div>
+          <div class="form-row">
+            <label>Reason <span style="color:var(--muted)">(optional)</span></label>
+            <textarea name="reason" id="watch-reason" rows="3" placeholder="Why are you watching this IP?" style="resize:vertical"></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-act" onclick="document.getElementById('modal-watch').hidden=true">Cancel</button>
+          <button type="submit" class="btn-act primary">Watch</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Edit label modal -->
   <div id="modal-edit-myip" class="modal-overlay" hidden>
     <div class="modal-card">
@@ -2304,6 +2398,123 @@ if ($tab === 'soc' && $pdo) {
   </div>
 
   <?php endif; /* $tab === 'myips' */ ?>
+
+  <?php if ($tab === 'watch'): ?>
+  <?php
+  // ── Escalation check: upgrade watching→candidate if a post-watch attacker/scanner session found
+  if ($pdo && $watch_set) {
+      foreach ($watch_set as $wip => $wrow) {
+          if ($wrow['status'] !== 'watching') { continue; }
+          $esc_st = $pdo->prepare(
+              "SELECT 1 FROM sessions WHERE ip=? AND classification IN ('attacker','scanner')
+               AND session_start > ? LIMIT 1"
+          );
+          $esc_st->execute([$wip, $wrow['added_at']]);
+          if ($esc_st->fetchColumn()) {
+              watchlistEscalate($wip, 'Session classified as attacker or scanner after watch was set');
+          }
+      }
+      $watch_set = watchlistLoad();
+  }
+  // ── Load watchlist with activity counts since each IP was added
+  $watch_rows = $pdo ? $pdo->query(
+      "SELECT w.ip, w.added_at, w.source, w.reason, w.score_at_add, w.status,
+              w.escalated_at, w.escalated_reason, g.country,
+              COUNT(v.id) AS reqs_since, MAX(v.created_at) AS last_since
+       FROM ip_watchlist w
+       LEFT JOIN geoip_cache g ON g.ip = w.ip
+       LEFT JOIN nginx_visits v ON v.ip = w.ip AND v.created_at >= w.added_at
+       GROUP BY w.ip, w.added_at, w.source, w.reason, w.score_at_add, w.status,
+                w.escalated_at, w.escalated_reason, g.country
+       ORDER BY FIELD(w.status,'candidate','watching'), w.added_at DESC"
+  )?->fetchAll() : [];
+  $src_label = ['manual' => 'manual', 'soc_honeypot' => 'honeypot', 'soc_event' => 'event'];
+  $src_cls   = ['manual' => '', 'soc_honeypot' => 'badge--warn', 'soc_event' => 'badge--err'];
+  ?>
+  <div class="page-hd">
+    <h1>Watch List</h1>
+    <span class="page-meta"><?= count($watch_rows) ?> monitored IPs</span>
+  </div>
+  <?php if ($w_flash): ?>
+  <div class="flash <?= $w_flash_ok ? 'flash--ok' : 'flash--err' ?>"><?= $w_flash ?></div>
+  <?php endif; ?>
+  <?php $candidates = array_filter($watch_rows, fn($r) => $r['status'] === 'candidate'); ?>
+  <?php if ($candidates): ?>
+  <div class="card" style="border-color:rgba(251,191,36,.35);margin-bottom:1rem">
+    <div class="card-hd">
+      <h2 style="color:#fbbf24">⚡ <?= count($candidates) ?> Candidate<?= count($candidates) > 1 ? 's' : '' ?> for Blocking</h2>
+      <span class="card-meta">These IPs triggered threats after being added to the watchlist</span>
+    </div>
+  </div>
+  <?php endif; ?>
+  <div class="card">
+    <div class="card-hd">
+      <h2>Monitored IPs</h2>
+      <button type="button" class="btn-act primary" onclick="openWatchModal('','','manual',0,'watch')">+ Add IP</button>
+    </div>
+    <div class="tbl-wrap">
+    <?php if ($watch_rows): ?>
+    <table>
+      <thead>
+        <tr><th>Status</th><th>IP</th><th>CC</th><th>Added</th><th>Source</th><th>Reason / Escalation</th><th>Reqs since</th><th>Last seen</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+      <?php foreach ($watch_rows as $wr):
+          $wcc  = $wr['country'] ?? '';
+          $wsrc = $wr['source'] ?? 'manual';
+      ?>
+      <tr>
+        <td>
+          <?php if ($wr['status'] === 'candidate'): ?>
+          <span class="badge badge--candidate">⚡ candidate</span>
+          <?php else: ?>
+          <span class="badge badge--watch">◉ watching</span>
+          <?php endif; ?>
+        </td>
+        <td style="white-space:nowrap">
+          <a href="?tab=nginx&ip=<?= urlencode($wr['ip']) ?>" class="ip-link"><?= htmlspecialchars($wr['ip']) ?></a>
+          <?= me_badge($wr['ip'], $my_ips_set) ?>
+          <?php if (isset($blocked_set[$wr['ip']])): ?>
+          <span class="badge--blocked-sm" title="Blocked">⊘</span>
+          <?php endif; ?>
+        </td>
+        <td><?= $wcc ? '<span class="geo">' . flag($wcc) . ' <span class="geo-cc">' . htmlspecialchars($wcc) . '</span></span>' : '<span class="muted">—</span>' ?></td>
+        <td><?= tsSpan($wr['added_at']) ?></td>
+        <td><span class="badge <?= htmlspecialchars($src_cls[$wsrc] ?? '') ?>"><?= htmlspecialchars($src_label[$wsrc] ?? $wsrc) ?></span></td>
+        <td style="max-width:320px">
+          <?php if ($wr['reason']): ?>
+          <span class="muted" style="font-size:.72rem;word-break:break-word" title="<?= htmlspecialchars($wr['reason']) ?>"><?= htmlspecialchars(mb_strimwidth($wr['reason'], 0, 80, '…')) ?></span>
+          <?php else: ?>
+          <span class="muted">—</span>
+          <?php endif; ?>
+          <?php if ($wr['status'] === 'candidate' && $wr['escalated_reason']): ?>
+          <div style="margin-top:.2rem"><span class="badge badge--candidate" style="font-size:.6rem" title="<?= htmlspecialchars($wr['escalated_reason']) ?>">⚡ <?= htmlspecialchars(mb_strimwidth($wr['escalated_reason'], 0, 60, '…')) ?></span></div>
+          <?php endif; ?>
+        </td>
+        <td class="ts" style="text-align:right"><?= $wr['reqs_since'] > 0 ? number_format((int)$wr['reqs_since']) : '<span class="muted">0</span>' ?></td>
+        <td><?= $wr['last_since'] ? tsSpan($wr['last_since']) : '<span class="muted">—</span>' ?></td>
+        <td style="white-space:nowrap">
+          <?= watchBtn($wr['ip'], $watch_set, 'watch') ?>
+          <?php if ($wr['status'] === 'candidate' && !isset($blocked_set[$wr['ip']])): ?>
+          <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($wr['ip'])) ?>?')">
+            <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+            <input type="hidden" name="action" value="block_ip">
+            <input type="hidden" name="ip" value="<?= htmlspecialchars($wr['ip']) ?>">
+            <input type="hidden" name="redirect_tab" value="watch">
+            <button type="submit" class="btn-act danger" style="font-size:.62rem;padding:.1rem .4rem">Block</button>
+          </form>
+          <?php endif; ?>
+        </td>
+      </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+    <?php else: ?>
+    <div class="empty-state">No IPs being monitored. Use the ◎ button in any activity row or SOC event to start watching an IP.</div>
+    <?php endif; ?>
+    </div>
+  </div>
+  <?php endif; /* $tab === 'watch' */ ?>
 
 </div><!-- .wrap -->
 
@@ -2351,6 +2562,18 @@ function openEditMyIp(ip, label) {
   document.getElementById('edit-myip-ip-display').value = ip;
   document.getElementById('edit-myip-label').value      = label;
   document.getElementById('modal-edit-myip').hidden     = false;
+}
+// Watch IP modal
+function openWatchModal(ip, reason, source, score, redirectTab) {
+  document.getElementById('watch-ip').value       = ip || '';
+  document.getElementById('watch-ip').readOnly    = ip !== '';
+  document.getElementById('watch-reason').value   = reason || '';
+  document.getElementById('watch-source').value   = source || 'manual';
+  document.getElementById('watch-score').value    = score  || 0;
+  document.getElementById('watch-redirect').value = redirectTab || 'watch';
+  document.getElementById('modal-watch').hidden   = false;
+  if (!ip) { document.getElementById('watch-ip').focus(); }
+  else      { document.getElementById('watch-reason').focus(); }
 }
 // UA expand/collapse — click any .ua-x span to toggle full raw UA inline
 document.addEventListener('click', function(e) {
