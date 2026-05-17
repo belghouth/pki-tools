@@ -179,7 +179,8 @@ function me_badge(string $ip, array $set): string {
 }
 function ua_label(string $ua): string {
     if ($ua === '') return '<span class="muted">—</span>';
-    $t = 'title="' . htmlspecialchars($ua) . '"';
+    $dua = 'data-ua="' . htmlspecialchars($ua, ENT_QUOTES) . '"';
+    $t   = 'title="' . htmlspecialchars($ua) . '"';
 
     // ── Named bots (most specific first) ─────────────────────────────────────
     static $BOT_MAP = [
@@ -217,7 +218,7 @@ function ua_label(string $ua): string {
     ];
     foreach ($BOT_MAP as $sig => $label) {
         if (stripos($ua, $sig) !== false)
-            return "<span class=\"ua-bot\" $t>$label</span>";
+            return "<span class=\"ua-bot ua-x\" $dua data-label=\"$label\" $t>$label</span>";
     }
 
     // ── Generic tools ─────────────────────────────────────────────────────────
@@ -236,10 +237,10 @@ function ua_label(string $ua): string {
     ];
     foreach ($TOOL_MAP as $sig => $label) {
         if (stripos($ua, $sig) !== false)
-            return "<span class=\"ua-bot\" $t>$label</span>";
+            return "<span class=\"ua-bot ua-x\" $dua data-label=\"$label\" $t>$label</span>";
     }
     if (preg_match('/bot|crawl|spider|slurp/i', $ua))
-        return "<span class=\"ua-bot\" $t>bot</span>";
+        return "<span class=\"ua-bot ua-x\" $dua data-label=\"bot\" $t>bot</span>";
 
     // ── Platform ─────────────────────────────────────────────────────────────
     $plat = '';
@@ -266,9 +267,10 @@ function ua_label(string $ua): string {
 
     if ($browser) {
         $label = $plat ? "$browser / $plat" : $browser;
-        return "<span class=\"ua-browser\" $t>$label</span>";
+        return "<span class=\"ua-browser ua-x\" $dua data-label=\"$label\" $t>$label</span>";
     }
-    return '<span class="muted" ' . $t . '>' . htmlspecialchars(substr($ua, 0, 22)) . '…</span>';
+    $short = htmlspecialchars(substr($ua, 0, 22)) . '…';
+    return "<span class=\"muted ua-x\" $dua data-label=\"$short\" $t>$short</span>";
 }
 function flag(string $cc): string {
     $cc = strtoupper(trim($cc));
@@ -777,6 +779,8 @@ if ($tab === 'soc' && $pdo) {
     .badge--oth  { background: rgba(255,255,255,.04); color: var(--muted);  border: 1px solid var(--border); }
     .ua-bot     { font-family: var(--mono); font-size: .65rem; color: var(--err);  background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.2); border-radius: 3px; padding: .1rem .35rem; }
     .ua-browser { font-family: var(--mono); font-size: .65rem; color: var(--muted); }
+    .ua-x       { cursor: pointer; user-select: text; }
+    .ua-x.ua-expanded { font-family: var(--mono); font-size: .65rem; color: var(--text); background: rgba(0,212,170,.06); border: 1px solid rgba(0,212,170,.2); border-radius: 3px; padding: .15rem .4rem; white-space: normal; word-break: break-all; max-width: 480px; display: inline-block; }
 
     /* pagination */
     .pager { display: flex; gap: .35rem; flex-wrap: wrap; margin-top: .85rem; align-items: center; }
@@ -2323,6 +2327,18 @@ function openEditMyIp(ip, label) {
   document.getElementById('edit-myip-label').value      = label;
   document.getElementById('modal-edit-myip').hidden     = false;
 }
+// UA expand/collapse — click any .ua-x span to toggle full raw UA inline
+document.addEventListener('click', function(e) {
+  var el = e.target.closest('.ua-x');
+  if (!el) return;
+  if (el.classList.contains('ua-expanded')) {
+    el.classList.remove('ua-expanded');
+    el.textContent = el.dataset.label;
+  } else {
+    el.classList.add('ua-expanded');
+    el.textContent = el.dataset.ua;
+  }
+});
 </script>
 
 </body>
