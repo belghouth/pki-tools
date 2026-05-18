@@ -592,13 +592,18 @@ $ng_uri_max     = $ng_top_uris ? (int)$ng_top_uris[0]['c'] : 1;
 $ng_geo_ips = array_unique(array_merge(array_column($ng_rows, 'ip'), array_column($ng_top_ips, 'ip')));
 $ng_geo     = $pdo ? geoip_country($ng_geo_ips) : [];
 
-$users        = $tab === 'users'   ? user_list()        : [];
-$blocked_list = $tab === 'blocked' ? blocked_ip_list()  : [];
-if ($ipf !== 'all' && $blocked_list) {
-    $blocked_list = array_values(array_filter($blocked_list,
-        fn($b) => $ipf === 'mine' ? isset($my_ips_set[$b['ip']]) : !isset($my_ips_set[$b['ip']])
-    ));
-}
+$users = $tab === 'users' ? user_list() : [];
+
+$_b_sort_opts = ['ip', 'country', 'total_req', 'last_seen', 'err_pct', 'blocked_by', 'blocked_at'];
+$b_sort  = in_array($_GET['sort'] ?? '', $_b_sort_opts, true) ? $_GET['sort'] : 'blocked_at';
+$b_dir   = ($_GET['dir'] ?? 'desc') === 'asc' ? 'asc' : 'desc';
+$b_per   = 50;
+$b_total = $tab === 'blocked' ? blocked_ip_count($ipf) : 0;
+$b_pages = $b_total > 0 ? (int)ceil($b_total / $b_per) : 1;
+$b_page  = max(1, min((int)($_GET['bpage'] ?? 1), $b_pages));
+$b_off   = ($b_page - 1) * $b_per;
+$blocked_list = $tab === 'blocked' ? blocked_ip_list($b_sort, $b_dir, $b_off, $b_per, $ipf) : [];
+unset($_b_sort_opts);
 $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fetchAll(PDO::FETCH_COLUMN)) : [];
 $watch_set    = watchlistLoad(); // [ip => row] — loaded globally for badges on every tab
 $autoblock_on = settingGet('autoblock_enabled', '0') === '1';
@@ -1959,6 +1964,8 @@ if ($tab === 'soc' && $pdo) {
     <h1>Blocked IPs</h1>
     <form method="GET" style="display:flex;align-items:flex-end;gap:.4rem;margin-left:auto">
       <input type="hidden" name="tab" value="blocked">
+      <input type="hidden" name="sort" value="<?= htmlspecialchars($b_sort) ?>">
+      <input type="hidden" name="dir"  value="<?= htmlspecialchars($b_dir) ?>">
       <div class="flt" style="margin:0">
         <label style="font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;text-transform:uppercase;color:#3d4f68">View</label>
         <select name="ipf" style="width:110px" <?= !$my_ips_set ? 'disabled' : '' ?>
@@ -1984,17 +1991,37 @@ if ($tab === 'soc' && $pdo) {
     </form>
   </div>
 
+  <?php
+  // Sortable header helper — returns <th> with a toggle link
+  $bTh = function(string $col, string $label) use ($b_sort, $b_dir, $ipf): string {
+      $nextDir  = ($b_sort === $col && $b_dir === 'asc') ? 'desc' : 'asc';
+      $dirArrow = $b_dir === 'asc' ? ' ▲' : ' ▼';
+      $arrow    = $b_sort === $col ? $dirArrow : '';
+      $url      = '?tab=blocked&sort=' . $col . '&dir=' . $nextDir . '&ipf=' . urlencode($ipf);
+      return '<th><a href="' . $url . '" style="color:inherit;text-decoration:none;white-space:nowrap">'
+           . htmlspecialchars($label) . $arrow . '</a></th>';
+  };
+  ?>
   <div class="card">
     <?php if ($ipf !== 'all'): ?>
     <div class="card-hd" style="background:rgba(0,212,170,.04)">
       <h2>Blocked IPs</h2>
-      <span class="card-meta"><?= $ipf === 'mine' ? 'Showing my IPs only' : 'Excluding my IPs' ?> · <?= count($blocked_list) ?> matched</span>
+      <span class="card-meta"><?= $ipf === 'mine' ? 'Showing my IPs only' : 'Excluding my IPs' ?> · <?= number_format($b_total) ?> matched</span>
     </div>
     <?php endif; ?>
     <div class="tbl-wrap">
       <table>
         <thead>
-          <tr><th>IP</th><th>Country</th><th>All-time req</th><th>Last seen</th><th>Err%</th><th>Blocked by</th><th>Blocked at</th><th>Reason</th><th></th></tr>
+          <tr>
+            <?= $bTh('ip',         'IP') ?>
+            <?= $bTh('country',    'Country') ?>
+            <?= $bTh('total_req',  'All-time req') ?>
+            <?= $bTh('last_seen',  'Last seen') ?>
+            <?= $bTh('err_pct',    'Err%') ?>
+            <?= $bTh('blocked_by', 'Blocked by') ?>
+            <?= $bTh('blocked_at', 'Blocked at') ?>
+            <th>Reason</th><th></th>
+          </tr>
         </thead>
         <tbody>
         <?php if ($blocked_list): ?>
@@ -2030,6 +2057,27 @@ if ($tab === 'soc' && $pdo) {
         </tbody>
       </table>
     </div>
+    <?php if ($b_pages > 1): ?>
+    <div style="display:flex;align-items:center;gap:.35rem;padding:.6rem 1rem;border-top:1px solid var(--border);flex-wrap:wrap">
+      <?php
+      $bUrl = fn(int $p) => '?tab=blocked&sort=' . $b_sort . '&dir=' . $b_dir . '&ipf=' . urlencode($ipf) . '&bpage=' . $p;
+      $bFrom = max(1, $b_page - 2);
+      $bTo   = min($b_pages, $b_page + 2);
+      ?>
+      <?php if ($b_page > 1): ?>
+      <a href="<?= $bUrl(1) ?>" class="pg-btn" aria-label="First page">«</a>
+      <a href="<?= $bUrl($b_page - 1) ?>" class="pg-btn" aria-label="Previous page">‹</a>
+      <?php endif; ?>
+      <?php for ($p = $bFrom; $p <= $bTo; $p++): ?>
+      <a href="<?= $bUrl($p) ?>" class="pg-btn<?= $p === $b_page ? ' pg-btn--active' : '' ?>" aria-label="Page <?= $p ?>"><?= $p ?></a>
+      <?php endfor; ?>
+      <?php if ($b_page < $b_pages): ?>
+      <a href="<?= $bUrl($b_page + 1) ?>" class="pg-btn" aria-label="Next page">›</a>
+      <a href="<?= $bUrl($b_pages) ?>" class="pg-btn" aria-label="Last page">»</a>
+      <?php endif; ?>
+      <span style="margin-left:.5rem;font-size:.68rem;color:var(--muted)"><?= number_format($b_total) ?> total · page <?= $b_page ?> of <?= $b_pages ?></span>
+    </div>
+    <?php endif; ?>
   </div>
 
   <?php endif; /* $tab === 'blocked' */ ?>

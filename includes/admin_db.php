@@ -604,28 +604,69 @@ function watchlistEscalate(string $ip, string $reason): void {
     }
 }
 
-function blocked_ip_list(): array {
+function blocked_ip_list(
+    string $sort   = 'blocked_at',
+    string $dir    = 'desc',
+    int    $offset = 0,
+    int    $limit  = 50,
+    string $ipf    = 'all'
+): array {
+    $cols = [
+        'ip'         => 'b.ip',
+        'country'    => 'country',
+        'total_req'  => 'total_req',
+        'last_seen'  => 'last_seen',
+        'err_pct'    => 'err_pct',
+        'blocked_by' => 'b.blocked_by',
+        'blocked_at' => 'b.blocked_at',
+    ];
+    $orderCol = $cols[$sort] ?? 'b.blocked_at';
+    $orderDir = $dir === 'asc' ? 'ASC' : 'DESC';
+    // $ipf comes from a validated whitelist — safe to interpolate
+    $ipfClause = match($ipf) {
+        'mine'   => 'AND b.ip IN (SELECT ip FROM my_ips)',
+        'others' => 'AND b.ip NOT IN (SELECT ip FROM my_ips)',
+        default  => '',
+    };
     try {
-        return admin_pdo()?->query(
-            "SELECT b.ip, b.reason, b.blocked_by, b.blocked_at,
-                    COALESCE(g.country, nv_agg.cc) AS country,
-                    COALESCE(nv_agg.total_req, 0)  AS total_req,
-                    nv_agg.last_seen               AS last_seen,
-                    COALESCE(nv_agg.err_pct, 0)    AS err_pct
-             FROM blocked_ips b
-             LEFT JOIN geoip_cache g ON g.ip = b.ip
-             LEFT JOIN (
-                 SELECT ip,
-                        MAX(country)                                                         AS cc,
-                        COUNT(*)                                                             AS total_req,
-                        MAX(created_at)                                                      AS last_seen,
-                        ROUND(SUM(IF(status>=400,1,0))/NULLIF(COUNT(*),0)*100)               AS err_pct
-                 FROM nginx_visits
-                 GROUP BY ip
-             ) nv_agg ON nv_agg.ip = b.ip
-             ORDER BY b.blocked_at DESC"
-        )?->fetchAll() ?? [];
+        $st = admin_pdo()?->prepare("
+            SELECT b.ip, b.reason, b.blocked_by, b.blocked_at,
+                   COALESCE(g.country, nv_agg.cc) AS country,
+                   COALESCE(nv_agg.total_req, 0)  AS total_req,
+                   nv_agg.last_seen               AS last_seen,
+                   COALESCE(nv_agg.err_pct, 0)    AS err_pct
+            FROM blocked_ips b
+            LEFT JOIN geoip_cache g ON g.ip = b.ip
+            LEFT JOIN (
+                SELECT ip,
+                       MAX(country)                                              AS cc,
+                       COUNT(*)                                                  AS total_req,
+                       MAX(created_at)                                           AS last_seen,
+                       ROUND(SUM(IF(status>=400,1,0))/NULLIF(COUNT(*),0)*100)   AS err_pct
+                FROM nginx_visits
+                GROUP BY ip
+            ) nv_agg ON nv_agg.ip = b.ip
+            WHERE 1=1 $ipfClause
+            ORDER BY $orderCol $orderDir
+            LIMIT ? OFFSET ?
+        ");
+        $st?->execute([$limit, $offset]);
+        return $st?->fetchAll() ?? [];
     } catch (Throwable) { return []; }
+}
+
+function blocked_ip_count(string $ipf = 'all'): int {
+    // $ipf comes from a validated whitelist — safe to interpolate
+    $ipfClause = match($ipf) {
+        'mine'   => 'AND ip IN (SELECT ip FROM my_ips)',
+        'others' => 'AND ip NOT IN (SELECT ip FROM my_ips)',
+        default  => '',
+    };
+    try {
+        return (int)(admin_pdo()?->query(
+            "SELECT COUNT(*) FROM blocked_ips WHERE 1=1 $ipfClause"
+        )?->fetchColumn() ?? 0);
+    } catch (Throwable) { return 0; }
 }
 
 // ── IP threat intelligence ────────────────────────────────────────────────────
