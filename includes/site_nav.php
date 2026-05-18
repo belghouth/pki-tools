@@ -9,7 +9,7 @@
 $_navLabel = $navLabel ?? '';
 ?>
 <style>
-body { overscroll-behavior-y: none; }
+@media (pointer: coarse) { body { overscroll-behavior-y: none; } }
 /* ── Shared site nav ──────────────────────────────────────────────────────── */
 .snav {
   position: sticky; top: 0; z-index: 100;
