@@ -124,6 +124,7 @@ class Pkcs7Module extends ArtifactModule {
                         ? gmdate('Y-m-d', (int) $cd['validTo_time_t']) . ' UTC'
                         : null,
                     'is_signer' => $i === 0, // first cert is the signer by OpenSSL convention
+                    'pem'       => $cert_pem,
                 ];
             }
         }
@@ -218,6 +219,7 @@ class Pkcs7Module extends ArtifactModule {
                          . xp_row('Subject', '<code class="xp-code">' . xpe($c['subject'])   . '</code>')
                          . xp_row('Issuer',  '<code class="xp-code">' . xpe($c['issuer'])    . '</code>')
                          . (!empty($c['not_after']) ? xp_row('Expires', '<code class="xp-code">' . xpe($c['not_after']) . '</code>') : '')
+                         . (!empty($c['pem']) ? artifactCertActions($c['pem']) : '')
                          . '</div></div>';
         }
         if (!$certs_html) {

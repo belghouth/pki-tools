@@ -203,6 +203,8 @@ class XadesModule extends ArtifactModule {
                 $o .= '<div class="xp-row"><span class="xp-label">Signed Digest</span><span class="xp-value xp-fp">' . $h(implode(':', str_split($hex, 2))) . '</span></div>';
             }
 
+            $o .= artifactCertActions($parsed['cert_pem']);
+
             $o .= '</div></div>';
         }
 

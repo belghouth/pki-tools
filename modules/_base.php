@@ -91,3 +91,15 @@ function artifact_openssl(string $args, string $bytes, string $ext = 'pem'): ?st
 
     return $out !== null ? trim((string) $out) : null;
 }
+
+// ── Embedded-certificate action controls (PEM textarea + Lint + Parse) ────────
+
+function artifactCertActions(string $pem): string {
+    $h = htmlspecialchars($pem, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    return '<div class="ap-embed-cert-area">'
+         . '<textarea class="ap-embed-cert-pem" readonly spellcheck="false">' . $h . '</textarea>'
+         . '<div class="ap-embed-cert-actions">'
+         . '<button type="button" class="ap-embed-cert-btn ap-embed-cert-lint">Lint &#x2192;</button>'
+         . '<button type="button" class="ap-embed-cert-btn ap-embed-cert-parse">Parse &#x2192;</button>'
+         . '</div></div>';
+}

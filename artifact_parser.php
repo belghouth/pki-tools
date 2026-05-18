@@ -400,6 +400,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     .xp-sct-table td:first-child { color: var(--muted); white-space: nowrap; width: 6rem; }
     .xp-sct-logid { font-size: .6rem; color: #6699bb; word-break: break-all; }
 
+    /* ── Embedded-certificate actions (PEM textarea + Lint/Parse buttons) ── */
+    .ap-embed-cert-area { margin-top: .6rem; }
+    .ap-embed-cert-pem {
+      display: block; width: 100%; height: 72px; resize: none;
+      background: rgba(0,0,0,.25); color: #8a9ab8;
+      border: 1px solid var(--border); border-radius: 4px;
+      font-family: var(--mono); font-size: .6rem; line-height: 1.45;
+      padding: .4rem .6rem; outline: none; white-space: pre; overflow-y: auto;
+    }
+    .ap-embed-cert-actions { display: flex; gap: .5rem; margin-top: .4rem; flex-wrap: wrap; }
+    .ap-embed-cert-btn {
+      font-family: var(--mono); font-size: .65rem; text-transform: uppercase;
+      letter-spacing: .07em; font-weight: 600; cursor: pointer;
+      border-radius: 4px; padding: .3em .8em; background: none;
+      transition: background .15s, border-color .15s;
+    }
+    .ap-embed-cert-lint  { color: var(--accent); border: 1px solid rgba(0,212,170,.35); }
+    .ap-embed-cert-lint:hover  { background: rgba(0,212,170,.08); border-color: var(--accent); }
+    .ap-embed-cert-parse { color: #a78bfa; border: 1px solid rgba(167,139,250,.35); }
+    .ap-embed-cert-parse:hover { background: rgba(167,139,250,.08); border-color: #a78bfa; }
+
     /* ── Footer ── */
     .site-footer { border-top: 1px solid var(--border); padding: 1.4rem 2rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; font-family: var(--mono); font-size: .72rem; color: var(--muted); }
     .site-footer a { color: var(--muted); text-decoration: none; }
@@ -652,6 +673,25 @@ async function doAnalyse() {
     document.getElementById('apPem').value = '';
     sel.hidden = true;
     dz.querySelector('p').hidden = false;
+  });
+
+  // ── Embedded-certificate Lint / Parse buttons ────────────────────────────────
+  document.querySelectorAll('.ap-embed-cert-lint').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var pem = btn.closest('.ap-embed-cert-area').querySelector('textarea').value;
+      sessionStorage.setItem('pki_prefill_cert', pem);
+      window.open('/linters.php', '_blank');
+    });
+  });
+  document.querySelectorAll('.ap-embed-cert-parse').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var pem = btn.closest('.ap-embed-cert-area').querySelector('textarea').value;
+      sessionStorage.removeItem('mkt_eseal_cms');
+      sessionStorage.removeItem('mkt_eseal_xades');
+      sessionStorage.removeItem('meerkat_pem');
+      sessionStorage.setItem('pki_prefill_cert', pem);
+      window.open('/artifact_parser.php', '_blank');
+    });
   });
 
   // ── Issue Certificate from CSR ────────────────────────────────────────────────
