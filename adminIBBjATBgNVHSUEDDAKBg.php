@@ -565,7 +565,7 @@ $soc_events       = [];
 $soc_rate_ips     = [];
 $soc_threat_level = 'low';
 $soc_period_key   = '1h';
-$soc_c_crit = $soc_c_high = $soc_c_medium = 0;
+$soc_c_crit = $soc_c_high = $soc_c_medium = $soc_c_honeypot = $soc_c_esc = 0;
 
 if ($tab === 'soc' && $pdo) {
     try {
@@ -773,9 +773,11 @@ if ($tab === 'soc' && $pdo) {
             elseif  ($sc >= 25) $lv_med  = true;
         }
         // Honeypot hits or watchlist escalations mirror deriveLevel()'s escalation rule
-        $lv_esc = !empty($soc_honeypot) || (bool)$pdo->query(
+        $soc_c_honeypot = count($soc_honeypot);
+        $soc_c_esc      = (int)$pdo->query(
             "SELECT COUNT(*) FROM ip_watchlist WHERE status='candidate' AND escalated_at >= $soc_win"
         )->fetchColumn();
+        $lv_esc = $soc_c_honeypot > 0 || $soc_c_esc > 0;
         if ($lv_esc && $lv_high) $lv_crit = true;   // honeypot + HIGH  → CRITICAL
         if ($lv_esc && !$lv_crit) $lv_high = true;  // honeypot alone   → at least HIGH
         $soc_threat_level = match(true) {
@@ -1998,7 +2000,10 @@ if ($tab === 'soc' && $pdo) {
       <div class="threat-level <?= $soc_threat_level ?>"><?= strtoupper($soc_threat_level) ?></div>
       <div class="threat-sub">
         <?php $active = count($soc_threat_ips); ?>
-        <?= $active ?> IP<?= $active !== 1 ? 's' : '' ?> with signals · <?= $soc_c_crit ?> critical · <?= $soc_c_high ?> high · <?= $soc_c_medium ?> medium · <?= $soc_period_label ?>
+        <?= $active ?> IP<?= $active !== 1 ? 's' : '' ?> with signals
+        <?php if ($soc_c_honeypot): ?> · <span style="color:var(--warn)"><?= $soc_c_honeypot ?> honeypot hit<?= $soc_c_honeypot > 1 ? 's' : '' ?></span><?php endif; ?>
+        <?php if ($soc_c_esc): ?> · <span style="color:#f97316"><?= $soc_c_esc ?> escalation<?= $soc_c_esc > 1 ? 's' : '' ?></span><?php endif; ?>
+        · <?= $soc_c_crit ?> critical · <?= $soc_c_high ?> high · <?= $soc_c_medium ?> medium · <?= $soc_period_label ?>
       </div>
     </div>
     <div class="threat-kpis">

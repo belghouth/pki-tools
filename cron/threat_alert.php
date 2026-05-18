@@ -133,6 +133,8 @@ function fetchHoneypotHits(PDO $pdo, string $since): array {
         LEFT JOIN geoip_cache g ON g.ip = n.ip
         WHERE  n.created_at > ?
           AND  n.uri REGEXP ?
+          AND  n.ip NOT IN (SELECT ip FROM blocked_ips)
+          AND  n.ip NOT IN (SELECT ip FROM my_ips)
         ORDER BY n.created_at DESC
         LIMIT  50
     ");
@@ -153,6 +155,8 @@ function fetchThreatSessions(PDO $pdo, string $since): array {
         WHERE  s.analyzed_at > ?
           AND  s.score >= ?
           AND  s.classification NOT IN ('human','researcher','crawler','social_probe')
+          AND  s.ip NOT IN (SELECT ip FROM blocked_ips)
+          AND  s.ip NOT IN (SELECT ip FROM my_ips)
         ORDER BY s.score DESC
         LIMIT  20
     ");
@@ -166,6 +170,8 @@ function fetchEscalations(PDO $pdo, string $since): array {
         FROM   ip_watchlist
         WHERE  status = 'candidate'
           AND  escalated_at > ?
+          AND  ip NOT IN (SELECT ip FROM blocked_ips)
+          AND  ip NOT IN (SELECT ip FROM my_ips)
         ORDER BY escalated_at DESC
         LIMIT  10
     ");
@@ -178,6 +184,7 @@ function fetchNewBlocks(PDO $pdo, string $since): array {
         SELECT ip, reason, blocked_at, blocked_by
         FROM   blocked_ips
         WHERE  blocked_at > ?
+          AND  ip NOT IN (SELECT ip FROM my_ips)
         ORDER BY blocked_at DESC
         LIMIT  20
     ");
@@ -188,22 +195,22 @@ function fetchNewBlocks(PDO $pdo, string $since): array {
 // ── Scoring ───────────────────────────────────────────────────────────────────
 
 function deriveLevel(array $honeypots, array $threats, array $escalations, array $blocks): string {
-    if (!$honeypots && !$threats && !$escalations && !$blocks) return 'clean';
+    if (!$honeypots && !$threats && !$escalations && !$blocks) {
+        return 'clean';
+    }
 
-    foreach ($threats as $t) {
-        if ((int)$t['score'] >= ALERT_CRITICAL) return 'critical';
-    }
-    if ($honeypots || !empty($escalations)) {
-        foreach ($threats as $t) {
-            if ((int)$t['score'] >= ALERT_HIGH) return 'critical';
-        }
-        return 'high';
-    }
-    foreach ($threats as $t) {
-        if ((int)$t['score'] >= ALERT_HIGH) return 'high';
-    }
-    if ($blocks || $threats) return 'medium';
-    return 'clean';
+    $maxScore  = array_reduce($threats, fn($carry, $t) => max($carry, (int)$t['score']), 0);
+    $hasEsc    = $honeypots || !empty($escalations);
+    $isCrit    = $maxScore >= ALERT_CRITICAL || ($hasEsc && $maxScore >= ALERT_HIGH);
+    $isHigh    = $hasEsc || $maxScore >= ALERT_HIGH;
+    $isMedium  = $blocks || $threats;
+
+    return match(true) {
+        $isCrit   => 'critical',
+        $isHigh   => 'high',
+        $isMedium => 'medium',
+        default   => 'clean',
+    };
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────
