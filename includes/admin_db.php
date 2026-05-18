@@ -628,6 +628,7 @@ function blocked_ip_list(
         'others' => 'AND b.ip NOT IN (SELECT ip FROM my_ips)',
         default  => '',
     };
+    // $limit/$offset are int-typed — safe to embed; avoids PDO PARAM_STR bug with LIMIT
     try {
         $st = admin_pdo()?->prepare("
             SELECT b.ip, b.reason, b.blocked_by, b.blocked_at,
@@ -648,9 +649,9 @@ function blocked_ip_list(
             ) nv_agg ON nv_agg.ip = b.ip
             WHERE 1=1 $ipfClause
             ORDER BY $orderCol $orderDir
-            LIMIT ? OFFSET ?
+            LIMIT $limit OFFSET $offset
         ");
-        $st?->execute([$limit, $offset]);
+        $st?->execute();
         return $st?->fetchAll() ?? [];
     } catch (Throwable) { return []; }
 }
