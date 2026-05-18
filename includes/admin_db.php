@@ -768,7 +768,8 @@ function logPostPayload(string $uri, array $postData, int $statusCode, string $o
     if (array_key_exists('g_recaptcha_token', $safe)) {
         $safe['g_recaptcha_token'] = $safe['g_recaptcha_token'] !== '' ? '[present]' : '[missing]';
     }
-    foreach (['password', 'passwd', 'pass', 'secret'] as $k) {
+    foreach (['password', 'passwd', 'pass', 'secret', 'token',
+              'api_key', 'apikey', 'auth', '_token', 'access_token', 'refresh_token'] as $k) {
         if (array_key_exists($k, $safe)) $safe[$k] = '[redacted]';
     }
     try {

@@ -954,8 +954,8 @@ if ($tab === 'soc' && $pdo) {
     #modal-payload { padding: 0; background: transparent; border: none; border-radius: 0; max-width: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; color: var(--text); }
     #modal-payload::backdrop { background: rgba(0,0,0,.65); }
     #modal-payload .modal-card { width: min(680px, 96vw); max-height: 80vh; display: flex; flex-direction: column; max-width: none; }
-    .badge--post.pp-trigger { cursor: pointer; background: none; font-family: var(--mono); font-size: .7rem; font-weight: 600; letter-spacing: .06em; }
-    .badge--post.pp-trigger:hover { filter: brightness(1.25); }
+    .badge--post.pp-trigger, .badge--get.gp-trigger { cursor: pointer; background: none; font-family: var(--mono); font-size: .7rem; font-weight: 600; letter-spacing: .06em; }
+    .badge--post.pp-trigger:hover, .badge--get.gp-trigger:hover { filter: brightness(1.25); }
     .msg-row { cursor: pointer; }
     .msg-row:hover td { background: rgba(255,255,255,.02); }
     .msg-row.msg-unread td { background: rgba(0,212,170,.04); }
@@ -1367,7 +1367,7 @@ if ($tab === 'soc' && $pdo) {
               <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?>
             </td>
             <td><?= geo_label($r['ip'], $geo) ?></td>
-            <td><?php if ($r['method'] === 'POST'): ?><button type="button" class="badge badge--post pp-trigger" data-ip="<?= htmlspecialchars($r['ip'], ENT_QUOTES) ?>" data-uri="<?= htmlspecialchars($r['uri'], ENT_QUOTES) ?>" data-ts="<?= htmlspecialchars(substr($r['created_at'], 0, 19), ENT_QUOTES) ?>">POST</button><?php else: ?><?= method_badge($r['method']) ?><?php endif; ?></td>
+            <td><?php if ($r['method'] === 'POST'): ?><button type="button" class="badge badge--post pp-trigger" data-ip="<?= htmlspecialchars($r['ip'], ENT_QUOTES) ?>" data-uri="<?= htmlspecialchars($r['uri'], ENT_QUOTES) ?>" data-ts="<?= htmlspecialchars(substr($r['created_at'], 0, 19), ENT_QUOTES) ?>">POST</button><?php elseif ($r['method'] === 'GET'): ?><button type="button" class="badge badge--get gp-trigger" data-uri="<?= htmlspecialchars($r['uri'], ENT_QUOTES) ?>" data-qs="<?= htmlspecialchars($r['query_string'] ?? '', ENT_QUOTES) ?>">GET</button><?php else: ?><?= method_badge($r['method']) ?><?php endif; ?></td>
             <td><?= uriLink($r['uri'], $r['query_string'] ?: null) ?></td>
             <td><?= status_badge((int)$r['status']) ?></td>
             <td><span class="muted"><?= htmlspecialchars($tool_name($r['script_name'])) ?></span></td>
@@ -1692,7 +1692,7 @@ if ($tab === 'soc' && $pdo) {
               <a href="<?= q(['ip' => $r['ip']]) ?>" class="ip-link"><?= htmlspecialchars($r['ip']) ?></a><?= me_badge($r['ip'], $my_ips_set) ?>
             </td>
             <td><?= geo_label($r['ip'], $ng_geo) ?></td>
-            <td><?php if ($r['method'] === 'POST'): ?><button type="button" class="badge badge--post pp-trigger" data-ip="<?= htmlspecialchars($r['ip'], ENT_QUOTES) ?>" data-uri="<?= htmlspecialchars($r['uri'], ENT_QUOTES) ?>" data-ts="<?= htmlspecialchars(substr($r['created_at'], 0, 19), ENT_QUOTES) ?>">POST</button><?php else: ?><?= method_badge($r['method']) ?><?php endif; ?></td>
+            <td><?php if ($r['method'] === 'POST'): ?><button type="button" class="badge badge--post pp-trigger" data-ip="<?= htmlspecialchars($r['ip'], ENT_QUOTES) ?>" data-uri="<?= htmlspecialchars($r['uri'], ENT_QUOTES) ?>" data-ts="<?= htmlspecialchars(substr($r['created_at'], 0, 19), ENT_QUOTES) ?>">POST</button><?php elseif ($r['method'] === 'GET'): ?><button type="button" class="badge badge--get gp-trigger" data-uri="<?= htmlspecialchars($r['uri'], ENT_QUOTES) ?>" data-qs="<?= htmlspecialchars($r['query_string'] ?? '', ENT_QUOTES) ?>">GET</button><?php else: ?><?= method_badge($r['method']) ?><?php endif; ?></td>
             <td><span class="muted" style="font-family:var(--mono);font-size:.68rem"><?= htmlspecialchars($r['host']) ?></span></td>
             <td><?= uriLink($r['uri'], $r['query_string'] ?: null) ?></td>
             <td><?= status_badge((int)$r['status']) ?></td>
@@ -3096,36 +3096,47 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// ── POST payload modal ────────────────────────────────────────────────────────
+// ── POST / GET payload modal ──────────────────────────────────────────────────
+var PAYLOAD_SENSITIVE = /^(password|passwd|pass|secret|token|api_?key|apikey|auth|_token|access_token|refresh_token|g_recaptcha_token)$/i;
+function sanitizeParams(obj) {
+  var out = {};
+  for (var k in obj) { out[k] = PAYLOAD_SENSITIVE.test(k) ? '[redacted]' : obj[k]; }
+  return out;
+}
+function showPayloadModal(title, meta, body) {
+  document.getElementById('modal-payload-title').textContent = title;
+  document.getElementById('modal-payload-meta').textContent  = meta;
+  document.getElementById('modal-payload-body').textContent  = body;
+}
 document.addEventListener('click', function (e) {
   var btn = e.target.closest('.pp-trigger');
-  if (!btn) return;
-  var modal = document.getElementById('modal-payload');
-  var title = document.getElementById('modal-payload-title');
-  var meta  = document.getElementById('modal-payload-meta');
-  var body  = document.getElementById('modal-payload-body');
-  title.textContent = 'POST ' + btn.dataset.uri;
-  meta.textContent  = 'Loading…';
-  body.textContent  = '';
-  modal.showModal();
-  fetch('?' + new URLSearchParams({ ajax: '1', action: 'post_payload', ip: btn.dataset.ip, uri: btn.dataset.uri, ts: btn.dataset.ts }))
-    .then(function (r) { return r.json(); })
-    .then(function (d) {
-      if (!d) {
-        meta.textContent = 'No payload captured for this request.';
-        body.textContent = '';
-        return;
-      }
-      var payload = {};
-      try { payload = JSON.parse(d.post_json || '{}'); } catch (ex) {}
-      var oc = d.outcome ? ' · ' + d.outcome.replace(/_/g, ' ') : '';
-      var ua = d.user_agent ? '\n' + d.user_agent : '';
-      meta.textContent = d.created_at + ' · ' + d.ip + oc + ua;
-      body.textContent = JSON.stringify(payload, null, 2);
-    })
-    .catch(function () {
-      meta.textContent = 'Request failed.';
-    });
+  if (btn) {
+    showPayloadModal('POST ' + btn.dataset.uri, 'Loading…', '');
+    document.getElementById('modal-payload').showModal();
+    fetch('?' + new URLSearchParams({ ajax: '1', action: 'post_payload', ip: btn.dataset.ip, uri: btn.dataset.uri, ts: btn.dataset.ts }))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d) { showPayloadModal('POST ' + btn.dataset.uri, 'No payload captured for this request.', ''); return; }
+        var raw = {};
+        try { raw = JSON.parse(d.post_json || '{}'); } catch (ex) {}
+        var oc = d.outcome ? ' · ' + d.outcome.replace(/_/g, ' ') : '';
+        showPayloadModal('POST ' + d.uri, d.created_at + ' · ' + d.ip + oc + (d.user_agent ? '\n' + d.user_agent : ''), JSON.stringify(sanitizeParams(raw), null, 2));
+      })
+      .catch(function () { showPayloadModal('POST ' + btn.dataset.uri, 'Request failed.', ''); });
+    return;
+  }
+  var gbtn = e.target.closest('.gp-trigger');
+  if (!gbtn) return;
+  var qs = gbtn.dataset.qs || '';
+  var params = {};
+  if (qs) { try { new URLSearchParams(qs).forEach(function (v, k) { params[k] = v; }); } catch (ex) {} }
+  var hasParams = Object.keys(params).length > 0;
+  showPayloadModal(
+    'GET ' + gbtn.dataset.uri,
+    hasParams ? '' : 'No query parameters.',
+    hasParams ? JSON.stringify(sanitizeParams(params), null, 2) : ''
+  );
+  document.getElementById('modal-payload').showModal();
 });
 </script>
 
