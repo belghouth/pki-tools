@@ -601,6 +601,7 @@ if ($ipf !== 'all' && $blocked_list) {
 }
 $blocked_set  = $pdo ? array_flip($pdo->query("SELECT ip FROM blocked_ips")->fetchAll(PDO::FETCH_COLUMN)) : [];
 $watch_set    = watchlistLoad(); // [ip => row] — loaded globally for badges on every tab
+$autoblock_on = settingGet('autoblock_enabled', '0') === '1';
 
 // ── Contact messages ──────────────────────────────────────────────────────────
 $msgs_unread = $pdo ? (int)$pdo->query("SELECT COUNT(*) FROM contact_messages WHERE read_at IS NULL")->fetchColumn() : 0;
@@ -1196,6 +1197,23 @@ if ($tab === 'soc' && $pdo) {
   <a href="?tab=users" class="<?= $tab === 'users' ? 'active' : '' ?>">Users</a>
   <a href="?tab=msgs" class="<?= $tab === 'msgs' ? 'active' : '' ?>"<?= $tab !== 'msgs' && $msgs_unread ? ' style="color:var(--accent)"' : '' ?>>Messages <span id="msgs-nav-badge" style="font-size:.6rem;opacity:.8<?= !$msgs_unread ? ';display:none' : '' ?>">(<?= $msgs_unread ?>)</span></a>
   <a href="?tab=posts" class="<?= $tab === 'posts' ? 'active' : '' ?>">POST Payloads</a>
+  <form method="POST" style="margin-left:auto;display:flex;align-items:center;gap:.5rem;padding:0 .75rem">
+    <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+    <input type="hidden" name="action" value="toggle_autoblock">
+    <span style="font-size:.68rem;font-family:var(--mono);color:var(--muted);letter-spacing:.04em;white-space:nowrap">Autoblock</span>
+    <button type="submit" role="switch" aria-checked="<?= $autoblock_on ? 'true' : 'false' ?>"
+      title="<?= $autoblock_on ? 'Autoblock ON — click to disable' : 'Autoblock OFF — click to enable' ?>"
+      style="cursor:pointer;border:none;background:none;padding:0;line-height:1;flex-shrink:0">
+      <span style="display:inline-flex;align-items:center;width:2.5rem;height:1.3rem;border-radius:999px;
+        padding:.13rem;transition:background .2s;
+        background:<?= $autoblock_on ? 'rgba(239,68,68,.75)' : 'rgba(255,255,255,.12)' ?>;
+        border:1px solid <?= $autoblock_on ? 'rgba(239,68,68,.9)' : 'rgba(255,255,255,.18)' ?>">
+        <span style="width:.95rem;height:.95rem;border-radius:50%;background:#fff;
+          transition:transform .2s;
+          transform:translateX(<?= $autoblock_on ? '1.15rem' : '0' ?>)"></span>
+      </span>
+    </button>
+  </form>
 </nav>
 
 <div class="wrap">
@@ -2718,30 +2736,12 @@ if ($tab === 'soc' && $pdo) {
                 w.escalated_at, w.escalated_reason, g.country
        ORDER BY FIELD(w.status,'candidate','watching'), w.added_at DESC"
   )?->fetchAll() : [];
-  $src_label     = ['manual' => 'manual', 'soc_honeypot' => 'honeypot', 'soc_event' => 'event'];
-  $src_cls       = ['manual' => '', 'soc_honeypot' => 'badge--warn', 'soc_event' => 'badge--err'];
-  $autoblock_on  = settingGet('autoblock_enabled', '0') === '1';
+  $src_label = ['manual' => 'manual', 'soc_honeypot' => 'honeypot', 'soc_event' => 'event'];
+  $src_cls   = ['manual' => '', 'soc_honeypot' => 'badge--warn', 'soc_event' => 'badge--err'];
   ?>
   <div class="page-hd">
     <h1>Watch List</h1>
     <span class="page-meta"><?= count($watch_rows) ?> monitored IPs</span>
-    <form method="POST" style="margin-left:auto;display:flex;align-items:center;gap:.55rem">
-      <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
-      <input type="hidden" name="action" value="toggle_autoblock">
-      <span style="font-size:.7rem;font-family:var(--mono);color:var(--muted);letter-spacing:.04em">Autoblock</span>
-      <button type="submit" role="switch" aria-checked="<?= $autoblock_on ? 'true' : 'false' ?>"
-        title="<?= $autoblock_on ? 'Autoblock ON — click to disable' : 'Autoblock OFF — click to enable' ?>"
-        style="cursor:pointer;border:none;background:none;padding:0;line-height:1">
-        <span style="display:inline-flex;align-items:center;width:2.6rem;height:1.35rem;border-radius:999px;
-          padding:.15rem;transition:background .2s;
-          background:<?= $autoblock_on ? 'rgba(239,68,68,.75)' : 'rgba(255,255,255,.12)' ?>;
-          border:1px solid <?= $autoblock_on ? 'rgba(239,68,68,.9)' : 'rgba(255,255,255,.18)' ?>">
-          <span style="width:1rem;height:1rem;border-radius:50%;background:#fff;
-            transition:transform .2s;
-            transform:translateX(<?= $autoblock_on ? '1.2rem' : '0' ?>)"></span>
-        </span>
-      </button>
-    </form>
   </div>
   <?php if ($w_flash): ?>
   <div class="flash <?= $w_flash_ok ? 'flash--ok' : 'flash--err' ?>"><?= $w_flash ?></div>
