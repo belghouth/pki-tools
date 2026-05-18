@@ -13,6 +13,26 @@ require_once __DIR__ . '/config.php';
 $email = admin_auth_check();
 if (!$email) { header('Location: ' . ADMIN_LOGIN_URL, true, 302); exit; }
 
+// ── AJAX: server vars lookup ──────────────────────────────────────────────────
+if (($_GET['ajax'] ?? '') === '1' && ($_GET['action'] ?? '') === 'server_vars') {
+    header('Content-Type: application/json');
+    $src = in_array($_GET['src'] ?? '', ['php', 'nginx'], true) ? $_GET['src'] : '';
+    $id  = (int)($_GET['id'] ?? 0);
+    if (!$id || !$src) { echo json_encode(null); exit; }
+    $ajPdo = admin_pdo();
+    if (!$ajPdo) { echo json_encode(null); exit; }
+    $tbl  = $src === 'nginx' ? 'nginx_visits' : 'visits';
+    $ajSt = $ajPdo->prepare("SELECT * FROM $tbl WHERE id = ? LIMIT 1");
+    $ajSt->execute([$id]);
+    $row = $ajSt->fetch() ?: null;
+    if ($row && $src === 'php' && !empty($row['server_json'])) {
+        $row = array_merge($row, json_decode($row['server_json'], true) ?: []);
+    }
+    unset($row['id'], $row['server_json']);
+    echo json_encode($row);
+    exit;
+}
+
 // ── AJAX: POST payload lookup ─────────────────────────────────────────────────
 if (($_GET['ajax'] ?? '') === '1' && ($_GET['action'] ?? '') === 'post_payload') {
     header('Content-Type: application/json');
@@ -240,6 +260,10 @@ $tool_name = fn(string $s) => $TOOL_NAMES[$s] ?? $s;
 function status_badge(int $s): string {
     $c = match(true) { $s < 300 => 'ok', $s < 400 => 'redir', $s < 500 => 'warn', default => 'err' };
     return "<span class=\"badge badge--$c\">$s</span>";
+}
+function statusTrigger(int $s, string $src, int $id): string {
+    $c = match(true) { $s < 300 => 'ok', $s < 400 => 'redir', $s < 500 => 'warn', default => 'err' };
+    return "<button type=\"button\" class=\"badge badge--$c sv-trigger\" data-src=\"$src\" data-id=\"$id\">$s</button>";
 }
 function method_badge(string $m): string {
     $c = match($m) { 'GET' => 'get', 'POST' => 'post', default => 'oth' };
@@ -504,7 +528,7 @@ if ($tab === 'php' && $pdo) {
     // Activity table
     $st = $pdo->prepare("SELECT COUNT(*) FROM visits WHERE $wsql"); $st->execute($bp);
     $total_rows = (int)$st->fetchColumn();
-    $st = $pdo->prepare("SELECT created_at,ip,method,uri,query_string,status,user_agent,referer,script_name FROM visits WHERE $wsql ORDER BY created_at DESC LIMIT $pp OFFSET " . (($page-1)*$pp));
+    $st = $pdo->prepare("SELECT id,created_at,ip,method,uri,query_string,status,server_json,user_agent,referer,script_name FROM visits WHERE $wsql ORDER BY created_at DESC LIMIT $pp OFFSET " . (($page-1)*$pp));
     $st->execute($bp); $rows = $st->fetchAll();
 
     // Tool usage
@@ -546,7 +570,7 @@ if ($tab === 'nginx' && $pdo) {
         $st = $pdo->prepare("SELECT COUNT(*) FROM nginx_visits WHERE $nwsql"); $st->execute($nbp);
         $ng_total_rows = (int)$st->fetchColumn();
 
-        $st = $pdo->prepare("SELECT created_at,ip,method,host,vhost,uri,query_string,status,bytes_sent,user_agent,country FROM nginx_visits WHERE $nwsql ORDER BY created_at DESC LIMIT $pp OFFSET " . (($page-1)*$pp));
+        $st = $pdo->prepare("SELECT id,created_at,ip,method,host,vhost,uri,query_string,status,bytes_sent,user_agent,country FROM nginx_visits WHERE $nwsql ORDER BY created_at DESC LIMIT $pp OFFSET " . (($page-1)*$pp));
         $st->execute($nbp); $ng_rows = $st->fetchAll();
 
         $ng_top_uris = $pdo->query("SELECT uri, COUNT(*) AS c FROM nginx_visits WHERE created_at >= $pstart AND uri != '' GROUP BY uri ORDER BY c DESC LIMIT 40")->fetchAll();
@@ -954,8 +978,9 @@ if ($tab === 'soc' && $pdo) {
     #modal-payload { padding: 0; background: transparent; border: none; border-radius: 0; max-width: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0; color: var(--text); }
     #modal-payload::backdrop { background: rgba(0,0,0,.65); }
     #modal-payload .modal-card { width: min(680px, 96vw); max-height: 80vh; display: flex; flex-direction: column; max-width: none; }
-    .badge--post.pp-trigger, .badge--get.gp-trigger { cursor: pointer; background: none; font-family: var(--mono); font-size: .7rem; font-weight: 600; letter-spacing: .06em; }
-    .badge--post.pp-trigger:hover, .badge--get.gp-trigger:hover { filter: brightness(1.25); }
+    .badge--post.pp-trigger, .badge--get.gp-trigger, .sv-trigger { cursor: pointer; background: none; font-family: var(--mono); font-size: .7rem; font-weight: 600; letter-spacing: .06em; }
+    .badge--post.pp-trigger:hover, .badge--get.gp-trigger:hover, .sv-trigger:hover { filter: brightness(1.25); }
+    .jk { color: #79c0ff; } .js { color: #a5d6a7; } .jn { color: #f2cc60; } .jb { color: #ff9580; }
     .msg-row { cursor: pointer; }
     .msg-row:hover td { background: rgba(255,255,255,.02); }
     .msg-row.msg-unread td { background: rgba(0,212,170,.04); }
@@ -1369,7 +1394,7 @@ if ($tab === 'soc' && $pdo) {
             <td><?= geo_label($r['ip'], $geo) ?></td>
             <td><?php if ($r['method'] === 'POST'): ?><button type="button" class="badge badge--post pp-trigger" data-ip="<?= htmlspecialchars($r['ip'], ENT_QUOTES) ?>" data-uri="<?= htmlspecialchars($r['uri'], ENT_QUOTES) ?>" data-ts="<?= htmlspecialchars(substr($r['created_at'], 0, 19), ENT_QUOTES) ?>">POST</button><?php elseif ($r['method'] === 'GET'): ?><button type="button" class="badge badge--get gp-trigger" data-uri="<?= htmlspecialchars($r['uri'], ENT_QUOTES) ?>" data-qs="<?= htmlspecialchars($r['query_string'] ?? '', ENT_QUOTES) ?>">GET</button><?php else: ?><?= method_badge($r['method']) ?><?php endif; ?></td>
             <td><?= uriLink($r['uri'], $r['query_string'] ?: null) ?></td>
-            <td><?= status_badge((int)$r['status']) ?></td>
+            <td><?= statusTrigger((int)$r['status'], 'php', (int)$r['id']) ?></td>
             <td><span class="muted"><?= htmlspecialchars($tool_name($r['script_name'])) ?></span></td>
             <td><?= ua_label($r['user_agent']) ?></td>
             <td><span class="referer" title="<?= htmlspecialchars($r['referer']) ?>"><?= $r['referer'] ? htmlspecialchars($r['referer']) : '<span class="muted">—</span>' ?></span></td>
@@ -1695,7 +1720,7 @@ if ($tab === 'soc' && $pdo) {
             <td><?php if ($r['method'] === 'POST'): ?><button type="button" class="badge badge--post pp-trigger" data-ip="<?= htmlspecialchars($r['ip'], ENT_QUOTES) ?>" data-uri="<?= htmlspecialchars($r['uri'], ENT_QUOTES) ?>" data-ts="<?= htmlspecialchars(substr($r['created_at'], 0, 19), ENT_QUOTES) ?>">POST</button><?php elseif ($r['method'] === 'GET'): ?><button type="button" class="badge badge--get gp-trigger" data-uri="<?= htmlspecialchars($r['uri'], ENT_QUOTES) ?>" data-qs="<?= htmlspecialchars($r['query_string'] ?? '', ENT_QUOTES) ?>">GET</button><?php else: ?><?= method_badge($r['method']) ?><?php endif; ?></td>
             <td><span class="muted" style="font-family:var(--mono);font-size:.68rem"><?= htmlspecialchars($r['host']) ?></span></td>
             <td><?= uriLink($r['uri'], $r['query_string'] ?: null) ?></td>
-            <td><?= status_badge((int)$r['status']) ?></td>
+            <td><?= statusTrigger((int)$r['status'], 'nginx', (int)$r['id']) ?></td>
             <td><?= ua_label($r['user_agent']) ?></td>
             <td class="muted" style="font-family:var(--mono);font-size:.68rem;text-align:right"><?= $r['bytes_sent'] !== null ? number_format((int)$r['bytes_sent']) : '—' ?></td>
           </tr>
@@ -3096,47 +3121,88 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// ── POST / GET payload modal ──────────────────────────────────────────────────
+// ── POST / GET / Server payload modal ────────────────────────────────────────
 var PAYLOAD_SENSITIVE = /^(password|passwd|pass|secret|token|api_?key|apikey|auth|_token|access_token|refresh_token|g_recaptcha_token)$/i;
 function sanitizeParams(obj) {
   var out = {};
   for (var k in obj) { out[k] = PAYLOAD_SENSITIVE.test(k) ? '[redacted]' : obj[k]; }
   return out;
 }
-function showPayloadModal(title, meta, body) {
+function truncateLarge(obj) {
+  var out = {};
+  for (var k in obj) {
+    var v = String(obj[k]);
+    out[k] = v.length > 300 ? '[' + v.length + ' chars — truncated]' : obj[k];
+  }
+  return out;
+}
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function highlightJson(str) {
+  return escHtml(str).replace(
+    /("(?:\\.|[^"\\])*")(\s*:)|("(?:\\.|[^"\\])*")|(true|false|null)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+    function (m, key, col, str2, kw, num) {
+      if (key)           return '<span class="jk">' + key + '</span>' + col;
+      if (str2)          return '<span class="js">' + str2 + '</span>';
+      if (kw)            return '<span class="jb">' + kw + '</span>';
+      if (num !== void 0) return '<span class="jn">' + num + '</span>';
+      return escHtml(m);
+    }
+  );
+}
+function showPayloadModal(title, meta, dataObj) {
   document.getElementById('modal-payload-title').textContent = title;
   document.getElementById('modal-payload-meta').textContent  = meta;
-  document.getElementById('modal-payload-body').textContent  = body;
+  var body = document.getElementById('modal-payload-body');
+  if (dataObj === null) { body.innerHTML = ''; return; }
+  body.innerHTML = highlightJson(JSON.stringify(dataObj, null, 2));
 }
 document.addEventListener('click', function (e) {
+  // ── POST ──────────────────────────────────────────────────────────────────
   var btn = e.target.closest('.pp-trigger');
   if (btn) {
-    showPayloadModal('POST ' + btn.dataset.uri, 'Loading…', '');
+    document.getElementById('modal-payload-title').textContent = 'POST ' + btn.dataset.uri;
+    document.getElementById('modal-payload-meta').textContent  = 'Loading…';
+    document.getElementById('modal-payload-body').innerHTML    = '';
     document.getElementById('modal-payload').showModal();
     fetch('?' + new URLSearchParams({ ajax: '1', action: 'post_payload', ip: btn.dataset.ip, uri: btn.dataset.uri, ts: btn.dataset.ts }))
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d) { showPayloadModal('POST ' + btn.dataset.uri, 'No payload captured for this request.', ''); return; }
+        if (!d) { showPayloadModal('POST ' + btn.dataset.uri, 'No payload captured for this request.', null); return; }
         var raw = {};
         try { raw = JSON.parse(d.post_json || '{}'); } catch (ex) {}
         var oc = d.outcome ? ' · ' + d.outcome.replace(/_/g, ' ') : '';
-        showPayloadModal('POST ' + d.uri, d.created_at + ' · ' + d.ip + oc + (d.user_agent ? '\n' + d.user_agent : ''), JSON.stringify(sanitizeParams(raw), null, 2));
+        showPayloadModal('POST ' + d.uri, d.created_at + ' · ' + d.ip + oc + (d.user_agent ? '\n' + d.user_agent : ''), sanitizeParams(truncateLarge(raw)));
       })
-      .catch(function () { showPayloadModal('POST ' + btn.dataset.uri, 'Request failed.', ''); });
+      .catch(function () { showPayloadModal('POST ' + btn.dataset.uri, 'Request failed.', null); });
     return;
   }
+  // ── GET ───────────────────────────────────────────────────────────────────
   var gbtn = e.target.closest('.gp-trigger');
-  if (!gbtn) return;
-  var qs = gbtn.dataset.qs || '';
-  var params = {};
-  if (qs) { try { new URLSearchParams(qs).forEach(function (v, k) { params[k] = v; }); } catch (ex) {} }
-  var hasParams = Object.keys(params).length > 0;
-  showPayloadModal(
-    'GET ' + gbtn.dataset.uri,
-    hasParams ? '' : 'No query parameters.',
-    hasParams ? JSON.stringify(sanitizeParams(params), null, 2) : ''
-  );
+  if (gbtn) {
+    var qs = gbtn.dataset.qs || '';
+    var params = {};
+    if (qs) { try { new URLSearchParams(qs).forEach(function (v, k) { params[k] = v; }); } catch (ex) {} }
+    var hasP = Object.keys(params).length > 0;
+    showPayloadModal('GET ' + gbtn.dataset.uri, hasP ? '' : 'No query parameters.', hasP ? sanitizeParams(params) : null);
+    document.getElementById('modal-payload').showModal();
+    return;
+  }
+  // ── Status / $_SERVER ─────────────────────────────────────────────────────
+  var sbtn = e.target.closest('.sv-trigger');
+  if (!sbtn) return;
+  document.getElementById('modal-payload-title').textContent = sbtn.textContent.trim() + ' · ' + (sbtn.dataset.src === 'nginx' ? 'nginx' : 'PHP');
+  document.getElementById('modal-payload-meta').textContent  = 'Loading…';
+  document.getElementById('modal-payload-body').innerHTML    = '';
   document.getElementById('modal-payload').showModal();
+  fetch('?' + new URLSearchParams({ ajax: '1', action: 'server_vars', src: sbtn.dataset.src, id: sbtn.dataset.id }))
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (!d) { showPayloadModal(sbtn.textContent.trim(), 'No data found.', null); return; }
+      showPayloadModal(sbtn.textContent.trim() + ' · ' + (sbtn.dataset.src === 'nginx' ? 'nginx' : 'PHP'), d.created_at + (d.ip ? ' · ' + d.ip : ''), d);
+    })
+    .catch(function () { showPayloadModal(sbtn.textContent.trim(), 'Request failed.', null); });
 });
 </script>
 
