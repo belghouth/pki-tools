@@ -540,6 +540,8 @@ function block_ip(string $ip, ?string $reason, string $blocked_by): string {
             "INSERT INTO blocked_ips (ip, reason, blocked_by) VALUES (?,?,?)
              ON DUPLICATE KEY UPDATE reason=VALUES(reason), blocked_by=VALUES(blocked_by), blocked_at=NOW()"
         )->execute([$ip, $reason, $blocked_by]);
+        // A blocked IP is fully actioned — remove from watchlist so it doesn't clutter the watch tab
+        admin_pdo()?->prepare("DELETE FROM ip_watchlist WHERE ip=?")->execute([$ip]);
         return '';
     } catch (Throwable) { return 'Failed to block IP.'; }
 }
