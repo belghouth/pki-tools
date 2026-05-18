@@ -2654,6 +2654,7 @@ if ($tab === 'soc' && $pdo) {
        FROM ip_watchlist w
        LEFT JOIN geoip_cache g ON g.ip = w.ip
        LEFT JOIN nginx_visits v ON v.ip = w.ip AND v.created_at >= w.added_at
+       WHERE w.ip NOT IN (SELECT ip FROM blocked_ips)
        GROUP BY w.ip, w.added_at, w.source, w.reason, w.score_at_add, w.status,
                 w.escalated_at, w.escalated_reason, g.country
        ORDER BY FIELD(w.status,'candidate','watching'), w.added_at DESC"
