@@ -791,7 +791,7 @@ if ($tab === 'soc' && $pdo) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, shrink-to-fit=no">
   <title><?= match($tab) { 'users' => 'Users', 'blocked' => 'Blocked IPs', 'nginx' => 'Server Activity', 'soc' => 'SOC', 'myips' => 'My IPs', 'msgs' => 'Messages', default => 'PHP Activity' } ?> — <?= SITE_DOMAIN ?></title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -809,8 +809,8 @@ if ($tab === 'soc' && $pdo) {
       --radius: 6px; --tr: 160ms ease;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { font-size: 14px; overflow-x: hidden; }
-    body { background: var(--bg); color: var(--text); font-family: var(--sans); font-weight: 300; line-height: 1.6; min-height: 100vh; }
+    html { font-size: 14px; overflow-x: hidden; max-width: 100vw; }
+    body { background: var(--bg); color: var(--text); font-family: var(--sans); font-weight: 300; line-height: 1.6; min-height: 100vh; overflow-x: hidden; max-width: 100vw; }
     a { color: var(--accent); text-decoration: none; transition: color var(--tr); }
     a:hover { color: #fff; }
 
@@ -948,10 +948,14 @@ if ($tab === 'soc' && $pdo) {
     .epct-warn { color: var(--warn); }
 
     /* tab nav */
-    .tab-nav { background: rgba(18,22,28,.98); border-bottom: 1px solid var(--border); padding: 0 1.75rem; display: flex; }
-    .tab-nav a { display: inline-flex; align-items: center; padding: .55rem 1.1rem; font-family: var(--mono); font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all var(--tr); text-decoration: none; }
+    .tab-nav { background: rgba(18,22,28,.98); border-bottom: 1px solid var(--border); padding: 0 1.75rem; display: flex; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .tab-nav::-webkit-scrollbar { display: none; }
+    .tab-nav a { display: inline-flex; align-items: center; white-space: nowrap; flex-shrink: 0; padding: .55rem 1.1rem; font-family: var(--mono); font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all var(--tr); text-decoration: none; }
     .tab-nav a:hover { color: var(--text); }
     .tab-nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* messages table wrapper (mirrors .tbl-wrap) */
+    .table-wrap { overflow-x: auto; }
 
     /* flash */
     .flash { padding: .65rem 1rem; border-radius: var(--radius); font-size: .8rem; margin-bottom: 1.25rem; }
@@ -1067,6 +1071,17 @@ if ($tab === 'soc' && $pdo) {
     .ev-403     { background:rgba(0,153,255,.07);  border-color:rgba(0,153,255,.2);   color:var(--redir); }
     .ev-404     { background:rgba(245,158,11,.07); border-color:rgba(245,158,11,.25); color:var(--warn); }
     .ev-anomaly { background:rgba(255,255,255,.03); border-color:var(--border); color:var(--muted); }
+
+    /* mobile containment */
+    .wrap { overflow-x: hidden; }
+    @media (max-width: 640px) {
+      .wrap { padding: 1.25rem 1rem; }
+      .admin-bar { padding: 0 1rem; }
+      .tab-nav { padding: 0; }
+      .flt input  { width: 100%; max-width: 140px; }
+      .flt select { width: 100%; max-width: 120px; }
+      .card, .side-row { overflow: hidden; }
+    }
 
     /* modal — [hidden] must win over display:flex */
     [hidden] { display: none !important; }
