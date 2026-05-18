@@ -273,6 +273,12 @@ function schemaIntel(PDO $pdo): void {
         INDEX idx_outcome    (outcome),
         INDEX idx_uri        (uri(64))
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS site_settings (
+        key_name   VARCHAR(64) NOT NULL PRIMARY KEY,
+        val        TEXT        NOT NULL DEFAULT '',
+        updated_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
 function adminSchema(PDO $pdo): void {
@@ -753,6 +759,26 @@ function my_ips_delete(string $ip): string {
         admin_pdo()?->prepare("DELETE FROM my_ips WHERE ip=?")->execute([$ip]);
         return '';
     } catch (Throwable) { return 'Failed to delete.'; }
+}
+
+function settingGet(string $key, string $default = ''): string {
+    try {
+        $st = admin_pdo()?->prepare("SELECT val FROM site_settings WHERE key_name=? LIMIT 1");
+        $st?->execute([$key]);
+        $r = $st?->fetchColumn();
+        return $r !== false ? (string)$r : $default;
+    } catch (Throwable) { return $default; }
+}
+
+function settingSet(string $key, string $value): void {
+    try {
+        admin_pdo()?->prepare(
+            "INSERT INTO site_settings (key_name, val) VALUES (?,?)
+             ON DUPLICATE KEY UPDATE val=VALUES(val), updated_at=NOW()"
+        )->execute([$key, $value]);
+    } catch (Throwable) {
+        // best-effort — silently skip on DB unavailability
+    }
 }
 
 function logPostPayload(string $uri, array $postData, int $statusCode, string $outcome): void {

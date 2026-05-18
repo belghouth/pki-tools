@@ -127,6 +127,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && _admin_csrf_ok()) {
         header('Location: ' . ($_SERVER['HTTP_REFERER'] ?? '?'));
         exit;
     }
+    if ($__act === 'toggle_autoblock') {
+        $current = settingGet('autoblock_enabled', '0');
+        settingSet('autoblock_enabled', $current === '1' ? '0' : '1');
+        header('Location: ?tab=watch');
+        exit;
+    }
 }
 
 // ── My IPs CRUD (POST) ───────────────────────────────────────────────────────
@@ -2712,12 +2718,30 @@ if ($tab === 'soc' && $pdo) {
                 w.escalated_at, w.escalated_reason, g.country
        ORDER BY FIELD(w.status,'candidate','watching'), w.added_at DESC"
   )?->fetchAll() : [];
-  $src_label = ['manual' => 'manual', 'soc_honeypot' => 'honeypot', 'soc_event' => 'event'];
-  $src_cls   = ['manual' => '', 'soc_honeypot' => 'badge--warn', 'soc_event' => 'badge--err'];
+  $src_label     = ['manual' => 'manual', 'soc_honeypot' => 'honeypot', 'soc_event' => 'event'];
+  $src_cls       = ['manual' => '', 'soc_honeypot' => 'badge--warn', 'soc_event' => 'badge--err'];
+  $autoblock_on  = settingGet('autoblock_enabled', '0') === '1';
   ?>
   <div class="page-hd">
     <h1>Watch List</h1>
     <span class="page-meta"><?= count($watch_rows) ?> monitored IPs</span>
+    <form method="POST" style="margin-left:auto;display:flex;align-items:center;gap:.55rem">
+      <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+      <input type="hidden" name="action" value="toggle_autoblock">
+      <span style="font-size:.7rem;font-family:var(--mono);color:var(--muted);letter-spacing:.04em">Autoblock</span>
+      <button type="submit" role="switch" aria-checked="<?= $autoblock_on ? 'true' : 'false' ?>"
+        title="<?= $autoblock_on ? 'Autoblock ON — click to disable' : 'Autoblock OFF — click to enable' ?>"
+        style="cursor:pointer;border:none;background:none;padding:0;line-height:1">
+        <span style="display:inline-flex;align-items:center;width:2.6rem;height:1.35rem;border-radius:999px;
+          padding:.15rem;transition:background .2s;
+          background:<?= $autoblock_on ? 'rgba(239,68,68,.75)' : 'rgba(255,255,255,.12)' ?>;
+          border:1px solid <?= $autoblock_on ? 'rgba(239,68,68,.9)' : 'rgba(255,255,255,.18)' ?>">
+          <span style="width:1rem;height:1rem;border-radius:50%;background:#fff;
+            transition:transform .2s;
+            transform:translateX(<?= $autoblock_on ? '1.2rem' : '0' ?>)"></span>
+        </span>
+      </button>
+    </form>
   </div>
   <?php if ($w_flash): ?>
   <div class="flash <?= $w_flash_ok ? 'flash--ok' : 'flash--err' ?>"><?= $w_flash ?></div>

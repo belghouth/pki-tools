@@ -177,7 +177,10 @@ const AUTOWATCH_ENUM_WINDOW = 15; // minutes to look back for 404 enumeration
 const AUTOWATCH_ENUM_404S   = 10; // distinct non-trivial 404 URIs required to trigger watch
 
 function autoWatchThreats(PDO $pdo): void {
+    $doBlock = settingGet('autoblock_enabled', '0') === '1';
+
     // ── 1. Honeypot hits ──────────────────────────────────────────────────────
+    $excludeCol = $doBlock ? 'blocked_ips' : 'ip_watchlist';
     $st = $pdo->prepare("
         SELECT ip, COUNT(*) AS hits
         FROM   nginx_visits
@@ -185,7 +188,7 @@ function autoWatchThreats(PDO $pdo): void {
           AND  uri REGEXP ?
           AND  ip NOT IN (SELECT ip FROM blocked_ips)
           AND  ip NOT IN (SELECT ip FROM my_ips)
-          AND  ip NOT IN (SELECT ip FROM ip_watchlist)
+          AND  ip NOT IN (SELECT ip FROM $excludeCol)
           AND  ip != ''
         GROUP BY ip
         HAVING COUNT(*) >= ?
@@ -193,8 +196,13 @@ function autoWatchThreats(PDO $pdo): void {
     $st->execute([AUTOWATCH_HP_WINDOW, honeypot_mysql_regexp(), AUTOWATCH_HP_HITS]);
     foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
         $reason = 'Honeypot: ' . $row['hits'] . ' hits in ' . AUTOWATCH_HP_WINDOW . 'min';
-        watchIp($row['ip'], $reason, 'soc_honeypot');
-        echo '[' . gmdate(DT_FORMAT) . " UTC] Auto-watch {$row['ip']}: $reason\n";
+        if ($doBlock) {
+            block_ip($row['ip'], $reason, 'autoblock');
+            echo '[' . gmdate(DT_FORMAT) . " UTC] Auto-block {$row['ip']}: $reason\n";
+        } else {
+            watchIp($row['ip'], $reason, 'soc_honeypot');
+            echo '[' . gmdate(DT_FORMAT) . " UTC] Auto-watch {$row['ip']}: $reason\n";
+        }
     }
 
     // ── 2. 404 enumeration ────────────────────────────────────────────────────
@@ -212,7 +220,7 @@ function autoWatchThreats(PDO $pdo): void {
           AND  uri NOT IN ($placeholders)
           AND  ip NOT IN (SELECT ip FROM blocked_ips)
           AND  ip NOT IN (SELECT ip FROM my_ips)
-          AND  ip NOT IN (SELECT ip FROM ip_watchlist)
+          AND  ip NOT IN (SELECT ip FROM $excludeCol)
           AND  ip != ''
         GROUP BY ip
         HAVING COUNT(DISTINCT uri) >= ?
@@ -220,8 +228,13 @@ function autoWatchThreats(PDO $pdo): void {
     $st2->execute($params);
     foreach ($st2->fetchAll(PDO::FETCH_ASSOC) as $row) {
         $reason = 'Enumeration: ' . $row['uniq_404s'] . ' distinct 404 URIs in ' . AUTOWATCH_ENUM_WINDOW . 'min';
-        watchIp($row['ip'], $reason, 'soc_event');
-        echo '[' . gmdate(DT_FORMAT) . " UTC] Auto-watch {$row['ip']}: $reason\n";
+        if ($doBlock) {
+            block_ip($row['ip'], $reason, 'autoblock');
+            echo '[' . gmdate(DT_FORMAT) . " UTC] Auto-block {$row['ip']}: $reason\n";
+        } else {
+            watchIp($row['ip'], $reason, 'soc_event');
+            echo '[' . gmdate(DT_FORMAT) . " UTC] Auto-watch {$row['ip']}: $reason\n";
+        }
     }
 }
 
