@@ -20,6 +20,7 @@ require_once __DIR__ . '/../config.php';
 
 define('NGINX_JSON_LOG', '/var/log/nginx/thameur_json.log');
 define('IMPORT_BATCH',   500);
+define('DT_FORMAT',      'Y-m-d H:i:s');
 
 $pdo = admin_pdo();
 if (!$pdo) { fwrite(STDERR, "[nginx_import] DB unavailable\n"); exit(1); }
@@ -44,7 +45,9 @@ $file_size  = (int)$stat['size'];
 if ($file_inode !== $cur_inode || $file_size < $cur_offset) {
     $cur_offset = 0;
 }
-if ($file_size <= $cur_offset) exit(0); // nothing new
+if ($file_size <= $cur_offset) {
+    exit(0); // nothing new
+}
 
 // ── Read & import ─────────────────────────────────────────────────────────────
 $fh = fopen(NGINX_JSON_LOG, 'rb');
@@ -61,15 +64,19 @@ $stmt = $pdo->prepare(
 $inserted = 0;
 $batch    = [];
 
-function _nginx_flush(PDO $pdo, PDOStatement $stmt, array &$batch): int {
-    if (!$batch) return 0;
+function nginxFlush(PDO $pdo, PDOStatement $stmt, array &$batch): int {
+    if (!$batch) {
+        return 0;
+    }
     $n = 0;
     try {
         $pdo->beginTransaction();
         foreach ($batch as $row) { $stmt->execute($row); $n++; }
         $pdo->commit();
     } catch (Throwable $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         fwrite(STDERR, "[nginx_import] Batch error: " . $e->getMessage() . "\n");
         $n = 0;
     }
@@ -79,26 +86,38 @@ function _nginx_flush(PDO $pdo, PDOStatement $stmt, array &$batch): int {
 
 while (($line = fgets($fh)) !== false) {
     $line = trim($line);
-    if ($line === '') continue;
+    if ($line === '') {
+        continue;
+    }
 
     $d = json_decode($line, true);
-    if (!is_array($d)) continue;
+    if (!is_array($d)) {
+        continue;
+    }
 
     // Millisecond-precision timestamp from nginx $msec variable
     $ms = isset($d['ms']) ? (float)$d['ms'] : 0.0;
-    if ($ms <= 0) continue;
+    if ($ms <= 0) {
+        continue;
+    }
     $sec        = (int)$ms;
     $msec       = (int)round(($ms - $sec) * 1000);
-    $created_at = gmdate('Y-m-d H:i:s', $sec) . '.' . sprintf('%03d', $msec);
+    $created_at = gmdate(DT_FORMAT, $sec) . '.' . sprintf('%03d', $msec);
 
     // Real client IP: prefer Cloudflare header, fallback to direct edge IP
     $ip = trim($d['ip'] ?? '');
-    if ($ip === '' || $ip === '-') $ip = trim($d['edge'] ?? '');
+    if ($ip === '' || $ip === '-') {
+        $ip = trim($d['edge'] ?? '');
+    }
 
     // Country from Cloudflare header; store in geoip_cache for the admin panel
     $cc = strtoupper(trim($d['cc'] ?? ''));
-    if ($cc === '-' || strlen($cc) !== 2 || !ctype_alpha($cc)) $cc = '';
-    if ($cc && $ip) geoip_cache_store($ip, $cc);
+    if ($cc === '-' || strlen($cc) !== 2 || !ctype_alpha($cc)) {
+        $cc = '';
+    }
+    if ($cc && $ip) {
+        geoip_cache_store($ip, $cc);
+    }
 
     // Nullable numerics
     $rt    = isset($d['rt'])    && is_numeric($d['rt'])    ? (float)$d['rt']    : null;
@@ -132,10 +151,10 @@ while (($line = fgets($fh)) !== false) {
     ];
 
     if (count($batch) >= IMPORT_BATCH) {
-        $inserted += _nginx_flush($pdo, $stmt, $batch);
+        $inserted += nginxFlush($pdo, $stmt, $batch);
     }
 }
-$inserted += _nginx_flush($pdo, $stmt, $batch);
+$inserted += nginxFlush($pdo, $stmt, $batch);
 
 $new_offset = (int)ftell($fh);
 fclose($fh);
@@ -147,6 +166,69 @@ $pdo->prepare(
 )->execute([$file_inode, $new_offset]);
 
 if ($inserted > 0) {
-    echo '[' . gmdate('Y-m-d H:i:s') . " UTC] Imported $inserted nginx access log entries\n";
+    echo '[' . gmdate(DT_FORMAT) . " UTC] Imported $inserted nginx access log entries\n";
 }
+
+// ── Honeypot + enumeration auto-watch ─────────────────────────────────────────
+// Window and thresholds — adjust here before enabling auto-block.
+const AUTOWATCH_HP_WINDOW   = 15; // minutes to look back for honeypot hits
+const AUTOWATCH_HP_HITS     =  3; // honeypot URI hits required to trigger watch
+const AUTOWATCH_ENUM_WINDOW = 15; // minutes to look back for 404 enumeration
+const AUTOWATCH_ENUM_404S   = 10; // distinct non-trivial 404 URIs required to trigger watch
+
+function autoWatchThreats(PDO $pdo): void {
+    // ── 1. Honeypot hits ──────────────────────────────────────────────────────
+    $st = $pdo->prepare("
+        SELECT ip, COUNT(*) AS hits
+        FROM   nginx_visits
+        WHERE  created_at >= NOW() - INTERVAL ? MINUTE
+          AND  uri REGEXP ?
+          AND  ip NOT IN (SELECT ip FROM blocked_ips)
+          AND  ip NOT IN (SELECT ip FROM my_ips)
+          AND  ip NOT IN (SELECT ip FROM ip_watchlist)
+          AND  ip != ''
+        GROUP BY ip
+        HAVING COUNT(*) >= ?
+    ");
+    $st->execute([AUTOWATCH_HP_WINDOW, honeypot_mysql_regexp(), AUTOWATCH_HP_HITS]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $reason = 'Honeypot: ' . $row['hits'] . ' hits in ' . AUTOWATCH_HP_WINDOW . 'min';
+        watchIp($row['ip'], $reason, 'soc_honeypot');
+        echo '[' . gmdate(DT_FORMAT) . " UTC] Auto-watch {$row['ip']}: $reason\n";
+    }
+
+    // ── 2. 404 enumeration ────────────────────────────────────────────────────
+    $placeholders = implode(',', array_fill(0, count(NORMAL_MISS_PATHS), '?'));
+    $params = array_merge(
+        [AUTOWATCH_ENUM_WINDOW],
+        NORMAL_MISS_PATHS,
+        [AUTOWATCH_ENUM_404S]
+    );
+    $st2 = $pdo->prepare("
+        SELECT ip, COUNT(DISTINCT uri) AS uniq_404s
+        FROM   nginx_visits
+        WHERE  created_at >= NOW() - INTERVAL ? MINUTE
+          AND  status = 404
+          AND  uri NOT IN ($placeholders)
+          AND  ip NOT IN (SELECT ip FROM blocked_ips)
+          AND  ip NOT IN (SELECT ip FROM my_ips)
+          AND  ip NOT IN (SELECT ip FROM ip_watchlist)
+          AND  ip != ''
+        GROUP BY ip
+        HAVING COUNT(DISTINCT uri) >= ?
+    ");
+    $st2->execute($params);
+    foreach ($st2->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $reason = 'Enumeration: ' . $row['uniq_404s'] . ' distinct 404 URIs in ' . AUTOWATCH_ENUM_WINDOW . 'min';
+        watchIp($row['ip'], $reason, 'soc_event');
+        echo '[' . gmdate(DT_FORMAT) . " UTC] Auto-watch {$row['ip']}: $reason\n";
+    }
+}
+
+try {
+    autoWatchThreats($pdo);
+} catch (Throwable $e) {
+    fwrite(STDERR, '[nginx_import] auto-watch error: ' . $e->getMessage() . "\n");
+}
+
 exit(0);

@@ -132,12 +132,6 @@ function _split_sessions(array $reqs): array {
 }
 
 // Standard web resources often absent but legitimately probed by OS/social platforms.
-const NORMAL_MISS_PATHS = [
-    '/favicon.ico', '/favicon-16.png', '/favicon-32.png',
-    '/apple-touch-icon.png', '/apple-touch-icon-precomposed.png',
-    '/robots.txt', '/sitemap.xml', '/sitemap_index.xml',
-    '/img/og-social.png',
-];
 
 function detectThreats(array $paths, array $uas): array {
     $scanner_rx  = '/nikto|nmap|sqlmap|masscan|zgrab|gobuster|nuclei|whatweb|wapiti|'

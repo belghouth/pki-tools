@@ -108,6 +108,16 @@ const HONEYPOT_PATTERNS = [
 ];
 
 /**
+ * URIs that commonly 404 on any site and should not count as enumeration signals.
+ */
+const NORMAL_MISS_PATHS = [
+    '/favicon.ico', '/favicon-16.png', '/favicon-32.png',
+    '/apple-touch-icon.png', '/apple-touch-icon-precomposed.png',
+    '/robots.txt', '/sitemap.xml', '/sitemap_index.xml',
+    '/img/og-social.png',
+];
+
+/**
  * Returns a MySQL REGEXP alternation string for use in:
  *   WHERE uri REGEXP '<?= honeypot_mysql_regexp() ?>'
  */
