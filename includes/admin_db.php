@@ -258,6 +258,21 @@ function schemaIntel(PDO $pdo): void {
         INDEX (created_at),
         INDEX (read_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS post_payloads (
+        id          BIGINT UNSIGNED   AUTO_INCREMENT PRIMARY KEY,
+        created_at  DATETIME(3)       NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+        ip          VARCHAR(45)       NOT NULL DEFAULT '',
+        uri         VARCHAR(255)      NOT NULL DEFAULT '',
+        user_agent  TEXT,
+        outcome     VARCHAR(40)       NOT NULL DEFAULT '',
+        status_code SMALLINT UNSIGNED NOT NULL DEFAULT 200,
+        post_json   JSON,
+        INDEX idx_created_at (created_at),
+        INDEX idx_ip         (ip),
+        INDEX idx_outcome    (outcome),
+        INDEX idx_uri        (uri(64))
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
 function adminSchema(PDO $pdo): void {
@@ -736,6 +751,39 @@ function my_ips_delete(string $ip): string {
         admin_pdo()?->prepare("DELETE FROM my_ips WHERE ip=?")->execute([$ip]);
         return '';
     } catch (Throwable) { return 'Failed to delete.'; }
+}
+
+function logPostPayload(string $uri, array $postData, int $statusCode, string $outcome): void {
+    $pdo = admin_pdo();
+    if (!$pdo) return;
+    $raw = $_SERVER['HTTP_CF_CONNECTING_IP']
+        ?? $_SERVER['HTTP_X_REAL_IP']
+        ?? $_SERVER['HTTP_X_FORWARDED_FOR']
+        ?? $_SERVER['REMOTE_ADDR'] ?? '';
+    $ip = substr(trim(explode(',', $raw)[0]), 0, 45);
+    $safe = $postData;
+    // Keep reCAPTCHA token as presence indicator only — value is a JWS, not useful to store
+    if (array_key_exists('g_recaptcha_token', $safe)) {
+        $safe['g_recaptcha_token'] = $safe['g_recaptcha_token'] !== '' ? '[present]' : '[missing]';
+    }
+    foreach (['password', 'passwd', 'pass', 'secret'] as $k) {
+        if (array_key_exists($k, $safe)) $safe[$k] = '[redacted]';
+    }
+    try {
+        $pdo->prepare(
+            "INSERT INTO post_payloads (ip, uri, user_agent, outcome, status_code, post_json)
+             VALUES (?, ?, ?, ?, ?, ?)"
+        )->execute([
+            $ip,
+            substr($uri, 0, 255),
+            substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 500),
+            substr($outcome, 0, 40),
+            $statusCode,
+            json_encode($safe, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        ]);
+    } catch (Throwable) {
+        // best-effort logging — silently skip on DB unavailability
+    }
 }
 
 // Auto-register visit logger + PHP error capture (skipped on admin pages)

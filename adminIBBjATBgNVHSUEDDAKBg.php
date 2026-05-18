@@ -31,6 +31,7 @@ $tab = match($_GET['tab'] ?? '') {
     'myips'   => 'myips',
     'watch'   => 'watch',
     'msgs'    => 'msgs',
+    'posts'   => 'posts',
     default   => 'php',
 };
 
@@ -558,6 +559,24 @@ if ($tab === 'msgs' && $pdo) {
     )->fetchAll();
 }
 
+// ── POST payloads ─────────────────────────────────────────────────────────────
+$posts_list = [];
+if ($tab === 'posts' && $pdo) {
+    $pw = ["created_at >= $pstart"]; $pbp = [];
+    if ($fip) { $pw[] = 'ip = ?'; $pbp[] = $fip; }
+    $foutcome = preg_replace('/[^a-z_]/', '', $_GET['outcome'] ?? '');
+    if ($foutcome) { $pw[] = 'outcome = ?'; $pbp[] = $foutcome; }
+    $pwsql = implode(' AND ', $pw);
+    $cnt_st = $pdo->prepare("SELECT COUNT(*) FROM post_payloads WHERE $pwsql");
+    $cnt_st->execute($pbp);
+    $total_posts = (int)$cnt_st->fetchColumn();
+    $offset = ($page - 1) * $pp;
+    $st = $pdo->prepare("SELECT id, created_at, ip, uri, outcome, status_code, post_json, user_agent
+                         FROM post_payloads WHERE $pwsql ORDER BY created_at DESC LIMIT $pp OFFSET $offset");
+    $st->execute($pbp);
+    $posts_list = $st->fetchAll();
+}
+
 // ── SOC data ──────────────────────────────────────────────────────────────────
 $soc_threat_ips   = [];
 $soc_probe_paths  = [];
@@ -794,7 +813,7 @@ if ($tab === 'soc' && $pdo) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, shrink-to-fit=no">
-  <title><?= match($tab) { 'users' => 'Users', 'blocked' => 'Blocked IPs', 'nginx' => 'Server Activity', 'soc' => 'SOC', 'myips' => 'My IPs', 'msgs' => 'Messages', default => 'PHP Activity' } ?> — <?= SITE_DOMAIN ?></title>
+  <title><?= match($tab) { 'users' => 'Users', 'blocked' => 'Blocked IPs', 'nginx' => 'Server Activity', 'soc' => 'SOC', 'myips' => 'My IPs', 'msgs' => 'Messages', 'posts' => 'POST Payloads', default => 'PHP Activity' } ?> — <?= SITE_DOMAIN ?></title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1117,6 +1136,7 @@ if ($tab === 'soc' && $pdo) {
   <a href="?tab=myips" class="<?= $tab === 'myips' ? 'active' : '' ?>">My IPs <?php if ($my_ips_set): ?><span style="font-size:.6rem;opacity:.6">(<?= count($my_ips_set) ?>)</span><?php endif; ?></a>
   <a href="?tab=users" class="<?= $tab === 'users' ? 'active' : '' ?>">Users</a>
   <a href="?tab=msgs" class="<?= $tab === 'msgs' ? 'active' : '' ?>"<?= $tab !== 'msgs' && $msgs_unread ? ' style="color:var(--accent)"' : '' ?>>Messages <span id="msgs-nav-badge" style="font-size:.6rem;opacity:.8<?= !$msgs_unread ? ';display:none' : '' ?>">(<?= $msgs_unread ?>)</span></a>
+  <a href="?tab=posts" class="<?= $tab === 'posts' ? 'active' : '' ?>">POST Payloads</a>
 </nav>
 
 <div class="wrap">
@@ -2775,6 +2795,96 @@ if ($tab === 'soc' && $pdo) {
   <p class="empty-state">No messages yet.</p>
   <?php endif; ?>
   <?php endif; /* $tab === 'msgs' */ ?>
+
+  <?php if ($tab === 'posts'): ?>
+  <div class="section-hd">
+    <h2 class="section-title">POST Payloads</h2>
+    <div class="flt">
+      <form method="GET" style="display:contents">
+        <input type="hidden" name="tab" value="posts">
+        <input type="text"   name="ip"      placeholder="Filter IP…"      value="<?= htmlspecialchars($fip) ?>" style="width:130px">
+        <select name="outcome">
+          <option value="">All outcomes</option>
+          <?php foreach (['success','recaptcha_fail','missing_fields','invalid_email','invalid_topic'] as $oc): ?>
+          <option value="<?= $oc ?>"<?= (($_GET['outcome'] ?? '') === $oc) ? ' selected' : '' ?>><?= str_replace('_', ' ', $oc) ?></option>
+          <?php endforeach; ?>
+        </select>
+        <select name="period">
+          <?php foreach (['1h' => '1 h', '24h' => '24 h', '7d' => '7 d', '30d' => '30 d'] as $v => $l): ?>
+          <option value="<?= $v ?>"<?= $period === $v ? ' selected' : '' ?>><?= $l ?></option>
+          <?php endforeach; ?>
+        </select>
+        <button type="submit" class="btn-sm">Filter</button>
+        <a href="?tab=posts" class="btn-sm btn-ghost">Reset</a>
+      </form>
+    </div>
+  </div>
+  <?php if ($posts_list): ?>
+  <?php
+    $geo_posts = geoip_country(array_column($posts_list, 'ip'));
+  ?>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr>
+        <th>Time</th>
+        <th>IP</th>
+        <th>Geo</th>
+        <th>URI</th>
+        <th>Outcome</th>
+        <th>Payload</th>
+        <th>UA</th>
+      </tr></thead>
+      <tbody>
+      <?php foreach ($posts_list as $pr): ?>
+        <?php
+          $oc    = $pr['outcome'];
+          $ocCls = match($oc) {
+              'success'        => 'ok',
+              'recaptcha_fail' => 'err',
+              default          => 'warn',
+          };
+          $payload = json_decode($pr['post_json'] ?? '{}', true) ?: [];
+          $payloadPretty = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+          $detailId = 'pp-' . (int)$pr['id'];
+        ?>
+        <tr>
+          <td style="white-space:nowrap"><?= tsSpan(substr($pr['created_at'], 0, 19)) ?></td>
+          <td style="font-family:var(--mono);font-size:.78rem">
+            <a href="?tab=posts&ip=<?= urlencode($pr['ip']) ?>&period=<?= $period ?>" class="ip-link" aria-label="Filter by IP <?= htmlspecialchars($pr['ip'], ENT_QUOTES) ?>"><?= htmlspecialchars($pr['ip']) ?></a>
+            <?= me_badge($pr['ip'], $my_ips_set) ?>
+            <?= watchBadge($pr['ip'], $watch_set) ?>
+          </td>
+          <td><?= geo_label($pr['ip'], $geo_posts) ?></td>
+          <td style="font-family:var(--mono);font-size:.78rem"><?= htmlspecialchars($pr['uri']) ?></td>
+          <td><span class="badge badge--<?= $ocCls ?>"><?= htmlspecialchars(str_replace('_', ' ', $oc)) ?></span></td>
+          <td>
+            <details id="<?= $detailId ?>">
+              <summary style="cursor:pointer;font-size:.72rem;color:var(--muted);font-family:var(--mono)">
+                <?php foreach (['name','email','topic','action'] as $fk): if (!empty($payload[$fk])): ?>
+                <span style="color:var(--text)"><?= htmlspecialchars(mb_substr((string)$payload[$fk], 0, 30)) ?></span>
+                <?php break; endif; endforeach; ?>
+                <span style="opacity:.5">▸ expand</span>
+              </summary>
+              <pre style="margin:.4rem 0 0;font-size:.6rem;color:#8899aa;background:rgba(0,0,0,.2);border-radius:4px;padding:.5rem .7rem;overflow-x:auto;white-space:pre;max-height:200px;overflow-y:auto"><?= htmlspecialchars($payloadPretty) ?></pre>
+            </details>
+          </td>
+          <td><?= ua_label($pr['user_agent'] ?? '') ?></td>
+        </tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+  </div>
+  <?php if ($total_posts > $pp): ?>
+  <div class="pg-bar">
+    <?php $pages = (int)ceil($total_posts / $pp); for ($pi = 1; $pi <= $pages; $pi++): ?>
+    <a href="<?= pg_url($pi) ?>" class="pg-btn<?= $pi === $page ? ' active' : '' ?>" aria-label="Page <?= $pi ?>"><?= $pi ?></a>
+    <?php endfor; ?>
+  </div>
+  <?php endif; ?>
+  <?php else: ?>
+  <p class="empty-state">No POST payloads captured yet<?= $fip || !empty($foutcome) ? ' matching these filters' : '' ?>.</p>
+  <?php endif; ?>
+  <?php endif; /* $tab === 'posts' */ ?>
 
 </div><!-- .wrap -->
 

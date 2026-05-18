@@ -21,16 +21,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     $email   = mb_substr(trim(strip_tags($_POST['email']   ?? '')), 0, 254);
     $topic   = trim($_POST['topic'] ?? '');
     $message = mb_substr(trim(strip_tags($_POST['message'] ?? '')), 0, 4000);
+    $postUri = '/index.php';
 
     if (!$name || !$email || !$message) {
+        logPostPayload($postUri, $_POST, 200, 'missing_fields');
         echo json_encode(['error' => 'Name, email, and message are required.']);
         exit;
     }
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        logPostPayload($postUri, $_POST, 200, 'invalid_email');
         echo json_encode(['error' => 'Please enter a valid email address.']);
         exit;
     }
     if (!isset(CONTACT_TOPICS[$topic])) {
+        logPostPayload($postUri, $_POST, 200, 'invalid_topic');
         echo json_encode(['error' => 'Please select a topic.']);
         exit;
     }
@@ -38,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     if (recaptcha_configured()) {
         $token = trim($_POST['g_recaptcha_token'] ?? '');
         if (!recaptcha_verify($token, 'contact')) {
+            logPostPayload($postUri, $_POST, 200, 'recaptcha_fail');
             echo json_encode(['error' => 'reCAPTCHA verification failed. Please try again.']);
             exit;
         }
@@ -68,6 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     ]);
     @mail(ADMIN_ALLOWED_EMAIL, $mailSubj, $mailBody, $headers);
 
+    logPostPayload($postUri, $_POST, 200, 'success');
     echo json_encode(['ok' => true, 'message' => "Thanks {$name}, your message was received."]);
     exit;
 }
