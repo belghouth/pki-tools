@@ -22,53 +22,70 @@ require_once __DIR__ . '/../config.php';
 const ALERT_TO        = 'tbelghith@gmail.com';
 const ALERT_FROM_NAME = 'Bista El Kalba';
 const ALERT_FROM_ADDR = 'watchdog@thameur.org';
-const ALERT_MIN_SCORE = 40;   // sessions below this are silent
-const ALERT_HIGH      = 50;   // score threshold for HIGH level
-const ALERT_CRITICAL  = 80;   // score threshold for CRITICAL level
+const ALERT_MIN_SCORE = 40;    // sessions below this are silent
+const ALERT_HIGH      = 50;    // score threshold for HIGH level
+const ALERT_CRITICAL  = 80;    // score threshold for CRITICAL level
 const ALERT_LOOKBACK  = 21600; // max look-back in seconds (6 h) after a gap
+const ALERT_COOLDOWN  = 1800;  // min seconds between sent alerts (prevents inbox flood)
+const ALERT_LOG       = __DIR__ . '/alert.log';
 const DASHBOARD_URL   = 'https://thameur.org/adminIBBjATBgNVHSUEDDAKBg.php?tab=soc';
 
-// ── Bootstrap ─────────────────────────────────────────────────────────────────
-$pdo = admin_pdo();
-if (!$pdo) { fwrite(STDERR, "[threat_alert] DB unavailable\n"); exit(1); }
+// ── Run ───────────────────────────────────────────────────────────────────────
+try {
+    $pdo = admin_pdo();
+    if (!$pdo) throw new \RuntimeException('DB unavailable');
 
-ensureAlertCursor($pdo);
+    ensureAlertCursor($pdo);
 
-$cursor = $pdo->query(
-    "SELECT last_run_at FROM alert_cursor WHERE id=1"
-)->fetch();
-$since = resolveSince($cursor ? $cursor['last_run_at'] : null);
-$now   = gmdate('Y-m-d H:i:s');
+    $cursor = $pdo->query(
+        "SELECT last_run_at, last_alert_at FROM alert_cursor WHERE id=1"
+    )->fetch(PDO::FETCH_ASSOC);
+    $since = resolveSince($cursor ? $cursor['last_run_at'] : null);
+    $now   = gmdate('Y-m-d H:i:s');
 
-// ── Gather ────────────────────────────────────────────────────────────────────
-$honeypots   = fetchHoneypotHits($pdo, $since);
-$threats     = fetchThreatSessions($pdo, $since);
-$escalations = fetchEscalations($pdo, $since);
-$blocks      = fetchNewBlocks($pdo, $since);
+    // ── Gather ────────────────────────────────────────────────────────────────
+    $honeypots   = fetchHoneypotHits($pdo, $since);
+    $threats     = fetchThreatSessions($pdo, $since);
+    $escalations = fetchEscalations($pdo, $since);
+    $blocks      = fetchNewBlocks($pdo, $since);
 
-// ── Always advance cursor ─────────────────────────────────────────────────────
-$pdo->prepare(
-    "INSERT INTO alert_cursor (id, last_run_at) VALUES (1,?)
-     ON DUPLICATE KEY UPDATE last_run_at=VALUES(last_run_at)"
-)->execute([$now]);
+    // ── Always advance cursor so events are never re-processed ────────────────
+    advanceCursor($pdo, $now);
 
-// ── Decide ────────────────────────────────────────────────────────────────────
-$level = deriveLevel($honeypots, $threats, $escalations, $blocks);
-if ($level === 'clean') exit(0);
+    // ── Decide ────────────────────────────────────────────────────────────────
+    $level = deriveLevel($honeypots, $threats, $escalations, $blocks);
 
-// ── Send ──────────────────────────────────────────────────────────────────────
-$subject  = buildSubject($level, $honeypots, $threats, $escalations, $blocks);
-$textBody = buildBodyText($level, $honeypots, $threats, $escalations, $blocks, $since, $now);
-$htmlBody = buildBodyHtml($level, $honeypots, $threats, $escalations, $blocks, $since, $now);
+    if ($level === 'clean') {
+        cronLog('clean since=' . $since);
+        exit(0);
+    }
 
-if (sendAlert($subject, $textBody, $htmlBody)) {
-    $pdo->prepare(
-        "INSERT INTO alert_cursor (id, last_alert_at) VALUES (1,?)
-         ON DUPLICATE KEY UPDATE last_alert_at=VALUES(last_alert_at)"
-    )->execute([$now]);
-    echo '[' . $now . " UTC] Alert sent ($level): $subject\n";
-} else {
-    fwrite(STDERR, "[threat_alert] mail() failed\n");
+    // ── Cooldown — avoid flooding inbox on sustained threats ──────────────────
+    if ($cursor && !empty($cursor['last_alert_at'])) {
+        $age = time() - (int) strtotime($cursor['last_alert_at']);
+        if ($age < ALERT_COOLDOWN) {
+            cronLog('throttled (' . $level . ') — last alert ' . $age . 's ago, cooldown=' . ALERT_COOLDOWN . 's');
+            exit(0);
+        }
+    }
+
+    // ── Send ──────────────────────────────────────────────────────────────────
+    $subject  = buildSubject($level, $honeypots, $threats, $escalations, $blocks);
+    $textBody = buildBodyText($level, $honeypots, $threats, $escalations, $blocks, $since, $now);
+    $htmlBody = buildBodyHtml($level, $honeypots, $threats, $escalations, $blocks, $since, $now);
+
+    if (sendAlert($subject, $textBody, $htmlBody)) {
+        $pdo->prepare(
+            "INSERT INTO alert_cursor (id, last_alert_at) VALUES (1,?)
+             ON DUPLICATE KEY UPDATE last_alert_at=VALUES(last_alert_at)"
+        )->execute([$now]);
+        cronLog('sent (' . $level . '): ' . $subject);
+    } else {
+        cronLog('WARN mail() returned false level=' . $level);
+    }
+
+} catch (\Throwable $e) {
+    cronLog('FATAL ' . $e->getMessage() . ' in ' . basename($e->getFile()) . ':' . $e->getLine());
     exit(1);
 }
 exit(0);
@@ -76,6 +93,19 @@ exit(0);
 // ═════════════════════════════════════════════════════════════════════════════
 // Helpers
 // ═════════════════════════════════════════════════════════════════════════════
+
+function cronLog(string $msg): void {
+    $line = '[' . gmdate('Y-m-d H:i:s') . ' UTC] ' . $msg . PHP_EOL;
+    fwrite(STDOUT, $line);
+    @file_put_contents(ALERT_LOG, $line, FILE_APPEND | LOCK_EX);
+}
+
+function advanceCursor(PDO $pdo, string $now): void {
+    $pdo->prepare(
+        "INSERT INTO alert_cursor (id, last_run_at) VALUES (1,?)
+         ON DUPLICATE KEY UPDATE last_run_at=VALUES(last_run_at)"
+    )->execute([$now]);
+}
 
 function ensureAlertCursor(PDO $pdo): void {
     $pdo->exec("CREATE TABLE IF NOT EXISTS alert_cursor (
