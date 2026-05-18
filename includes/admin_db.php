@@ -608,14 +608,21 @@ function blocked_ip_list(): array {
     try {
         return admin_pdo()?->query(
             "SELECT b.ip, b.reason, b.blocked_by, b.blocked_at,
-                    g.country,
-                    COUNT(v.id)                                                          AS total_req,
-                    MAX(v.created_at)                                                    AS last_seen,
-                    COALESCE(ROUND(SUM(IF(v.status>=400,1,0))/NULLIF(COUNT(v.id),0)*100),0) AS err_pct
+                    COALESCE(g.country, nv_agg.cc) AS country,
+                    COALESCE(nv_agg.total_req, 0)  AS total_req,
+                    nv_agg.last_seen               AS last_seen,
+                    COALESCE(nv_agg.err_pct, 0)    AS err_pct
              FROM blocked_ips b
              LEFT JOIN geoip_cache g ON g.ip = b.ip
-             LEFT JOIN visits v      ON v.ip = b.ip
-             GROUP BY b.ip, b.reason, b.blocked_by, b.blocked_at, g.country
+             LEFT JOIN (
+                 SELECT ip,
+                        MAX(country)                                                         AS cc,
+                        COUNT(*)                                                             AS total_req,
+                        MAX(created_at)                                                      AS last_seen,
+                        ROUND(SUM(IF(status>=400,1,0))/NULLIF(COUNT(*),0)*100)               AS err_pct
+                 FROM nginx_visits
+                 GROUP BY ip
+             ) nv_agg ON nv_agg.ip = b.ip
              ORDER BY b.blocked_at DESC"
         )?->fetchAll() ?? [];
     } catch (Throwable) { return []; }
