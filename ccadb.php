@@ -721,7 +721,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1">
   <?php
   require_once __DIR__ . '/includes/seo.php';
   seo_head([
@@ -753,6 +753,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
     /* ── Layout ── */
+    html,body{max-width:100%;overflow-x:hidden}
     .page{max-width:1400px;margin:0 auto;padding:2.5rem 1.5rem 6rem}
     .page-hd{margin-bottom:1.8rem}
     .page-hd h1{font-size:1.75rem;font-weight:600;color:#fff;margin-bottom:.25rem}
@@ -796,7 +797,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     .chip.active{color:var(--accent);border-color:rgba(0,212,170,.4);background:rgba(0,212,170,.07)}
 
     /* ── Grouped table ── */
-    .tbl-wrap{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+    .tbl-wrap{border:1px solid var(--border);border-radius:var(--radius);overflow-x:auto;overflow-y:hidden}
     table{width:100%;border-collapse:collapse;font-size:.78rem}
     thead th{
       background:var(--surface2);color:var(--muted);
