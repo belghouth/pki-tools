@@ -346,23 +346,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     }
     .pill-link:hover { border-color: var(--accent); color: var(--accent); }
 
-    /* LinkedIn card */
-    .li-card {
-      display: flex; align-items: center; gap: 0.9rem;
-      margin-top: 1.4rem; padding: 0.9rem 1.1rem;
-      background: rgba(10,102,194,0.07);
-      border: 1px solid rgba(10,102,194,0.3);
-      border-radius: var(--radius);
-      text-decoration: none;
-      transition: border-color var(--tr), background var(--tr);
-    }
-    .li-card:hover { border-color: rgba(10,102,194,0.7); background: rgba(10,102,194,0.12); }
-    .li-card-logo { color: #0a66c2; flex-shrink: 0; }
-    .li-card-body { flex: 1; min-width: 0; }
-    .li-card-name { font-size: 0.88rem; font-weight: 600; color: #fff; }
-    .li-card-title { font-size: 0.75rem; color: var(--muted); margin-top: 0.1rem; }
-    .li-card-cta { font-family: var(--mono); font-size: 0.72rem; color: #0a66c2; flex-shrink: 0; }
-
     .about-focus {
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -633,7 +616,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
         <div class="about-body">
 
           <p class="about-lead-label">What this site is</p>
-          <p>A free, no-account resource for PKI practitioners — certificates, compliance, and the full toolbox in one place. It hosts tools I built to cover gaps I kept running into: a multi-linter that runs zlint, pkilint, and x509lint in a single shot; a CPS-to-BR coverage checker; a universal artifact parser that handles anything from a certificate to a timestamp token; and a live ACME endpoint demo. Next to those, there is a curated directory of the best open-source testing tools the community produces — ASN.1 decoders, TLS analysers, digital signature validators, CT log search, and more. One place, everything PKI.</p>
+          <p>A free, no-account toolbox for PKI practitioners and CA auditors. It covers certificate linting (pkilint, zlint, x509lint in one shot), CPS-to-BR compliance mapping, a universal artifact parser for certificates, CRLs, OCSP, timestamp tokens, and more. It also provides a live ACME endpoint for testing, a CCADB browser with browser trust status and inline chain linting, an e-seal signer, and a curated directory of the best community tools. Built to close the gap between what the BRs require and what most teams have to check against it.</p>
 
           <p class="about-lead-label" style="margin-top:1.6rem">Who built it</p>
           <p>I work in PKI and Trust Services. Day-to-day: certificate profile engineering, CA system design, CPS/CP authoring, compliance against the CA/Browser Forum Baseline Requirements, audit support. These tools started as internal utilities for problems I kept running into. I open-sourced them because the gap between what the BRs require and what most teams have available to check against it is real — and not worth solving from scratch every time.</p>
@@ -643,27 +626,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
             <a href="#contact" class="pill-link">Contact</a>
           </div>
 
-          <a href="https://www.linkedin.com/in/belghouth/" class="li-card" target="_blank" rel="noopener" aria-label="LinkedIn profile">
-            <div class="li-card-logo">
-              <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
-            </div>
-            <div class="li-card-body">
-              <div class="li-card-name">Thameur Belghith</div>
-              <div class="li-card-title">PKI &amp; Trust Services Engineer</div>
-            </div>
-            <div class="li-card-cta">Connect ↗</div>
-          </a>
         </div>
         <div class="about-focus">
           <h3>Areas of Focus</h3>
           <ul class="focus-list">
             <li>WebPKI &amp; CA/Browser Forum Compliance</li>
-            <li>X.509 Certificate Engineering</li>
+            <li>X.509 Certificate Profile Engineering</li>
             <li>CPS / CP Authoring &amp; Audit Support</li>
+            <li>CCADB &amp; Root Program Management</li>
             <li>Certificate Transparency (CT Logs)</li>
             <li>ACME &amp; Automated Certificate Management</li>
             <li>Revocation Infrastructure (OCSP / CRL)</li>
-            <li>Multi-Perspective Issuance Corroboration</li>
+            <li>eIDAS / EU Trust Services (eSeals, TSA)</li>
           </ul>
         </div>
       </div>

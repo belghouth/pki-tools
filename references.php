@@ -351,6 +351,13 @@ $navLabel = 'PKI References';
       </div>
 
       <div class="ref-card">
+        <span class="ref-tag tag-db">CCADB</span>
+        <p class="ref-card-name">CCADB Resources</p>
+        <p class="ref-card-desc">Public reports, data downloads, and documentation published by CCADB — including root inclusion lists, CA owner reports, and audit letter templates.</p>
+        <a class="ref-card-link" href="https://www.ccadb.org/resources" target="_blank" rel="noopener">ccadb.org/resources</a>
+      </div>
+
+      <div class="ref-card">
         <span class="ref-tag tag-db">Search</span>
         <p class="ref-card-name">crt.sh</p>
         <p class="ref-card-desc">Certificate Transparency log aggregator and search engine by Sectigo. Search by domain, organization, or SHA fingerprint. Essential for CT monitoring.</p>
