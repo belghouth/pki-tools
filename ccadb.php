@@ -1549,7 +1549,36 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
 
     lint.addEventListener('click', function() {
       sessionStorage.setItem('pki_prefill_cert', pem);
-      window.open('/linters.php', '_blank');
+      sessionStorage.removeItem('pki_prefill_issuer');
+
+      var parentSha = (cert && cert.parentSha256) || '';
+      var isRoot    = !parentSha || (cert.type || '').toLowerCase().indexOf('root') !== -1;
+
+      if (isRoot) {
+        // Self-signed root — no issuer to fetch
+        window.open('/linters.php', '_blank');
+        return;
+      }
+
+      // Show brief loading state while fetching parent PEM
+      var origText = lint.textContent;
+      lint.textContent = 'Loading…';
+      lint.disabled = true;
+
+      fetch('/ccadb.php?detail=' + encodeURIComponent(parentSha))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.found && data.pemInfo && data.pemInfo.indexOf('CERTIFICATE') !== -1) {
+            sessionStorage.setItem('pki_prefill_issuer', data.pemInfo);
+          }
+          // If parent PEM not in DB yet, issuer key stays absent — linters handles it gracefully
+        })
+        .catch(function() { /* network error — proceed without issuer */ })
+        .finally(function() {
+          lint.textContent = origText;
+          lint.disabled = false;
+          window.open('/linters.php', '_blank');
+        });
     });
     parse.addEventListener('click', function() {
       sessionStorage.removeItem('mkt_eseal_cms');
