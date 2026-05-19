@@ -401,9 +401,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
 
     .tools-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      grid-template-columns: repeat(4, 1fr);
       gap: 1.25rem;
       padding: 1.25rem;
+    }
+    @media (max-width: 820px) {
+      .tools-grid { grid-template-columns: repeat(2, 1fr); }
+      .tool-card--ghost { display: none; }
+    }
+    @media (max-width: 480px) {
+      .tools-grid { grid-template-columns: 1fr; }
     }
 
     .tool-card {
@@ -838,9 +845,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
             </div>
           </div>
 
-          <?= ghostCard([70, 100, 90, 50]) ?>
-          <?= ghostCard([85, 95, 75, 65]) ?>
-
         </div>
       </div>
 
@@ -884,6 +888,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
           </div>
 
           <?= ghostCard([90, 100, 80, 55]) ?>
+          <?= ghostCard([70, 95, 85, 60]) ?>
 
         </div>
       </div>
@@ -977,6 +982,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
           </div>
 
           <?= ghostCard([75, 100, 88, 58]) ?>
+          <?= ghostCard([65, 95, 80, 70]) ?>
+          <?= ghostCard([85, 100, 75, 55]) ?>
 
         </div>
       </div>
