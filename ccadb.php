@@ -414,7 +414,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     .cert-name-wrap{display:flex;align-items:center;gap:0}
     .tree-connector{display:inline-block;font-size:.75rem;color:#2a3040;margin-right:.25rem;font-family:var(--mono);flex-shrink:0;user-select:none}
     /* ── Status mini-badges ── */
-    .cert-status-badges{display:flex;flex-wrap:wrap;gap:.2rem;margin-top:.15rem}
+    .cert-status-badges{display:flex;flex-wrap:wrap;gap:.2rem;margin-left:.5rem;align-items:center;flex-shrink:0}
     .badge-revoked{font-family:var(--mono);font-size:.55rem;font-weight:700;letter-spacing:.06em;background:rgba(232,85,85,.15);color:var(--red);border:1px solid rgba(232,85,85,.4);border-radius:3px;padding:.05rem .3rem;text-transform:uppercase}
     .badge-expired{font-family:var(--mono);font-size:.55rem;font-weight:700;letter-spacing:.06em;background:rgba(245,166,35,.12);color:var(--amber);border:1px solid rgba(245,166,35,.35);border-radius:3px;padding:.05rem .3rem;text-transform:uppercase}
     .badge-constrained{font-family:var(--mono);font-size:.55rem;color:var(--muted);border:1px solid var(--border);border-radius:3px;padding:.05rem .3rem}
@@ -985,8 +985,8 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
       +   '<div class="cert-name-wrap">'
       +     connector + toggleBtn
       +     '<span>' + esc(cert.name) + '</span>'
+      +     statusBadges
       +   '</div>'
-      +   statusBadges
       + '</td>'
       + '<td>' + typeBadge(cert.type) + '</td>'
       + '<td>' + browserDots(cert) + '</td>'
