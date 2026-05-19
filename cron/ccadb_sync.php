@@ -62,7 +62,7 @@ const MIGRATION_SQL = <<<'SQL'
 CREATE TABLE IF NOT EXISTS ccadb_v5_certs (
     id                    INT UNSIGNED     NOT NULL AUTO_INCREMENT,
     sync_id               INT UNSIGNED     NOT NULL,
-    row_number            INT UNSIGNED     NOT NULL,
+    csv_row_number            INT UNSIGNED     NOT NULL,
     ca_owner              VARCHAR(500)     NOT NULL DEFAULT '',
     salesforce_id         VARCHAR(50)      NOT NULL DEFAULT '',
     cert_name             VARCHAR(500)     NOT NULL DEFAULT '',
@@ -226,7 +226,7 @@ function importV5(PDO $pdo, string $key, string $file): array {
 function prepareV5Insert(PDO $pdo): PDOStatement {
     return $pdo->prepare(
         "INSERT INTO ccadb_v5_certs
-         (sync_id, row_number,
+         (sync_id, csv_row_number,
           ca_owner, salesforce_id, cert_name, parent_salesforce_id, parent_cert_name,
           cert_type, subordinate_ca_owner,
           status_apple, status_chrome, status_microsoft, status_mozilla,
