@@ -953,6 +953,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
 
     /* loading state */
     .cm-loading{text-align:center;padding:4rem 1rem;color:var(--muted);font-family:var(--mono);font-size:.82rem}
+    .cm-loading-inline{color:var(--muted);font-family:var(--mono);font-size:.72rem;font-style:italic}
 
     /* scrollable body */
     .cm-body{overflow-y:auto;flex:1}
@@ -1716,7 +1717,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
           wirePemButtons(data.pemInfo, cert);
           wireVerifyButtons(cmBody);
           wireCpsVerifyButton(cmBody);
-          wireChainLintButton(cert, data.pemInfo);
+          autoChainLint(cert, data.pemInfo);
         } else {
           cmBody.innerHTML = '<div class="cm-loading">Certificate data not found.</div>';
         }
@@ -2089,10 +2090,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     } else if (!cert.parentSha256) {
       html += '<div class="oid-empty">No parent certificate in CCADB — chain lint requires issuer</div>';
     } else {
-      html += '<button type="button" class="oid-cps-btn" id="cmChainLintBtn">'
-        + 'Run <code>lint_pkix_signer_signee_cert_chain</code>'
-        + '</button>'
-        + '<div id="cmChainLintResults" class="oid-cps-results"></div>';
+      html += '<div id="cmChainLintResults"><span class="cm-loading-inline">Running lint_pkix_signer_signee_cert_chain…</span></div>';
     }
     return html + '</div>';
   }
@@ -2509,67 +2507,42 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
 
   // ── Chain lint ────────────────────────────────────────────────────────────
 
-  function wireChainLintButton(cert, pem) {
-    var btn     = document.getElementById('cmChainLintBtn');
+  function autoChainLint(cert, pem) {
     var results = document.getElementById('cmChainLintResults');
-    if (!btn) { return; }
-    btn.addEventListener('click', function() {
-      if (btn.disabled) { return; }
-      btn.disabled    = true;
-      btn.textContent = 'Loading parent PEM…';
-      fetch('/ccadb.php?detail=' + encodeURIComponent(cert.parentSha256))
-        .then(function(r) { return r.json(); })
-        .then(function(d) {
-          if (!d.found || !d.pemInfo || d.pemInfo.indexOf('CERTIFICATE') === -1) {
-            btn.disabled    = false;
-            btn.textContent = 'Run lint_pkix_signer_signee_cert_chain';
-            if (results) {
-              results.innerHTML = '<div class="oid-cps-flag cps-err">Parent certificate PEM not available in database</div>';
-              results.classList.add('visible');
-            }
-            return;
-          }
-          btn.textContent = 'Running…';
-          doChainLint(pem, d.pemInfo, btn, results);
-        })
-        .catch(function() {
-          btn.disabled    = false;
-          btn.textContent = 'Run lint_pkix_signer_signee_cert_chain';
-          if (results) {
-            results.innerHTML = '<div class="oid-cps-flag cps-err">Failed to fetch parent certificate</div>';
-            results.classList.add('visible');
-          }
-        });
-    });
+    if (!results) { return; }
+
+    fetch('/ccadb.php?detail=' + encodeURIComponent(cert.parentSha256))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (!d.found || !d.pemInfo || d.pemInfo.indexOf('CERTIFICATE') === -1) {
+          results.innerHTML = '<div class="oid-cps-flag cps-err">Parent certificate PEM not available in database</div>';
+          return;
+        }
+        runChainLint(pem, d.pemInfo, results);
+      })
+      .catch(function() {
+        results.innerHTML = '<div class="oid-cps-flag cps-err">Failed to fetch parent certificate</div>';
+      });
   }
 
-  function doChainLint(certPem, parentPem, btn, results) {
+  function runChainLint(certPem, parentPem, results) {
     function execute(token) {
       fetch('/ccadb.php', {
         method:  'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'chain_lint=1'
-          + '&cert_pem='           + encodeURIComponent(certPem)
-          + '&parent_pem='         + encodeURIComponent(parentPem)
-          + '&g_recaptcha_token='  + encodeURIComponent(token || ''),
+          + '&cert_pem='          + encodeURIComponent(certPem)
+          + '&parent_pem='        + encodeURIComponent(parentPem)
+          + '&g_recaptcha_token=' + encodeURIComponent(token || ''),
       })
         .then(function(r) { return r.json(); })
         .then(function(data) {
-          btn.disabled    = false;
-          btn.textContent = 'Re-run lint_pkix_signer_signee_cert_chain';
-          if (!results) { return; }
           results.innerHTML = data.ok
             ? data.html
             : '<div class="oid-cps-flag cps-err">' + esc(data.error || 'Unknown error') + '</div>';
-          results.classList.add('visible');
         })
         .catch(function() {
-          btn.disabled    = false;
-          btn.textContent = 'Run lint_pkix_signer_signee_cert_chain';
-          if (results) {
-            results.innerHTML = '<div class="oid-cps-flag cps-err">Network error</div>';
-            results.classList.add('visible');
-          }
+          results.innerHTML = '<div class="oid-cps-flag cps-err">Network error</div>';
         });
     }
     if (typeof grecaptcha !== 'undefined' && RCAPTCHA_KEY && RCAPTCHA_KEY.indexOf('YOUR_') === -1) {
