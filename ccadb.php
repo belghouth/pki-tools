@@ -36,6 +36,68 @@ $isJson     = isset($_GET['json'])   && $_GET['json']   === '1';
 $detail     = trim($_GET['detail']   ?? '');
 $verifyUrl  = trim($_POST['verify_url'] ?? '');
 
+// ── ?verify_url= — must run before DB init to guarantee clean JSON output ────
+
+if ($verifyUrl !== '') {
+    header(HDR_JSON);
+    $rcToken = trim($_POST['g_recaptcha_token'] ?? '');
+    if (recaptcha_configured() && !recaptcha_verify($rcToken, 'verify_url')) {
+        echo json_encode(['ok' => false, 'status' => 'reCAPTCHA failed']);
+        exit;
+    }
+    if (!preg_match('#^https?://#i', $verifyUrl)) {
+        echo json_encode(['ok' => false, 'status' => 'Invalid URL']);
+        exit;
+    }
+    $vcOpts = [
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS      => 5,
+        CURLOPT_TIMEOUT        => 12,
+        CURLOPT_CONNECTTIMEOUT => 6,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; pki-tools/1.0)',
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_HTTPHEADER     => ['Accept: */*'],
+    ];
+    // Phase 1: HEAD
+    $vch = curl_init($verifyUrl);
+    curl_setopt_array($vch, $vcOpts + [CURLOPT_NOBODY => true]);
+    curl_exec($vch);
+    $vCode = (int) curl_getinfo($vch, CURLINFO_HTTP_CODE);
+    $vErr  = curl_error($vch);
+    curl_close($vch);
+    // Phase 2: plain GET fallback when HEAD gives no response or 405
+    if ($vErr === '' && ($vCode === 0 || $vCode === 405)) {
+        $vch2 = curl_init($verifyUrl);
+        curl_setopt_array($vch2, $vcOpts + [CURLOPT_NOBODY => false, CURLOPT_TIMEOUT => 8]);
+        curl_exec($vch2);
+        $vCode = (int) curl_getinfo($vch2, CURLINFO_HTTP_CODE);
+        $vErr  = curl_error($vch2);
+        curl_close($vch2);
+    }
+    if ($vErr !== '') {
+        $vErrLc = strtolower($vErr);
+        if (str_contains($vErrLc, 'ssl') || str_contains($vErrLc, 'tls') || str_contains($vErrLc, 'certificate')) {
+            $vLabel = 'SSL Error';
+        } elseif (str_contains($vErrLc, 'timed out') || str_contains($vErrLc, 'timeout')) {
+            $vLabel = 'Timeout';
+        } elseif (str_contains($vErrLc, 'could not resolve') || str_contains($vErrLc, 'name resolution')) {
+            $vLabel = 'DNS Error';
+        } elseif (str_contains($vErrLc, 'connection refused')) {
+            $vLabel = 'Refused';
+        } else {
+            $vLabel = 'Network Error';
+        }
+        echo json_encode(['ok' => false, 'status' => $vLabel]);
+    } elseif ($vCode >= 200 && $vCode < 400) {
+        echo json_encode(['ok' => true,  'status' => (string)$vCode]);
+    } else {
+        echo json_encode(['ok' => false, 'status' => $vCode > 0 ? (string)$vCode : 'No Response']);
+    }
+    exit;
+}
+
 // ── DB ────────────────────────────────────────────────────────────────────────
 
 $pdo     = admin_pdo();
@@ -54,67 +116,6 @@ if ($pdo) {
     } catch (Throwable $e) {
         $dbError = $e->getMessage();
     }
-}
-
-// ── ?verify_url= — HEAD-check a CRL / policy URL ─────────────────────────────
-
-if ($verifyUrl !== '') {
-    header(HDR_JSON);
-    $rcToken = trim($_POST['g_recaptcha_token'] ?? '');
-    if (recaptcha_configured() && !recaptcha_verify($rcToken, 'verify_url')) {
-        echo json_encode(['ok' => false, 'status' => 'reCAPTCHA failed']);
-        exit;
-    }
-    if (!preg_match('#^https?://#i', $verifyUrl)) {
-        echo json_encode(['ok' => false, 'status' => 'Invalid URL']);
-        exit;
-    }
-    $curlOpts = [
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_MAXREDIRS      => 5,
-        CURLOPT_TIMEOUT        => 12,
-        CURLOPT_CONNECTTIMEOUT => 6,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; pki-tools/1.0)',
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_HTTPHEADER     => ['Accept: */*'],
-    ];
-    // Phase 1: HEAD
-    $ch = curl_init($verifyUrl);
-    curl_setopt_array($ch, $curlOpts + [CURLOPT_NOBODY => true]);
-    curl_exec($ch);
-    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curlErr  = curl_error($ch);
-    curl_close($ch);
-    // Phase 2: GET fallback if HEAD gave no response or 405
-    if ($curlErr === '' && ($httpCode === 0 || $httpCode === 405)) {
-        $ch2 = curl_init($verifyUrl);
-        curl_setopt_array($ch2, $curlOpts + [CURLOPT_NOBODY => false, CURLOPT_RANGE => '0-1023']);
-        curl_exec($ch2);
-        $httpCode = (int) curl_getinfo($ch2, CURLINFO_HTTP_CODE);
-        $curlErr  = curl_error($ch2);
-        curl_close($ch2);
-    }
-    if ($curlErr !== '') {
-        $errLc = strtolower($curlErr);
-        if (str_contains($errLc, 'ssl') || str_contains($errLc, 'tls') || str_contains($errLc, 'certificate')) {
-            $label = 'SSL Error';
-        } elseif (str_contains($errLc, 'timed out') || str_contains($errLc, 'timeout')) {
-            $label = 'Timeout';
-        } elseif (str_contains($errLc, 'could not resolve') || str_contains($errLc, 'name resolution')) {
-            $label = 'DNS Error';
-        } elseif (str_contains($errLc, 'connection refused')) {
-            $label = 'Refused';
-        } else {
-            $label = 'Network Error';
-        }
-        echo json_encode(['ok' => false, 'status' => $label]);
-    } elseif ($httpCode >= 200 && $httpCode < 400) {
-        echo json_encode(['ok' => true,  'status' => (string)$httpCode]);
-    } else {
-        echo json_encode(['ok' => false, 'status' => $httpCode > 0 ? (string)$httpCode : 'No Response']);
-    }
-    exit;
 }
 
 // ── ?detail=<sha256> — full cert data for modal ───────────────────────────────
@@ -181,17 +182,19 @@ $navLabel = 'CCADB Browser';
 function queryGrouped(PDO $pdo, string $search, int $page): array {
     $offset     = ($page - 1) * OWNERS_PER_PAGE;
     $hasSearch  = $search !== '';
-    $ftsArg     = $hasSearch ? $search : null;
+    $likeArg    = $hasSearch
+        ? '%' . str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $search) . '%'
+        : null;
 
     // Phase 1: distinct CA owners matching the search, paginated
     if ($hasSearch) {
         $countSql = "SELECT COUNT(DISTINCT ca_owner) FROM ccadb_v5_certs
-                     WHERE MATCH(search_text) AGAINST(? IN BOOLEAN MODE)";
+                     WHERE search_text LIKE ?";
         $ownerSql = "SELECT DISTINCT ca_owner FROM ccadb_v5_certs
-                     WHERE MATCH(search_text) AGAINST(? IN BOOLEAN MODE)
+                     WHERE search_text LIKE ?
                      ORDER BY ca_owner LIMIT " . OWNERS_PER_PAGE . " OFFSET $offset";
-        $cSt = $pdo->prepare($countSql); $cSt->execute([$ftsArg]);
-        $oSt = $pdo->prepare($ownerSql); $oSt->execute([$ftsArg]);
+        $cSt = $pdo->prepare($countSql); $cSt->execute([$likeArg]);
+        $oSt = $pdo->prepare($ownerSql); $oSt->execute([$likeArg]);
     } else {
         $countSql = "SELECT COUNT(DISTINCT ca_owner) FROM ccadb_v5_certs";
         $ownerSql = "SELECT DISTINCT ca_owner FROM ccadb_v5_certs
@@ -952,7 +955,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
   }
 
   // ── Render one tree item as a table row HTML string ───────────────────────
-  function renderTreeRow(item, oi, ci) {
+  function renderTreeRow(item, oi, ci, ownerVis) {
     var cert      = item.cert;
     var depth     = item.depth;
     var parentSha = item.parentSha || '';
@@ -963,7 +966,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     var isOrphan = cert._orphan || item.isOrphan;
 
     var rowClass = 'cert-row'
-      + (item.baseVis ? ' visible' : '')
+      + (item.baseVis && ownerVis ? ' visible' : '')
       + (revoked ? ' is-revoked' : '')
       + (expired && !revoked ? ' is-expired' : '');
 
@@ -1040,7 +1043,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     var totalCerts = 0;
     collapsedNodes.clear();  // reset on new data
     allOwners.forEach(function(owner, oi) {
-      var ownerVisible = allOwners.length <= 3 || expandAll;
+      var ownerVisible = false;
       var tree = buildCertTree(owner.certs);
       var flat = flattenTree(tree.roots, tree.orphans);
       applyFilterToFlat(flat);
@@ -1056,8 +1059,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
         + '</td></tr>';
 
       flat.forEach(function(item, ci) {
-        if (!ownerVisible) { item.baseVis = false; }
-        html += renderTreeRow(item, oi, ci);
+        html += renderTreeRow(item, oi, ci, ownerVisible);
       });
     });
 
@@ -1109,7 +1111,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     var q = this.value;
     clearBtn.style.display = q ? '' : 'none';
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(function() { fetchPage(q, 1, q !== ''); }, 320);
+    searchTimer = setTimeout(function() { fetchPage(q, 1, false); }, 320);
   });
   clearBtn.addEventListener('click', function() {
     searchEl.value = '';
@@ -1123,7 +1125,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     var a = e.target.closest('a[data-p]');
     if (!a) { return; }
     e.preventDefault();
-    fetchPage(searchQ, parseInt(a.dataset.p, 10), searchQ !== '');
+    fetchPage(searchQ, parseInt(a.dataset.p, 10), false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
@@ -1133,7 +1135,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
       document.querySelectorAll('.chip').forEach(function(c) { c.classList.remove('active'); });
       this.classList.add('active');
       activeFilter = this.dataset.filter;
-      renderTable({ owners: allOwners, totalOwners: totalOwners, page: curPage, pages: totalPages }, searchQ !== '');
+      renderTable({ owners: allOwners, totalOwners: totalOwners, page: curPage, pages: totalPages }, false);
     });
   });
 
@@ -1671,7 +1673,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
   // ── Initial render ────────────────────────────────────────────────────────
   searchQ = searchEl.value;
   if (initData) {
-    renderTable(initData, searchQ !== '');
+    renderTable(initData, false);
   } else {
     fetchPage(searchQ, 1, false);
   }
