@@ -57,17 +57,18 @@ if ($pdo) {
     $offset = ($page - 1) * CCADB_PER_PAGE;
 
     if ($search !== '') {
-        $countSql = "SELECT COUNT(*) FROM ccadb_rows
-                     WHERE resource_key = ? AND MATCH(search_text) AGAINST(? IN BOOLEAN MODE)";
-        $rowSql   = "SELECT data_json FROM ccadb_rows
-                     WHERE resource_key = ? AND MATCH(search_text) AGAINST(? IN BOOLEAN MODE)
-                     ORDER BY id LIMIT " . CCADB_PER_PAGE . " OFFSET $offset";
-        $total = (int)$pdo->prepare($countSql)->execute([$tab, $search]) ?
-            $pdo->prepare($countSql)->execute([$tab, $search]) : 0;
-        $cs = $pdo->prepare($countSql);
+        $cs = $pdo->prepare(
+            "SELECT COUNT(*) FROM ccadb_rows
+             WHERE resource_key = ? AND MATCH(search_text) AGAINST(? IN BOOLEAN MODE)"
+        );
         $cs->execute([$tab, $search]);
         $total = (int)$cs->fetchColumn();
-        $rs = $pdo->prepare($rowSql);
+
+        $rs = $pdo->prepare(
+            "SELECT data_json FROM ccadb_rows
+             WHERE resource_key = ? AND MATCH(search_text) AGAINST(? IN BOOLEAN MODE)
+             ORDER BY id LIMIT " . CCADB_PER_PAGE . " OFFSET $offset"
+        );
         $rs->execute([$tab, $search]);
     } else {
         $cs = $pdo->prepare(
@@ -78,7 +79,7 @@ if ($pdo) {
 
         $rs = $pdo->prepare(
             "SELECT data_json FROM ccadb_rows WHERE resource_key = ?
-             ORDER BY row_number LIMIT " . CCADB_PER_PAGE . " OFFSET $offset"
+             ORDER BY `row_number` LIMIT " . CCADB_PER_PAGE . " OFFSET $offset"
         );
         $rs->execute([$tab]);
     }
