@@ -124,16 +124,17 @@ if ($detail !== '' && $pdo) {
     header(HDR_JSON);
     try {
         $st = $pdo->prepare(
-            "SELECT data_json, pem_info FROM ccadb_v5_certs WHERE sha256 = ? LIMIT 1"
+            "SELECT data_json, pem_info, cert_policy_oids FROM ccadb_v5_certs WHERE sha256 = ? LIMIT 1"
         );
         $st->execute([$detail]);
         $row = $st->fetch(PDO::FETCH_ASSOC);
         if ($row) {
             $fields = json_decode($row['data_json'], true) ?? [];
             echo json_encode([
-                'found'   => true,
-                'fields'  => $fields,
-                'pemInfo' => $row['pem_info'],
+                'found'      => true,
+                'fields'     => $fields,
+                'pemInfo'    => $row['pem_info'],
+                'policyOids' => json_decode($row['cert_policy_oids'] ?? 'null', true) ?? [],
             ]);
         } else {
             echo json_encode(['found' => false]);
@@ -221,7 +222,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
                 tls_capable, tls_ev_capable, code_sign_capable, smime_capable,
                 country, subordinate_ca_owner,
                 (pem_info IS NOT NULL AND pem_info != '') AS has_pem,
-                data_json
+                cert_policy_oids, data_json
          FROM ccadb_v5_certs
          WHERE ca_owner IN ($in)
          ORDER BY ca_owner, cert_type DESC, cert_name"
@@ -266,6 +267,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
             'ski'         => $raw['Subject Key Identifier']   ?? '',
             'revocation'  => $raw['Revocation Status']        ?? '',
             'constrained' => $raw['Technically Constrained']  ?? '',
+            'policyOids'  => json_decode($row['cert_policy_oids'] ?? 'null', true) ?? [],
         ];
     }
 
@@ -605,6 +607,29 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     .cm-audit-block{margin-bottom:.5rem;padding-bottom:.5rem;border-bottom:1px solid rgba(42,48,64,.6)}
     .cm-audit-block:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
     .cm-audit-label{font-family:var(--mono);font-size:.62rem;font-weight:600;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:.25rem}
+
+    /* ── Policy OID section ── */
+    .oid-source{background:var(--surface2);border-radius:6px;padding:.65rem .85rem;margin-bottom:.6rem}
+    .oid-source-hd{display:flex;align-items:center;gap:.5rem;margin-bottom:.45rem;flex-wrap:wrap}
+    .oid-source-label{font-size:.7rem;font-weight:600;color:var(--text);text-transform:uppercase;letter-spacing:.06em}
+    .oid-source-badge{font-size:.62rem;padding:.1rem .4rem;border-radius:3px;font-weight:600;font-family:var(--mono)}
+    .oid-src-cert{background:rgba(0,212,170,.12);color:var(--accent);border:1px solid rgba(0,212,170,.25)}
+    .oid-src-ccadb{background:rgba(167,139,250,.12);color:var(--purple);border:1px solid rgba(167,139,250,.25)}
+    .oid-chips{display:flex;flex-wrap:wrap;gap:.4rem}
+    .oid-chip{display:inline-flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:.22rem .5rem;font-family:var(--mono);font-size:.67rem;line-height:1.3}
+    .oid-chip-label{font-size:.58rem;color:var(--accent);font-weight:600;font-family:var(--sans);letter-spacing:.03em}
+    .oid-chip-oid{color:var(--text)}
+    .oid-empty{color:var(--muted);font-size:.78rem;font-style:italic}
+    .oid-compare{margin-top:.25rem;padding:.65rem .85rem;background:rgba(10,13,18,.4);border-radius:6px}
+    .oid-compare-hd{font-size:.68rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.45rem}
+    .oid-issue{display:flex;align-items:baseline;gap:.45rem;padding:.25rem 0;font-size:.8rem;line-height:1.4;border-bottom:1px solid rgba(42,48,64,.4)}
+    .oid-issue:last-child{border-bottom:none;padding-bottom:0}
+    .oid-icon{flex-shrink:0;font-weight:700;width:1em;text-align:center}
+    .oid-ok    .oid-icon{color:var(--green)}
+    .oid-warn  .oid-icon{color:var(--amber)}
+    .oid-error .oid-icon{color:var(--red)}
+    .oid-info  .oid-icon{color:var(--muted)}
+    .oid-issue-text{color:var(--text)}
 
     /* PEM + actions (same style as artifact_parser.php) */
     .ap-embed-cert-pem{
@@ -1180,7 +1205,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
       if (isNaN(oi2) || !sha2 || !allOwners[oi2]) { return; }
       var owner = allOwners[oi2];
       var cert  = owner.certs.find(function(c) { return c.sha256 === sha2; });
-      if (cert) { openModal(cert, owner.name); }
+      if (cert) { openModal(cert, owner); }
     }
   });
   tbody.addEventListener('keydown', function(e) {
@@ -1193,14 +1218,16 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     if (isNaN(oi) || !sha || !allOwners[oi]) { return; }
     var owner = allOwners[oi];
     var cert  = owner.certs.find(function(c) { return c.sha256 === sha; });
-    if (cert) { openModal(cert, owner.name); }
+    if (cert) { openModal(cert, owner); }
   });
 
   // ══════════════════════════════════════════════════════════════════════════
   // Modal
   // ══════════════════════════════════════════════════════════════════════════
 
-  function openModal(cert, ownerName) {
+  function openModal(cert, owner) {
+    var ownerName  = (owner && typeof owner === 'object') ? owner.name  : (owner || '');
+    var ownerCerts = (owner && typeof owner === 'object') ? owner.certs : [];
     activeCert = cert;
     cmEyebrow.textContent = cert.type || 'Certificate';
     cmTitle.textContent   = cert.name || ownerName;
@@ -1227,7 +1254,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
       .then(function(r) { return r.json(); })
       .then(function(data) {
         if (data.found) {
-          cmBody.innerHTML = buildModalBody(cert, data.fields, data.pemInfo);
+          cmBody.innerHTML = buildModalBody(cert, data.fields, data.pemInfo, data.policyOids || [], ownerCerts);
           wirePemButtons(data.pemInfo, cert);
           wireVerifyButtons(cmBody);
         } else {
@@ -1420,7 +1447,155 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
       + '</div>';
   }
 
-  function buildModalBody(cert, fields, pem) {
+  // ── Policy OID helpers ────────────────────────────────────────────────────
+
+  var KNOWN_OIDS = {
+    '2.5.29.32.0':    'anyPolicy',
+    '2.23.140.1.1':   'CA/B EV TLS',
+    '2.23.140.1.2.1': 'CA/B DV TLS',
+    '2.23.140.1.2.2': 'CA/B OV TLS',
+    '2.23.140.1.2.3': 'CA/B IV TLS',
+    '2.23.140.1.3':   'CA/B EV CS',
+    '2.23.140.1.4.1': 'CA/B DV CS',
+    '2.23.140.1.4.2': 'CA/B OV CS',
+    '2.23.140.2.1':   'CA/B S/MIME MV',
+    '2.23.140.2.2':   'CA/B S/MIME OV',
+    '2.23.140.2.3':   'CA/B S/MIME SV',
+    '2.23.140.2.4':   'CA/B S/MIME IV',
+  };
+
+  function oidChip(oid) {
+    var label = KNOWN_OIDS[oid] || '';
+    return '<span class="oid-chip">'
+      + (label ? '<span class="oid-chip-label">' + esc(label) + '</span>' : '')
+      + '<span class="oid-chip-oid">' + esc(oid) + '</span>'
+      + '</span>';
+  }
+
+  function parseOidList(str) {
+    if (!str) { return []; }
+    return str.split(/[;,\s]+/).map(function(s) { return s.trim(); }).filter(function(s) {
+      return /^[\d.]+$/.test(s);
+    });
+  }
+
+  function buildOidSection(cert, fields, certPolicyOids, ownerCerts) {
+    var certOids     = Array.isArray(certPolicyOids) ? certPolicyOids : [];
+    var ccadbEvOids  = parseOidList(f(fields, 'EV OIDs for Root Cert'));
+
+    // Build the section HTML
+    var html = '<div class="cm-sect">'
+      + '<div class="cm-sect-title">Policy OIDs</div>';
+
+    // ── Source A: Certificate (cryptographic fact) ────────────────────────────
+    html += '<div class="oid-source">'
+      + '<div class="oid-source-hd">'
+      + '<span class="oid-source-label">Certificate</span>'
+      + '<span class="oid-source-badge oid-src-cert">X.509 certificatePolicies · cryptographic fact</span>'
+      + '</div>';
+    if (certOids.length > 0) {
+      html += '<div class="oid-chips">' + certOids.map(oidChip).join('') + '</div>';
+    } else {
+      html += '<div class="oid-empty">'
+        + (cert.hasPem ? 'No certificatePolicies extension in certificate' : 'PEM not yet imported — run CCADB PEM sync')
+        + '</div>';
+    }
+    html += '</div>';
+
+    // ── Source B: CCADB (administrative declaration) ──────────────────────────
+    html += '<div class="oid-source">'
+      + '<div class="oid-source-hd">'
+      + '<span class="oid-source-label">CCADB</span>'
+      + '<span class="oid-source-badge oid-src-ccadb">EV OIDs for Root Cert · administrative declaration</span>'
+      + '</div>';
+    if (ccadbEvOids.length > 0) {
+      html += '<div class="oid-chips">' + ccadbEvOids.map(oidChip).join('') + '</div>';
+    } else {
+      html += '<div class="oid-empty">No OID data in CCADB record</div>';
+    }
+    html += '</div>';
+
+    // ── Comparison ────────────────────────────────────────────────────────────
+    var issues = [];
+
+    if (!cert.hasPem) {
+      issues.push({ lvl: 'info', msg: 'PEM not imported — certificate OID checks require a parsed certificate' });
+    } else if (certOids.length === 0 && ccadbEvOids.length === 0) {
+      issues.push({ lvl: 'info', msg: 'No policy OIDs present in either source' });
+    } else {
+      // Cert has OIDs but CCADB has none
+      if (certOids.length > 0 && ccadbEvOids.length === 0) {
+        issues.push({ lvl: 'warn', msg: 'Certificate declares policy OIDs not found in CCADB' });
+      }
+      // CCADB has OIDs but cert has none
+      if (ccadbEvOids.length > 0 && certOids.length === 0) {
+        issues.push({ lvl: 'error', msg: 'CCADB declares policy OIDs but certificate has none' });
+      }
+      // CCADB OIDs missing from cert
+      if (ccadbEvOids.length > 0 && certOids.length > 0) {
+        var missing = ccadbEvOids.filter(function(o) { return certOids.indexOf(o) === -1; });
+        if (missing.length > 0) {
+          issues.push({ lvl: 'error', msg: 'CCADB OID(s) not found in certificate: ' + missing.join(', ') });
+        }
+        var extra = certOids.filter(function(o) { return o !== '2.5.29.32.0' && ccadbEvOids.indexOf(o) === -1; });
+        if (extra.length > 0) {
+          issues.push({ lvl: 'warn', msg: 'Certificate OID(s) not declared in CCADB: ' + extra.join(', ') });
+        }
+      }
+      // TLS EV capable but no EV OIDs
+      var isTlsEv = f(fields, 'TLS EV Capable') === 'True';
+      if (isTlsEv && ccadbEvOids.length === 0) {
+        issues.push({ lvl: 'warn', msg: 'Marked TLS EV Capable in CCADB but no EV OIDs declared' });
+      }
+      if (isTlsEv && certOids.length === 0) {
+        issues.push({ lvl: 'warn', msg: 'Marked TLS EV Capable in CCADB but certificate has no policy OIDs' });
+      }
+      // Duplicate OIDs in cert
+      var seen = {};
+      var hasDup = certOids.some(function(o) { if (seen[o]) { return true; } seen[o] = true; return false; });
+      if (hasDup) {
+        issues.push({ lvl: 'warn', msg: 'Certificate contains duplicate policy OIDs' });
+      }
+      // Hierarchy: child OID not in parent (parent lacks anyPolicy)
+      if (cert.parentSha256 && ownerCerts && ownerCerts.length > 0) {
+        var parentCert = null;
+        for (var pi = 0; pi < ownerCerts.length; pi++) {
+          if (ownerCerts[pi].sha256 === cert.parentSha256) { parentCert = ownerCerts[pi]; break; }
+        }
+        if (parentCert && Array.isArray(parentCert.policyOids) && parentCert.policyOids.length > 0) {
+          var pOids       = parentCert.policyOids;
+          var parentAny   = pOids.indexOf('2.5.29.32.0') !== -1;
+          if (!parentAny && certOids.length > 0) {
+            var notInParent = certOids.filter(function(o) { return o !== '2.5.29.32.0' && pOids.indexOf(o) === -1; });
+            if (notInParent.length > 0) {
+              issues.push({ lvl: 'error', msg: 'Child asserts OID(s) not permitted by parent (parent lacks anyPolicy): ' + notInParent.join(', ') });
+            }
+          }
+        } else if (!parentCert) {
+          issues.push({ lvl: 'info', msg: 'Parent certificate not in current view — hierarchy check skipped' });
+        }
+      }
+      if (issues.length === 0) {
+        issues.push({ lvl: 'ok', msg: 'No OID issues detected' });
+      }
+    }
+
+    var icons = { ok: '✓', warn: '⚠', error: '✕', info: 'ℹ' };
+    html += '<div class="oid-compare">'
+      + '<div class="oid-compare-hd">Comparison</div>';
+    issues.forEach(function(issue) {
+      html += '<div class="oid-issue oid-' + issue.lvl + '">'
+        + '<span class="oid-icon">' + (icons[issue.lvl] || '') + '</span>'
+        + '<span class="oid-issue-text">' + esc(issue.msg) + '</span>'
+        + '</div>';
+    });
+    html += '</div>';
+
+    html += '</div>'; // cm-sect
+    return html;
+  }
+
+  function buildModalBody(cert, fields, pem, certPolicyOids, ownerCerts) {
     var html = '';
 
     // ① Browser trust
@@ -1501,7 +1676,10 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
       + urlFieldRow('MD/AsciiDoc URL',  f(fields,'MD/AsciiDoc CP/CPS URL'))
       + '</dl></div>';
 
-    // ⑥ Infrastructure
+    // ⑥ Policy OIDs — cert-derived vs CCADB administrative declaration
+    html += buildOidSection(cert, fields, certPolicyOids, ownerCerts);
+
+    // ⑦ Infrastructure
     html += '<div class="cm-sect">'
       + '<div class="cm-sect-title">Infrastructure</div>'
       + '<dl class="cm-dl">'

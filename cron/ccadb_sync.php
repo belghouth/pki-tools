@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS ccadb_v5_certs (
     country               VARCHAR(200)              DEFAULT NULL,
     data_json             MEDIUMTEXT       NOT NULL,
     pem_info              MEDIUMTEXT                DEFAULT NULL,
+    cert_policy_oids      MEDIUMTEXT                DEFAULT NULL,
     search_text           MEDIUMTEXT       NOT NULL,
     PRIMARY KEY (id),
     KEY idx_sync         (sync_id),
@@ -111,7 +112,7 @@ SQL;
 
 // ── CLI argument parsing ──────────────────────────────────────────────────────
 
-$opts  = getopt('', ['phase:', 'force', 'migrate']);
+$opts  = getopt('', ['phase:', 'force', 'migrate', 'backfill-oids']);
 $phase = isset($opts['phase']) ? (int)$opts['phase'] : 0;  // 0 = both
 $force = isset($opts['force']);
 
@@ -124,7 +125,10 @@ if (!$pdo) {
 // ── --migrate ─────────────────────────────────────────────────────────────────
 
 if (isset($opts['migrate'])) {
-    foreach (array_filter(array_map('trim', explode(';', MIGRATION_SQL))) as $sql) {
+    $migrations = array_filter(array_map('trim', explode(';', MIGRATION_SQL)));
+    // Add cert_policy_oids for existing tables (CREATE TABLE IF NOT EXISTS won't add it)
+    $migrations[] = "ALTER TABLE ccadb_v5_certs ADD COLUMN IF NOT EXISTS cert_policy_oids MEDIUMTEXT DEFAULT NULL";
+    foreach ($migrations as $sql) {
         try {
             $pdo->exec($sql);
         } catch (Throwable $e) {
@@ -133,6 +137,14 @@ if (isset($opts['migrate'])) {
         }
     }
     echo "[" . gmdate(DT_FMT) . " UTC] Migration complete.\n";
+    exit(0);
+}
+
+// ── --backfill-oids — parse policy OIDs from already-imported PEMs ────────────
+
+if (isset($opts['backfill-oids'])) {
+    $count = backfillOids($pdo);
+    echo "[" . gmdate(DT_FMT) . " UTC] OID backfill complete — $count certs updated.\n";
     exit(0);
 }
 
@@ -359,7 +371,7 @@ function updatePem(PDO $pdo, string $file): array {
         return ['updated' => 0, 'error' => $colErr];
     }
 
-    $stmt    = $pdo->prepare("UPDATE ccadb_v5_certs SET pem_info = ? WHERE sha256 = ?");
+    $stmt    = $pdo->prepare("UPDATE ccadb_v5_certs SET pem_info = ?, cert_policy_oids = ? WHERE sha256 = ?");
     $updated = processPemRows($fh, $stmt, $shaCol, $pemCol);
     fclose($fh);
 
@@ -394,8 +406,10 @@ function processPemRows($fh, PDOStatement $stmt, int $shaCol, int $pemCol): int 
         if ($sha === '' || $pem === '') {
             continue;
         }
+        $oids     = parseCertPolicyOids($pem);
+        $oidsJson = $oids !== [] ? json_encode($oids) : null;
         try {
-            $stmt->execute([$pem, $sha]);
+            $stmt->execute([$pem, $oidsJson, $sha]);
             $updated += $stmt->rowCount();
         } catch (Throwable $e) {
             fwrite(STDERR, "[ccadb_sync] PEM row error: " . $e->getMessage() . "\n");
@@ -553,4 +567,55 @@ function logSync(PDO $pdo, string $key, string $status, int $rows, ?string $msg)
     } catch (Throwable $e) {
         fwrite(STDERR, "[ccadb_sync] Log error: " . $e->getMessage() . "\n");
     }
+}
+
+// ── X.509 certificatePolicies OID extraction ──────────────────────────────────
+
+/**
+ * Parse the certificatePolicies extension from a PEM certificate and return
+ * the list of policy OIDs. Returns [] when the extension is absent or the PEM
+ * cannot be parsed.
+ */
+function parseCertPolicyOids(string $pem): array {
+    if ($pem === '' || !function_exists('openssl_x509_read')) {
+        return [];
+    }
+    $cert = @openssl_x509_read($pem);
+    if ($cert === false) {
+        return [];
+    }
+    $parsed = openssl_x509_parse($cert, true); // shortnames=true
+    $oids   = [];
+    if (is_array($parsed) && isset($parsed['extensions']['certificatePolicies'])) {
+        // OpenSSL formats each policy as "Policy: <OID>\n  CPS: ...\n ..."
+        foreach (explode("\n", $parsed['extensions']['certificatePolicies']) as $line) {
+            if (preg_match('/Policy:\s*(\S+)/', trim($line), $m)) {
+                $oids[] = $m[1];
+            }
+        }
+        $oids = array_values(array_unique($oids));
+    }
+    return $oids;
+}
+
+/**
+ * Iterate all rows that have a PEM but no parsed OIDs yet, parse them, and
+ * store the result. Used by the --backfill-oids CLI flag after a schema
+ * migration on an existing database.
+ */
+function backfillOids(PDO $pdo): int {
+    $select = $pdo->query(
+        "SELECT sha256, pem_info FROM ccadb_v5_certs
+         WHERE pem_info IS NOT NULL AND pem_info != '' AND cert_policy_oids IS NULL"
+    );
+    $update = $pdo->prepare(
+        "UPDATE ccadb_v5_certs SET cert_policy_oids = ? WHERE sha256 = ?"
+    );
+    $count  = 0;
+    while ($row = $select->fetch(PDO::FETCH_ASSOC)) {
+        $oids = parseCertPolicyOids($row['pem_info']);
+        $update->execute([$oids !== [] ? json_encode($oids) : null, $row['sha256']]);
+        $count++;
+    }
+    return $count;
 }
