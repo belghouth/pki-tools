@@ -883,15 +883,9 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
 
     /* ── Browser trust badges ── */
     .br-badges{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    .br-badge{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0}
-    .br-badge svg{width:18px;height:18px;display:block;opacity:.75}
-    .br-badge:hover svg{opacity:1}
-    .br-dot{width:12px;height:12px;border-radius:50%;border:1px solid rgba(255,255,255,.12);flex-shrink:0}
-    .br-dot.d-included{background:#00d4aa;border-color:rgba(0,212,170,.4);box-shadow:0 0 4px rgba(0,212,170,.35)}
-    .br-dot.d-ev{background:#00b894;border-color:rgba(0,184,148,.4);box-shadow:0 0 4px rgba(0,184,148,.35)}
-    .br-dot.d-pending{background:#f5a623;border-color:rgba(245,166,35,.4);box-shadow:0 0 4px rgba(245,166,35,.35)}
-    .br-dot.d-removed{background:#e85555;border-color:rgba(232,85,85,.4);box-shadow:0 0 4px rgba(232,85,85,.35)}
-    .br-dot.d-na{background:transparent;border-color:#2a3040}
+    .br-badge{display:inline-flex;flex-shrink:0}
+    .br-badge img{width:32px;height:32px;display:block;transition:transform .15s}
+    .br-badge:hover img{transform:scale(1.15)}
 
     /* ── Empty / loading ── */
     .tbl-empty{text-align:center;padding:4rem 1rem;color:var(--muted);font-family:var(--mono);font-size:.82rem}
@@ -1308,12 +1302,12 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     return 'na';
   }
 
-  // ── Browser SVG logos ─────────────────────────────────────────────────────
-  var BR_LOGOS = {
-    apple: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>',
-    chrome: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15.93V16c-2.76-.55-5-2.29-6.16-4.69L7.13 10c.96 1.96 2.78 3.4 5 3.87v-.01c.08.01.18.02.27.02 2.21 0 4-1.79 4-4s-1.79-4-4-4c-.69 0-1.34.18-1.9.5L8.7 4.74C9.73 4.27 10.83 4 12 4c4.41 0 8 3.59 8 8s-3.59 8-8 8c-.34 0-.67-.03-1-.07zM12 8c2.21 0 4 1.79 4 4s-1.79 4-4 4-4-1.79-4-4 1.79-4 4-4z"/></svg>',
-    microsoft: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.5 2v9.5H2V2h9.5zm1 0H22v9.5h-9.5V2zM2 12.5h9.5V22H2v-9.5zm10.5 0H22V22h-9.5v-9.5z"/></svg>',
-    mozilla: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 2c1.84 0 3.53.63 4.88 1.68L5.68 16.88A7.95 7.95 0 014 12c0-4.41 3.59-8 8-8zm0 16c-1.84 0-3.53-.63-4.88-1.68l11.2-11.2A7.95 7.95 0 0120 12c0 4.41-3.59 8-8 8z"/></svg>'
+  // ── Browser logo filenames (maps internal key → PNG base name) ───────────
+  var BR_IMG = {
+    apple:     'safari',
+    chrome:    'chrome',
+    microsoft: 'edge',
+    mozilla:   'firefox'
   };
 
   // ── Browser trust badges ──────────────────────────────────────────────────
@@ -1326,13 +1320,13 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     ];
     var html = '<div class="br-badges">';
     pairs.forEach(function(p) {
-      var sc  = statusClass(p[2]);
-      var tip = esc(p[1]) + ': ' + esc(p[2] || 'N/A');
+      var sc      = statusClass(p[2]);
+      var trusted = sc === 'included' || sc === 'ev';
+      var name    = BR_IMG[p[0]];
+      var src     = 'img/logos/32/' + name + (trusted ? '_32.png' : '_grey_32.png');
+      var tip     = esc(p[1]) + ': ' + esc(p[2] || 'N/A');
       html += '<span class="br-badge" title="' + tip + '">'
-            +   '<span style="color:' + (sc==='included'?'#00d4aa':sc==='ev'?'#00b894':sc==='pending'?'#f5a623':sc==='removed'?'#e85555':'#3a4055') + '">'
-            +     BR_LOGOS[p[0]]
-            +   '</span>'
-            +   '<span class="br-dot d-' + sc + '"></span>'
+            +   '<img src="' + src + '" alt="' + esc(p[1]) + '" width="32" height="32">'
             + '</span>';
     });
     return html + '</div>';
@@ -1903,11 +1897,16 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
   }
 
   function trustCard(browser, status, evStatus) {
-    var sc  = statusClass(status);
-    var cls = 'cm-tc tc-' + sc;
-    var sCls= 's-' + sc;
-    var ev  = evStatus ? '<div class="cm-tc-ev-lbl">EV: ' + esc(evStatus) + '</div>' : '';
+    var sc      = statusClass(status);
+    var cls     = 'cm-tc tc-' + sc;
+    var sCls    = 's-' + sc;
+    var ev      = evStatus ? '<div class="cm-tc-ev-lbl">EV: ' + esc(evStatus) + '</div>' : '';
+    var key     = browser.toLowerCase();
+    var trusted = sc === 'included' || sc === 'ev';
+    var name    = BR_IMG[key] || key;
+    var imgSrc  = 'img/logos/32/' + name + (trusted ? '_32.png' : '_grey_32.png');
     return '<div class="' + cls + '">'
+      + '<img src="' + imgSrc + '" alt="' + esc(browser) + '" width="32" height="32" style="display:block;margin:0 auto .4rem">'
       + '<div class="cm-tc-browser">' + esc(browser) + '</div>'
       + '<div class="cm-tc-status ' + sCls + '">' + esc(status || 'Not listed') + '</div>'
       + ev + '</div>';
