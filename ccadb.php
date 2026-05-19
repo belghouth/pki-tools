@@ -25,12 +25,15 @@ require_once __DIR__ . '/config.php';
 
 const OWNERS_PER_PAGE = 25;
 
+define('HDR_JSON', 'Content-Type: application/json; charset=utf-8');
+
 // ── Input ─────────────────────────────────────────────────────────────────────
 
-$search   = trim(substr($_GET['q']      ?? '', 0, 200));
-$page     = max(1, (int)($_GET['p']     ?? 1));
-$isJson   = isset($_GET['json'])   && $_GET['json']   === '1';
-$detail   = trim($_GET['detail']   ?? '');
+$search     = trim(substr($_GET['q']          ?? '', 0, 200));
+$page       = max(1, (int)($_GET['p']         ?? 1));
+$isJson     = isset($_GET['json'])   && $_GET['json']   === '1';
+$detail     = trim($_GET['detail']   ?? '');
+$verifyUrl  = trim($_GET['verify_url'] ?? '');
 
 // ── DB ────────────────────────────────────────────────────────────────────────
 
@@ -52,10 +55,42 @@ if ($pdo) {
     }
 }
 
+// ── ?verify_url= — HEAD-check a CRL / policy URL ─────────────────────────────
+
+if ($verifyUrl !== '') {
+    header(HDR_JSON);
+    if (!preg_match('#^https?://#i', $verifyUrl)) {
+        echo json_encode(['ok' => false, 'status' => 'Invalid URL']);
+        exit;
+    }
+    $ch = curl_init($verifyUrl);
+    curl_setopt_array($ch, [
+        CURLOPT_NOBODY         => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS      => 5,
+        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_USERAGENT      => 'pki-tools/1.0 (URL verify)',
+        CURLOPT_SSL_VERIFYPEER => false,
+    ]);
+    curl_exec($ch);
+    $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlErr  = curl_error($ch);
+    curl_close($ch);
+    if ($curlErr !== '') {
+        echo json_encode(['ok' => false, 'status' => 'cURL: ' . $curlErr]);
+    } elseif ($httpCode >= 200 && $httpCode < 400) {
+        echo json_encode(['ok' => true,  'status' => (string)$httpCode]);
+    } else {
+        echo json_encode(['ok' => false, 'status' => (string)$httpCode]);
+    }
+    exit;
+}
+
 // ── ?detail=<sha256> — full cert data for modal ───────────────────────────────
 
 if ($detail !== '' && $pdo) {
-    header('Content-Type: application/json; charset=utf-8');
+    header(HDR_JSON);
     try {
         $st = $pdo->prepare(
             "SELECT data_json, pem_info FROM ccadb_v5_certs WHERE sha256 = ? LIMIT 1"
@@ -81,7 +116,7 @@ if ($detail !== '' && $pdo) {
 // ── ?json=1 — grouped list for live search ────────────────────────────────────
 
 if ($isJson && $pdo) {
-    header('Content-Type: application/json; charset=utf-8');
+    header(HDR_JSON);
     echo json_encode(queryGrouped($pdo, $search, $page));
     exit;
 }
@@ -457,6 +492,40 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     .cm-cap.on-cs{color:#f97316;border-color:rgba(249,115,22,.35);background:rgba(249,115,22,.07)}
     .cm-cap.on-smime{color:var(--amber);border-color:rgba(245,166,35,.35);background:rgba(245,166,35,.07)}
     .cm-cap.off{color:var(--muted);border-color:var(--border);opacity:.45}
+    /* trust bit chips */
+    .cm-tag-list{display:flex;flex-wrap:wrap;gap:.3rem}
+    .cm-tag{font-family:var(--mono);font-size:.65rem;border:1px solid rgba(0,212,170,.3);border-radius:3px;padding:.08rem .45rem;background:rgba(0,212,170,.06);color:var(--green);white-space:nowrap}
+    /* bool badge */
+    .cm-bool-true{font-family:var(--mono);font-size:.74rem;color:var(--green)}
+    .cm-bool-false{font-family:var(--mono);font-size:.74rem;color:var(--muted)}
+    /* status-of-root mini cards */
+    .cm-sor{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.1rem}
+    .cm-sor-card{border:1px solid var(--border);border-left:3px solid var(--border);border-radius:5px;padding:.3rem .55rem;background:rgba(255,255,255,.02);min-width:90px}
+    .cm-sor-card.tc-included{border-left-color:var(--green);background:rgba(0,212,170,.04)}
+    .cm-sor-card.tc-ev{border-left-color:#00b894;background:rgba(0,184,148,.04)}
+    .cm-sor-card.tc-pending{border-left-color:var(--amber);background:rgba(245,166,35,.04)}
+    .cm-sor-card.tc-removed{border-left-color:var(--red);background:rgba(232,85,85,.04)}
+    .cm-sor-card.tc-na{opacity:.45}
+    .cm-sor-br{font-family:var(--mono);font-size:.55rem;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:.15rem}
+    .cm-sor-st{font-size:.71rem;font-weight:500;line-height:1.25}
+    .cm-sor-st.s-included{color:var(--green)}
+    .cm-sor-st.s-ev{color:#00b894}
+    .cm-sor-st.s-pending{color:var(--amber)}
+    .cm-sor-st.s-removed{color:var(--red)}
+    .cm-sor-st.s-na{color:var(--muted)}
+    /* revocation badge */
+    .cm-revok-ok{font-family:var(--mono);font-size:.74rem;color:var(--green)}
+    .cm-revok-bad{font-family:var(--mono);font-size:.74rem;color:var(--red)}
+    .cm-revok-na{font-family:var(--mono);font-size:.74rem;color:var(--muted)}
+    /* CRL URL rows */
+    .cm-crl-list{display:flex;flex-direction:column;gap:.35rem}
+    .cm-crl-row{display:flex;align-items:center;gap:.4rem}
+    .cm-crl-input{flex:1;font-family:var(--mono);font-size:.67rem;background:#0e1219;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:.28rem .5rem;overflow-x:auto;white-space:nowrap;cursor:text;min-width:0}
+    .cm-crl-verify{font-family:var(--mono);font-size:.62rem;padding:.2rem .55rem;border-radius:4px;border:1px solid rgba(0,212,170,.35);background:transparent;color:var(--green);cursor:pointer;white-space:nowrap;flex-shrink:0}
+    .cm-crl-verify:hover{background:rgba(0,212,170,.08)}
+    .cm-crl-verify.checking{color:var(--muted);border-color:var(--border);cursor:default}
+    .cm-crl-verify.ok{color:var(--green);border-color:rgba(0,212,170,.5)}
+    .cm-crl-verify.broken{color:var(--red);border-color:rgba(232,85,85,.4)}
 
     /* audit sub-block */
     .cm-audit-block{margin-bottom:.5rem;padding-bottom:.5rem;border-bottom:1px solid rgba(42,48,64,.6)}
@@ -889,6 +958,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
         if (data.found) {
           cmBody.innerHTML = buildModalBody(cert, data.fields, data.pemInfo);
           wirePemButtons(data.pemInfo, cert);
+          wireVerifyButtons(cmBody);
         } else {
           cmBody.innerHTML = '<div class="cm-loading">Certificate data not found.</div>';
         }
@@ -936,6 +1006,102 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
       return esc(u);
     }).filter(Boolean);
     return '<dt class="cm-dt">' + esc(label) + '</dt><dd class="cm-dd">' + links.join('<br>') + '</dd>';
+  }
+
+  // ── Bool badge ────────────────────────────────────────────────────────────
+  function boolBadge(value) {
+    var lc = (value || '').toLowerCase().trim();
+    if (lc === 'true' || lc === 'yes' || lc === '1') {
+      return '<span class="cm-bool-true">&#10003; True</span>';
+    }
+    if (lc === 'false' || lc === 'no' || lc === '0') {
+      return '<span class="cm-bool-false">False</span>';
+    }
+    return '<span class="cm-dd-muted">—</span>';
+  }
+
+  // ── Revocation badge ──────────────────────────────────────────────────────
+  function revokBadge(value) {
+    if (!value || value === '-') { return '<span class="cm-dd-muted">—</span>'; }
+    var lc = value.toLowerCase();
+    if (lc.indexOf('not revok') !== -1) { return '<span class="cm-revok-ok">&#10003; ' + esc(value) + '</span>'; }
+    if (lc.indexOf('revok') !== -1 || lc.indexOf('remov') !== -1) { return '<span class="cm-revok-bad">&#10007; ' + esc(value) + '</span>'; }
+    return '<span class="cm-revok-na">' + esc(value) + '</span>';
+  }
+
+  // ── Tag list row (semicolon-separated) ───────────────────────────────────
+  function tagListRow(label, value) {
+    var dt = '<dt class="cm-dt">' + esc(label) + '</dt>';
+    if (!value || value === '-') {
+      return dt + '<dd class="cm-dd"><span class="cm-dd-muted">—</span></dd>';
+    }
+    var tags = value.split(/[;,]+/).map(function(t) {
+      t = t.trim();
+      return t ? '<span class="cm-tag">' + esc(t) + '</span>' : '';
+    }).filter(Boolean).join('');
+    return dt + '<dd class="cm-dd"><div class="cm-tag-list">' + tags + '</div></dd>';
+  }
+
+  // ── Status-of-Root row ────────────────────────────────────────────────────
+  function sorRow(label, value) {
+    var dt = '<dt class="cm-dt">' + esc(label) + '</dt>';
+    if (!value || value === '-') {
+      return dt + '<dd class="cm-dd"><span class="cm-dd-muted">—</span></dd>';
+    }
+    var cards = '';
+    value.split(/;/).forEach(function(seg) {
+      seg = seg.trim();
+      if (!seg) { return; }
+      var colon = seg.indexOf(':');
+      var br  = colon !== -1 ? seg.substring(0, colon).trim() : seg;
+      var st  = colon !== -1 ? seg.substring(colon + 1).trim() : '';
+      var sc  = statusClass(st);
+      cards += '<div class="cm-sor-card tc-' + sc + '">'
+             +   '<div class="cm-sor-br">' + esc(br) + '</div>'
+             +   '<div class="cm-sor-st s-' + sc + '">' + esc(st || '—') + '</div>'
+             + '</div>';
+    });
+    return dt + '<dd class="cm-dd"><div class="cm-sor">' + cards + '</div></dd>';
+  }
+
+  // ── CRL / JSON-URL-array row ──────────────────────────────────────────────
+  var _crlVerifyId = 0;
+  function crlRow(label, jsonValue) {
+    var dt = '<dt class="cm-dt">' + esc(label) + '</dt>';
+    if (!jsonValue || jsonValue === '-') {
+      return dt + '<dd class="cm-dd"><span class="cm-dd-muted">—</span></dd>';
+    }
+    var urls = [];
+    try { urls = JSON.parse(jsonValue); } catch(e) {
+      // fallback: treat as a single URL or newline/semicolon list
+      urls = jsonValue.split(/[\n;]+/).map(function(u){ return u.trim(); }).filter(Boolean);
+    }
+    if (!Array.isArray(urls) || !urls.length) {
+      return dt + '<dd class="cm-dd"><span class="cm-dd-muted">—</span></dd>';
+    }
+    var rows = '';
+    urls.forEach(function(url) {
+      var id = 'crl-verify-' + (++_crlVerifyId);
+      rows += '<div class="cm-crl-row">'
+            +   '<input class="cm-crl-input" type="text" readonly value="' + esc(url) + '" aria-label="' + esc(label) + ' URL">'
+            +   '<button class="cm-crl-verify" data-url="' + esc(url) + '" id="' + id + '">Verify</button>'
+            + '</div>';
+    });
+    return dt + '<dd class="cm-dd"><div class="cm-crl-list">' + rows + '</div></dd>';
+  }
+
+  // ── URL field row (non-truncated, scrollable) ─────────────────────────────
+  function urlFieldRow(label, value) {
+    var dt = '<dt class="cm-dt">' + esc(label) + '</dt>';
+    if (!value || value === '-' || !/^https?:\/\//.test(value)) {
+      return '<dt class="cm-dt">' + esc(label) + '</dt><dd class="cm-dd">'
+           + (!value || value === '-' ? '<span class="cm-dd-muted">—</span>' : esc(value)) + '</dd>';
+    }
+    var id = 'url-verify-' + (++_crlVerifyId);
+    return dt + '<dd class="cm-dd"><div class="cm-crl-row">'
+         + '<input class="cm-crl-input" type="text" readonly value="' + esc(value) + '" aria-label="' + esc(label) + '">'
+         + '<button class="cm-crl-verify" data-url="' + esc(value) + '" id="' + id + '">Verify</button>'
+         + '</div></dd>';
   }
 
   function trustCard(browser, status, evStatus) {
@@ -998,8 +1164,8 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
       + dlRow('Valid To (GMT)',   f(fields,'Valid To (GMT)'))
       + dlRow('AKI',              f(fields,'Authority Key Identifier'))
       + dlRow('SKI',              f(fields,'Subject Key Identifier'))
-      + dlRow('Constrained',      f(fields,'Technically Constrained'))
-      + dlRow('Revocation',       f(fields,'Revocation Status'))
+      + '<dt class="cm-dt">Constrained</dt><dd class="cm-dd">' + boolBadge(f(fields,'Technically Constrained')) + '</dd>'
+      + '<dt class="cm-dt">Revocation</dt><dd class="cm-dd">' + revokBadge(f(fields,'Revocation Status')) + '</dd>'
       + dlRow('Salesforce ID',    f(fields,'Salesforce Record ID'))
       + '</dl></div>';
 
@@ -1007,10 +1173,10 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     html += '<div class="cm-sect">'
       + '<div class="cm-sect-title">Trust Bits &amp; Capabilities</div>'
       + '<dl class="cm-dl">'
-      + dlRow('Trust Bits (root)',  f(fields,'Trust Bits for Root Cert'))
-      + dlRow('Derived Trust Bits', f(fields,'Derived Trust Bits'))
+      + tagListRow('Trust Bits (root)',  f(fields,'Trust Bits for Root Cert'))
+      + tagListRow('Derived Trust Bits', f(fields,'Derived Trust Bits'))
       + dlRow('EV OIDs',            f(fields,'EV OIDs for Root Cert'))
-      + dlRow('Status of Root',     f(fields,'Status of Root Cert'))
+      + sorRow('Status of Root',     f(fields,'Status of Root Cert'))
       + '</dl>'
       + '<div style="margin-top:.5rem">' + capRow(fields) + '</div>'
       + '</div>';
@@ -1047,12 +1213,12 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
       + '<dl class="cm-dl">'
       + multiLinkRow('Policy Docs',    f(fields,'Policy Documentation'))
       + multiLinkRow('Doc Repository', f(fields,'CA Document Repository'))
-      + dlRow('CP URL',                f(fields,'Certificate Policy (CP) URL'),                  true)
-      + dlRow('CP Effective',          f(fields,'CP Effective Date'))
-      + dlRow('CPS URL',               f(fields,'Certificate Practice Statement (CPS) URL'),     true)
-      + dlRow('CPS Effective',         f(fields,'CPS Effective Date'))
-      + dlRow('CP/CPS Statement',      f(fields,'Certificate Practice & Policy Statement'),       true)
-      + dlRow('MD/AsciiDoc URL',       f(fields,'MD/AsciiDoc CP/CPS URL'),                       true)
+      + urlFieldRow('CP URL',         f(fields,'Certificate Policy (CP) URL'))
+      + dlRow('CP Effective',         f(fields,'CP Effective Date'))
+      + urlFieldRow('CPS URL',        f(fields,'Certificate Practice Statement (CPS) URL'))
+      + dlRow('CPS Effective',        f(fields,'CPS Effective Date'))
+      + urlFieldRow('CP/CPS Statement', f(fields,'Certificate Practice & Policy Statement'))
+      + urlFieldRow('MD/AsciiDoc URL',  f(fields,'MD/AsciiDoc CP/CPS URL'))
       + '</dl></div>';
 
     // ⑥ Infrastructure
@@ -1061,14 +1227,14 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
       + '<dl class="cm-dl">'
       + dlRow('Country',       f(fields,'Country'))
       + dlRow('Sub CA Owner',  f(fields,'Subordinate CA Owner'))
-      + dlRow('CRL (Full)',    f(fields,'JSON Array of All Full CRL URLs'))
-      + dlRow('CRL (Parts)',   f(fields,'JSON Array of Partitioned CRLs'))
-      + dlRow('ACME DV',       f(fields,'DV ACME Directory URL(s)'), true)
-      + dlRow('ACME OV',       f(fields,'OV ACME Directory URL(s)'), true)
-      + dlRow('ACME EV',       f(fields,'EV ACME Directory URL(s)'), true)
-      + dlRow('Test (Valid)',   f(fields,'Test Website URL - Valid'),   true)
-      + dlRow('Test (Expired)', f(fields,'Test Website URL - Expired'), true)
-      + dlRow('Test (Revoked)', f(fields,'Test Website URL - Revoked'), true)
+      + crlRow('CRL (Full)',    f(fields,'JSON Array of All Full CRL URLs'))
+      + crlRow('CRL (Parts)',   f(fields,'JSON Array of Partitioned CRLs'))
+      + urlFieldRow('ACME DV',       f(fields,'DV ACME Directory URL(s)'))
+      + urlFieldRow('ACME OV',       f(fields,'OV ACME Directory URL(s)'))
+      + urlFieldRow('ACME EV',       f(fields,'EV ACME Directory URL(s)'))
+      + urlFieldRow('Test (Valid)',   f(fields,'Test Website URL - Valid'))
+      + urlFieldRow('Test (Expired)', f(fields,'Test Website URL - Expired'))
+      + urlFieldRow('Test (Revoked)', f(fields,'Test Website URL - Revoked'))
       + '</dl></div>';
 
     // ⑦ PEM
@@ -1122,6 +1288,35 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
       var name = (cert.sha256 || 'certificate').replace(/[^a-zA-Z0-9_-]/g,'').substring(0,40) || 'certificate';
       a.href = url; a.download = name + '.pem'; a.click();
       URL.revokeObjectURL(url);
+    });
+  }
+
+  // ── Wire Verify buttons (CRL / URL fields) ───────────────────────────────
+  function wireVerifyButtons(container) {
+    container.querySelectorAll('.cm-crl-verify').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var url = btn.getAttribute('data-url');
+        if (!url || btn.classList.contains('checking')) { return; }
+        btn.classList.add('checking');
+        btn.textContent = '…';
+        fetch('/ccadb.php?verify_url=' + encodeURIComponent(url))
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            btn.classList.remove('checking');
+            if (data.ok) {
+              btn.classList.add('ok');
+              btn.textContent = '✓ ' + (data.status || 'OK');
+            } else {
+              btn.classList.add('broken');
+              btn.textContent = '✗ ' + (data.status || 'Error');
+            }
+          })
+          .catch(function() {
+            btn.classList.remove('checking');
+            btn.classList.add('broken');
+            btn.textContent = '✗ Failed';
+          });
+      });
     });
   }
 
