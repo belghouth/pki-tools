@@ -20,19 +20,15 @@ $_navLabel = $navLabel ?? '';
 <style>
 @media (pointer: coarse) { body { overscroll-behavior-y: none; } }
 
-/* ── Light theme variable overrides (applies to all pages via CSS vars) ── */
+/* ── Light theme: invert everything, then restore media to original ── */
 html[data-theme="light"] {
-  --bg:      #f4f6f9;
-  --surface: #ffffff;
-  --surface2:#edf0f5;
-  --border:  #d0d7e3;
-  --text:    #1c2333;
-  --muted:   #5a6a84;
-  --accent:  #009e82;
-  --green:   #009e82;
-  --red:     #c0392b;
-  --amber:   #b7760d;
-  --purple:  #6d4fe0;
+  filter: invert(1) hue-rotate(180deg);
+}
+html[data-theme="light"] img,
+html[data-theme="light"] video,
+html[data-theme="light"] iframe,
+html[data-theme="light"] canvas {
+  filter: invert(1) hue-rotate(180deg);
 }
 
 /* ── Shared site nav ──────────────────────────────────────────────────────── */
@@ -120,7 +116,7 @@ body { padding-top: 56px; }
   padding: 0;
 }
 .snav-theme-btn:hover { color: #e8edf5; border-color: #3a4458; background: rgba(255,255,255,0.04); }
-/* Show sun in dark mode (click → go light), moon in light mode (click → go dark) */
+/* Show moon in dark mode (→ switch to light), sun in light mode (→ switch to dark) */
 .snav-theme-btn .icon-sun  { display: none; }
 .snav-theme-btn .icon-moon { display: block; }
 html[data-theme="light"] .snav-theme-btn .icon-moon { display: none; }
@@ -177,44 +173,6 @@ html[data-theme="light"] .snav-theme-btn .icon-sun  { display: block; }
   }
 }
 
-/* ── Light theme nav overrides ── */
-html[data-theme="light"] .snav {
-  background: rgba(244,246,249,0.96);
-  border-bottom-color: #d0d7e3;
-}
-html[data-theme="light"] .snav-wordmark { color: #009e82; }
-html[data-theme="light"] .snav-label    { color: #8a9ab8; }
-html[data-theme="light"] .snav-link     { color: #4a5a74; }
-html[data-theme="light"] .snav-link:hover {
-  color: #1c2333;
-  background: rgba(0,0,0,0.04);
-  border-color: rgba(0,0,0,0.08);
-}
-html[data-theme="light"] .snav-link[aria-current="page"] {
-  color: #009e82;
-  background: rgba(0,158,130,0.08);
-  border-color: rgba(0,158,130,0.2);
-}
-html[data-theme="light"] .snav-theme-btn {
-  border-color: #d0d7e3;
-  color: #4a5a74;
-}
-html[data-theme="light"] .snav-theme-btn:hover {
-  color: #1c2333;
-  border-color: #a0b0c8;
-  background: rgba(0,0,0,0.04);
-}
-html[data-theme="light"] .snav-burger { border-color: #d0d7e3; }
-html[data-theme="light"] .snav-burger span { background: #4a5a74; }
-html[data-theme="light"] .snav-burger:hover { border-color: #a0b0c8; background: rgba(0,0,0,0.03); }
-html[data-theme="light"] .snav-burger:hover span { background: #1c2333; }
-@media (max-width: 820px) {
-  html[data-theme="light"] .snav-links {
-    background: #f4f6f9;
-    border-bottom-color: #d0d7e3;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.1);
-  }
-}
 </style>
 
 <nav class="snav" id="siteNav">
