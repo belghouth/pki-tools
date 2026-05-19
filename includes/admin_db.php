@@ -279,6 +279,29 @@ function schemaIntel(PDO $pdo): void {
         val        TEXT        NOT NULL DEFAULT '',
         updated_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS ccadb_sync_log (
+        id            INT UNSIGNED   NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        resource_key  VARCHAR(40)    NOT NULL,
+        status        ENUM('ok','error') NOT NULL DEFAULT 'ok',
+        synced_at     DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        row_count     INT UNSIGNED   NOT NULL DEFAULT 0,
+        error_message TEXT           DEFAULT NULL,
+        INDEX idx_resource (resource_key),
+        INDEX idx_synced   (synced_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $pdo->exec("CREATE TABLE IF NOT EXISTS ccadb_rows (
+        id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        resource_key  VARCHAR(40)     NOT NULL,
+        sync_id       INT UNSIGNED    NOT NULL,
+        row_number    INT UNSIGNED    NOT NULL,
+        data_json     JSON            NOT NULL,
+        search_text   TEXT            NOT NULL DEFAULT '',
+        INDEX idx_resource (resource_key),
+        INDEX idx_sync     (sync_id),
+        FULLTEXT KEY ft_search (search_text)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 }
 
 function adminSchema(PDO $pdo): void {
