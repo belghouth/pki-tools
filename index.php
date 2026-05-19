@@ -426,6 +426,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     .tool-card-bar--amber   { background: #f59e0b; }
     .tool-card-bar--orange  { background: #f97316; }
     .tool-card-bar--green   { background: #22c55e; }
+    .tool-card-bar--ghost   { background: var(--border); }
+
+    /* ── Ghost / coming-soon cards ── */
+    .tool-card--ghost {
+      pointer-events: none; user-select: none;
+      border-style: dashed; position: relative;
+    }
+    .tool-card--ghost:hover { transform: none; border-color: var(--border); }
+    .ghost-body {
+      flex: 1; padding: 1.2rem 1.25rem;
+      display: flex; flex-direction: column; gap: .5rem;
+      filter: blur(5px); opacity: .25;
+    }
+    .ghost-icon-ph {
+      width: 2rem; height: 2rem;
+      background: var(--border); border-radius: 6px; margin-bottom: .3rem; flex-shrink: 0;
+    }
+    .ghost-line {
+      height: .6rem; background: var(--border); border-radius: 3px;
+    }
+    .ghost-tags { display: flex; gap: .4rem; margin-top: .3rem; }
+    .ghost-tag  { height: 1.3rem; width: 3.5rem; background: var(--border); border-radius: 10px; }
+    .ghost-overlay {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: .45rem;
+    }
+    .ghost-overlay svg { color: var(--muted); opacity: .45; }
+    .ghost-overlay-lbl {
+      font-family: var(--mono); font-size: .65rem;
+      color: var(--muted); letter-spacing: .12em; text-transform: uppercase;
+    }
 
     .tool-card-body { padding: 1.4rem; flex: 1; display: flex; flex-direction: column; }
 
@@ -651,6 +683,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     </div>
   </section>
 
+  <?php
+  function ghostCard(array $widths = [75, 100, 90, 55]): string {
+    $lines = '';
+    foreach ($widths as $w) {
+      $lines .= '<div class="ghost-line" style="width:' . $w . '%"></div>';
+    }
+    $lock = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+    return '<div class="tool-card tool-card--ghost" aria-hidden="true" tabindex="-1">'
+      . '<div class="tool-card-bar tool-card-bar--ghost"></div>'
+      . '<div class="ghost-body">'
+      .   '<div class="ghost-icon-ph"></div>'
+      .   $lines
+      .   '<div class="ghost-tags"><div class="ghost-tag"></div><div class="ghost-tag"></div></div>'
+      . '</div>'
+      . '<div class="ghost-overlay">' . $lock . '<span class="ghost-overlay-lbl">Coming Soon</span></div>'
+      . '</div>';
+  }
+  ?>
   <!-- ── Tools ──────────────────────────────────────────────────────────────── -->
   <section class="section section--alt" id="tools">
     <div class="container">
@@ -712,6 +762,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
               <a href="/mpca_factory.php" class="tool-card-link">Open Tool →</a>
             </div>
           </div>
+
+          <?= ghostCard([80, 100, 85, 60]) ?>
 
         </div>
       </div>
@@ -786,6 +838,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
             </div>
           </div>
 
+          <?= ghostCard([70, 100, 90, 50]) ?>
+          <?= ghostCard([85, 95, 75, 65]) ?>
+
         </div>
       </div>
 
@@ -827,6 +882,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
               <a href="/eseal_signer.php" class="tool-card-link">Open Tool →</a>
             </div>
           </div>
+
+          <?= ghostCard([90, 100, 80, 55]) ?>
 
         </div>
       </div>
@@ -918,6 +975,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
               <a href="/ccadb.php" class="tool-card-link">Open Tool →</a>
             </div>
           </div>
+
+          <?= ghostCard([75, 100, 88, 58]) ?>
 
         </div>
       </div>
