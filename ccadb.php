@@ -884,7 +884,8 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     /* ── Browser trust badges ── */
     .br-badges{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
     .br-badge{display:inline-flex;flex-shrink:0}
-    .br-badge img{width:32px;height:32px;display:block;transition:transform .15s}
+    .br-badge img{width:26px;height:26px;display:block;transition:transform .15s}
+    .br-badge img.br-grey{opacity:.7}
     .br-badge:hover img{transform:scale(1.15)}
 
     /* ── Empty / loading ── */
@@ -1326,7 +1327,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
       var src     = 'img/logos/32/' + name + (trusted ? '_32.png' : '_grey_32.png');
       var tip     = esc(p[1]) + ': ' + esc(p[2] || 'N/A');
       html += '<span class="br-badge" title="' + tip + '">'
-            +   '<img src="' + src + '" alt="' + esc(p[1]) + '" width="32" height="32">'
+            +   '<img src="' + src + '" alt="' + esc(p[1]) + '" width="26" height="26"' + (trusted ? '' : ' class="br-grey"') + '>'
             + '</span>';
     });
     return html + '</div>';
@@ -1906,7 +1907,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     var name    = BR_IMG[key] || key;
     var imgSrc  = 'img/logos/32/' + name + (trusted ? '_32.png' : '_grey_32.png');
     return '<div class="' + cls + '">'
-      + '<img src="' + imgSrc + '" alt="' + esc(browser) + '" width="32" height="32" style="display:block;margin:0 auto .4rem">'
+      + '<img src="' + imgSrc + '" alt="' + esc(browser) + '" width="26" height="26" style="display:block;margin:0 auto .4rem' + (trusted ? '' : ';opacity:.7') + '">'
       + '<div class="cm-tc-browser">' + esc(browser) + '</div>'
       + '<div class="cm-tc-status ' + sCls + '">' + esc(status || 'Not listed') + '</div>'
       + ev + '</div>';
