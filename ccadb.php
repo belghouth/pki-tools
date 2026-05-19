@@ -128,7 +128,7 @@ function ccadbPageUrl(int $p, string $tab, string $q): string {
 }
 
 /**
- * Find a value in a row by trying exact then partial key matches (case-insensitive).
+ * Find a value in a CCADB row by exact then partial case-insensitive key match.
  */
 function ccadbFindInRow(array $row, string ...$needles): string {
     foreach ($needles as $needle) {
@@ -149,42 +149,73 @@ function ccadbFindInRow(array $row, string ...$needles): string {
 }
 
 /**
- * Extract structured fields from a raw CCADB included-roots row.
- * Column names are matched case-insensitively to cope with CSV header variations.
+ * Extract all structured fields from a raw CCADB included-roots row for both
+ * the compact table row and the full detail modal.
  */
 function ccadbExtractIncludedRoot(array $row): array {
-    $cn = ccadbFindInRow($row, 'Certificate Subject Common Name');
-    $o  = ccadbFindInRow($row, 'Certificate Subject Organization');
-    $ou = ccadbFindInRow($row, 'Certificate Subject Organizational Unit');
+    // Subject DN parts
+    $subjectCN = ccadbFindInRow($row, 'Certificate Subject Common Name');
+    $subjectO  = ccadbFindInRow($row, 'Certificate Subject Organization');
+    $subjectOU = ccadbFindInRow($row, 'Certificate Subject Organizational Unit');
     $dnParts = [];
-    if ($cn !== '') {
-        $dnParts[] = 'CN=' . $cn;
+    if ($subjectCN !== '') {
+        $dnParts[] = 'CN=' . $subjectCN;
     }
-    if ($ou !== '') {
-        $dnParts[] = 'OU=' . $ou;
+    if ($subjectOU !== '') {
+        $dnParts[] = 'OU=' . $subjectOU;
     }
-    if ($o !== '') {
-        $dnParts[] = 'O=' . $o;
+    if ($subjectO !== '') {
+        $dnParts[] = 'O=' . $subjectO;
     }
 
+    // PEM normalisation
     $pem = trim(trim(ccadbFindInRow($row, 'PEM Info', 'PEM'), '"\''));
     if ($pem !== '' && !str_contains($pem, '-----')) {
-        $pem = "-----BEGIN CERTIFICATE-----\n" . wordwrap($pem, 64, "\n", true) . "\n-----END CERTIFICATE-----";
+        $pem = "-----BEGIN CERTIFICATE-----\n"
+             . wordwrap($pem, 64, "\n", true)
+             . "\n-----END CERTIFICATE-----";
     }
 
     return [
+        // ── compact table columns ──────────────────────────────────────────
         'caOwner'      => ccadbFindInRow($row, 'CA Owner'),
         'certName'     => ccadbFindInRow($row, 'Certificate Name', 'CA Owner/Certificate Name'),
         'subjectDN'    => implode(', ', $dnParts),
+        'subjectCN'    => $subjectCN,
         'sha256'       => ccadbFindInRow($row, 'SHA-256 Fingerprint', 'SHA256 Fingerprint', 'Fingerprint'),
         'validFrom'    => ccadbFindInRow($row, 'Valid From [GMT]', 'Valid From', 'Not Before'),
         'validTo'      => ccadbFindInRow($row, 'Valid To [GMT]', 'Valid To', 'Not After'),
+        // ── browser trust ──────────────────────────────────────────────────
+        'mozStatus'    => ccadbFindInRow($row, 'Mozilla Status'),
+        'mozEvStatus'  => ccadbFindInRow($row, 'Mozilla EV Root Certificate Inclusion Status'),
+        'msStatus'     => ccadbFindInRow($row, 'Microsoft Status'),
+        'msEvStatus'   => ccadbFindInRow($row, 'Microsoft EV Root Certificate Inclusion Status'),
+        'appleStatus'  => ccadbFindInRow($row, 'Apple Root Certificate Status', 'Apple Status'),
+        'appleEvStatus'=> ccadbFindInRow($row, 'Apple EV Root Certificate Inclusion Status'),
+        'chromeStatus' => ccadbFindInRow($row, 'Google Chrome Inclusion Status', 'Chrome Status'),
+        // ── capabilities / EKU ────────────────────────────────────────────
         'eku'          => ccadbFindInRow($row, 'Extended Key Usage'),
         'trustBits'    => ccadbFindInRow($row, 'Trust Bits'),
-        'mozStatus'    => ccadbFindInRow($row, 'Mozilla Status'),
-        'msStatus'     => ccadbFindInRow($row, 'Microsoft Status'),
-        'appleStatus'  => ccadbFindInRow($row, 'Apple Root Certificate Status', 'Apple Status'),
-        'chromeStatus' => ccadbFindInRow($row, 'Google Chrome Inclusion Status', 'Chrome Status'),
+        'tlsCapable'   => ccadbFindInRow($row, 'TLS Capable'),
+        'tlsEvCapable' => ccadbFindInRow($row, 'TLS EV Capable'),
+        'evPolicies'   => ccadbFindInRow($row, 'TLS EV Policy OID(s)', 'EV Policy OID'),
+        'codeSign'     => ccadbFindInRow($row, 'Code Signing Capable'),
+        // ── identity / crypto ─────────────────────────────────────────────
+        'subjectO'     => $subjectO,
+        'subjectOU'    => $subjectOU,
+        'issuerCN'     => ccadbFindInRow($row, 'Certificate Issuer Common Name'),
+        'issuerO'      => ccadbFindInRow($row, 'Certificate Issuer Organization'),
+        'issuerOU'     => ccadbFindInRow($row, 'Certificate Issuer Organizational Unit'),
+        'serial'       => ccadbFindInRow($row, 'Certificate Serial Number'),
+        'spkiSha256'   => ccadbFindInRow($row, 'Subject + SPKI SHA256'),
+        'pubKeyAlgo'   => ccadbFindInRow($row, 'Public Key Algorithm'),
+        'sigHash'      => ccadbFindInRow($row, 'Signature Hash Algorithm'),
+        // ── compliance ────────────────────────────────────────────────────
+        'cpsUri'       => ccadbFindInRow($row, 'CPS URI'),
+        'testValid'    => ccadbFindInRow($row, 'Test Website - Valid'),
+        'testRevoked'  => ccadbFindInRow($row, 'Test Website - Revoked'),
+        'testExpired'  => ccadbFindInRow($row, 'Test Website - Expired'),
+        // ── certificate ───────────────────────────────────────────────────
         'pem'          => $pem,
     ];
 }
@@ -260,7 +291,7 @@ $navLabel = 'CCADB Browser';
     a:hover { color: #fff; }
 
     /* ── Layout ── */
-    .page { max-width: 1600px; margin: 0 auto; padding: 2.5rem 1.5rem 6rem; }
+    .page { max-width: 1400px; margin: 0 auto; padding: 2.5rem 1.5rem 6rem; }
     .page-hd { margin-bottom: 1.8rem; }
     .page-hd h1 { font-size: 1.75rem; font-weight: 600; color: #fff; margin-bottom: 0.25rem; }
     .page-hd p  { font-size: 0.85rem; color: var(--muted); }
@@ -268,16 +299,14 @@ $navLabel = 'CCADB Browser';
     /* ── Tabs ── */
     .tab-nav {
       display: flex; align-items: center; gap: 0.25rem;
-      border-bottom: 1px solid var(--border);
-      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border); margin-bottom: 1.5rem;
     }
     .tab-btn {
       font-family: var(--sans); font-size: 0.82rem; font-weight: 400;
       color: var(--muted); background: none; border: none;
       padding: 0.55rem 1rem; border-radius: 6px 6px 0 0;
       cursor: pointer; text-decoration: none; border-bottom: 2px solid transparent;
-      transition: color 150ms, border-color 150ms;
-      margin-bottom: -1px;
+      transition: color 150ms, border-color 150ms; margin-bottom: -1px;
     }
     .tab-btn:hover  { color: var(--text); }
     .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
@@ -313,79 +342,54 @@ $navLabel = 'CCADB Browser';
     table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
     thead th {
       background: #1a1f28; color: var(--muted);
-      font-family: var(--mono); font-size: 0.7rem; font-weight: 600;
+      font-family: var(--mono); font-size: 0.68rem; font-weight: 600;
       letter-spacing: 0.05em; text-transform: uppercase;
       padding: 0.6rem 0.85rem; text-align: left;
       border-bottom: 1px solid var(--border); white-space: nowrap;
     }
     tbody tr { border-bottom: 1px solid #1e2430; transition: background 80ms; }
     tbody tr:last-child { border-bottom: none; }
-    tbody tr:hover { background: rgba(255,255,255,0.03); }
-    tbody td { padding: 0.5rem 0.85rem; vertical-align: top; }
+    tbody td { padding: 0.5rem 0.85rem; vertical-align: middle; }
     tbody td a { color: var(--accent); }
     tbody td a:hover { color: #fff; text-decoration: underline; }
 
-    /* ── Included-roots specific ── */
-    .ir-owner { font-weight: 500; color: #e8edf7; max-width: 200px; word-break: break-word; }
-    .ir-certname { color: var(--text); max-width: 220px; word-break: break-word; font-size: 0.76rem; }
-    .ir-dn {
-      font-family: var(--mono); font-size: 0.68rem; color: var(--muted);
-      max-width: 280px; word-break: break-all; line-height: 1.5;
-    }
-    .ir-fp {
-      font-family: var(--mono); font-size: 0.68rem; color: #8892a4;
-      white-space: nowrap;
-    }
+    /* ── Included-roots compact rows ── */
+    tr.ir-row { cursor: pointer; }
+    tr.ir-row:hover { background: rgba(0,212,170,0.04); }
+    tr.ir-row:hover td.ir-owner { color: #fff; }
+    .ir-owner { font-weight: 500; color: #e8edf7; max-width: 180px; }
+    .ir-certname { color: var(--text); max-width: 200px; font-size: 0.76rem; line-height: 1.4; }
+    .ir-subject { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); max-width: 200px; word-break: break-word; }
+    .ir-fp { font-family: var(--mono); font-size: 0.67rem; color: #8892a4; white-space: nowrap; }
     .ir-fp abbr { text-decoration: none; cursor: default; }
     .ir-valid { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
-    .ir-valid .valid-to.expired { color: var(--red); }
-    .ir-trust { max-width: 260px; }
+    .ir-valid .vto.expired { color: var(--red); }
+    .ir-chevron { color: var(--muted); font-size: 0.75rem; opacity: 0.5; }
+    tr.ir-row:hover .ir-chevron { opacity: 1; color: var(--accent); }
 
-    /* ── Browser status pills ── */
-    .br-pills { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.4rem; }
-    .br-pill {
-      display: inline-flex; align-items: center; gap: 0.25rem;
-      font-size: 0.65rem; font-family: var(--mono);
-      border: 1px solid; border-radius: 3px;
-      padding: 0.1rem 0.4rem; white-space: nowrap; line-height: 1.5;
+    /* ── Browser dots (compact, in table row) ── */
+    .br-dots { display: flex; gap: 4px; align-items: center; }
+    .br-dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.12); flex-shrink: 0;
     }
-    .br-pill.pill-included { color: #00d4aa; border-color: rgba(0,212,170,0.4); background: rgba(0,212,170,0.06); }
-    .br-pill.pill-pending  { color: #f5a623; border-color: rgba(245,166,35,0.4);  background: rgba(245,166,35,0.06); }
-    .br-pill.pill-removed  { color: #e85555; border-color: rgba(232,85,85,0.4);   background: rgba(232,85,85,0.06); }
-    .br-pill.pill-other    { color: var(--muted); border-color: var(--border); }
-    .br-label { font-weight: 600; opacity: 0.75; }
+    .br-dot.d-included { background: #00d4aa; border-color: rgba(0,212,170,0.4); }
+    .br-dot.d-pending  { background: #f5a623; border-color: rgba(245,166,35,0.4); }
+    .br-dot.d-removed  { background: #e85555; border-color: rgba(232,85,85,0.4); }
+    .br-dot.d-na       { background: transparent; border-color: #2a3040; }
+    .br-dot-labels { display: flex; gap: 3px; margin-top: 3px; }
+    .br-dot-label { font-family: var(--mono); font-size: 0.55rem; color: var(--muted); letter-spacing: 0; text-align: center; width: 9px; }
 
-    /* ── EKU tags ── */
-    .eku-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.2rem; }
-    .eku-tag {
-      font-size: 0.63rem; font-family: var(--mono);
-      background: rgba(167,139,250,0.1); color: var(--purple);
-      border: 1px solid rgba(167,139,250,0.3); border-radius: 3px;
-      padding: 0.05rem 0.35rem; white-space: nowrap;
+    /* ── Screen-reader only ── */
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0;
+      margin: -1px; overflow: hidden; clip: rect(0,0,0,0);
+      white-space: nowrap; border: 0;
     }
-
-    /* ── Action buttons ── */
-    .ir-actions { white-space: nowrap; }
-    .ir-btn {
-      display: inline-flex; align-items: center; justify-content: center;
-      font-family: var(--mono); font-size: 0.65rem; font-weight: 600;
-      border-radius: 4px; border: 1px solid; cursor: pointer;
-      padding: 0.18rem 0.5rem; line-height: 1.4;
-      background: none; transition: background 120ms, border-color 120ms, color 120ms;
-      margin: 0.15rem 0.1rem 0 0;
-    }
-    .ir-btn-dl    { color: #8892a4; border-color: #2a3040; }
-    .ir-btn-dl:hover    { color: var(--text); border-color: #3a4458; background: rgba(255,255,255,0.04); }
-    .ir-btn-view  { color: #8892a4; border-color: #2a3040; }
-    .ir-btn-view:hover  { color: var(--text); border-color: #3a4458; background: rgba(255,255,255,0.04); }
-    .ir-btn-lint  { color: var(--accent); border-color: rgba(0,212,170,0.35); }
-    .ir-btn-lint:hover  { background: rgba(0,212,170,0.08); border-color: var(--accent); }
-    .ir-btn-parse { color: var(--purple); border-color: rgba(167,139,250,0.35); }
-    .ir-btn-parse:hover { background: rgba(167,139,250,0.08); border-color: var(--purple); }
 
     /* ── Empty / loading ── */
-    .tbl-empty { text-align: center; padding: 4rem 1rem; color: var(--muted); font-family: var(--mono); font-size: 0.82rem; }
-    .tbl-loading { text-align: center; padding: 3rem 1rem; color: var(--muted); font-size: 0.82rem; }
+    .tbl-empty    { text-align: center; padding: 4rem 1rem; color: var(--muted); font-family: var(--mono); font-size: 0.82rem; }
+    .tbl-loading  { text-align: center; padding: 3rem 1rem; color: var(--muted); font-size: 0.82rem; }
 
     /* ── Pagination ── */
     .pagination {
@@ -414,54 +418,155 @@ $navLabel = 'CCADB Browser';
     .sync-badge.stale .dot { background: var(--amber); }
     .sync-badge.never .dot { background: var(--red); }
 
-    /* ── Certificate Modal ── */
-    dialog.cert-modal-box {
-      background: #13171e; border: 1px solid #2a3040;
-      border-radius: 10px; width: min(800px, 95vw);
-      max-height: 90vh; display: flex; flex-direction: column;
-      box-shadow: 0 24px 80px rgba(0,0,0,0.7);
-      padding: 0; color: var(--text);
+    /* ══════════════════════════════════════════════════════════════════════════
+       ROOT DETAIL MODAL
+    ══════════════════════════════════════════════════════════════════════════ */
+
+    dialog.ir-modal {
+      position: fixed; inset: 0;
+      width: 100vw; height: 100vh;
+      max-width: 100%; max-height: 100%;
+      background: transparent; border: none; padding: 0;
+      /* flex centering set inline when open; dialog default display is inline-block */
     }
-    dialog.cert-modal-box::backdrop {
-      background: rgba(0,0,0,0.75); backdrop-filter: blur(4px);
+    dialog.ir-modal[open] {
+      display: flex; align-items: center; justify-content: center;
     }
-    .cert-modal-hd {
-      display: flex; align-items: center; gap: 0.75rem;
-      padding: 1rem 1.25rem; border-bottom: 1px solid #2a3040; flex-shrink: 0;
+    dialog.ir-modal::backdrop {
+      background: rgba(0,0,0,0.78); backdrop-filter: blur(5px);
     }
-    .cert-modal-hd h2 { font-size: 0.9rem; font-weight: 600; color: #fff; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .cert-modal-close {
+
+    .ir-modal-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; width: min(860px, 96vw);
+      max-height: min(88vh, 800px);
+      display: flex; flex-direction: column;
+      box-shadow: 0 32px 100px rgba(0,0,0,0.8);
+      overflow: hidden;
+    }
+
+    /* header */
+    .ir-modal-hd {
+      display: flex; align-items: flex-start; gap: 1rem;
+      padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--border);
+      flex-shrink: 0; background: #0f1318;
+    }
+    .ir-modal-hd-text { flex: 1; min-width: 0; }
+    .ir-modal-eyebrow {
+      font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--accent); margin-bottom: 0.2rem;
+    }
+    .ir-modal-title {
+      font-size: 1rem; font-weight: 600; color: #fff;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .ir-modal-owner {
+      font-size: 0.78rem; color: var(--muted); margin-top: 0.15rem;
+    }
+    .ir-modal-close {
       background: none; border: none; color: var(--muted); cursor: pointer;
-      font-size: 1.3rem; line-height: 1; padding: 0.2rem;
-      border-radius: 4px; flex-shrink: 0;
+      font-size: 1.4rem; line-height: 1; padding: 0.2rem 0.4rem;
+      border-radius: 4px; flex-shrink: 0; transition: color 120ms, background 120ms;
     }
-    .cert-modal-close:hover { color: var(--text); background: rgba(255,255,255,0.06); }
-    .cert-modal-body { overflow-y: auto; padding: 1rem 1.25rem; flex: 1; }
-    .cert-modal-pem {
-      font-family: var(--mono); font-size: 0.72rem; color: #a8b8cc;
-      line-height: 1.6; white-space: pre-wrap; word-break: break-all;
-      background: #0b0e14; border: 1px solid #1e2430; border-radius: 6px;
-      padding: 1rem; margin-bottom: 0.75rem;
+    .ir-modal-close:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+
+    /* scrollable body */
+    .ir-modal-body { overflow-y: auto; flex: 1; padding: 0; }
+
+    /* section blocks */
+    .ir-modal-sect {
+      padding: 1rem 1.5rem; border-bottom: 1px solid #1e2430;
     }
-    .cert-modal-ft {
-      display: flex; gap: 0.6rem; flex-wrap: wrap;
-      padding: 0.75rem 1.25rem; border-top: 1px solid #1e2430; flex-shrink: 0;
+    .ir-modal-sect:last-of-type { border-bottom: none; }
+    .ir-sect-title {
+      font-family: var(--mono); font-size: 0.65rem; font-weight: 600;
+      letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 0.75rem;
     }
-    .cert-modal-btn {
-      font-family: var(--mono); font-size: 0.72rem; border-radius: 5px;
-      border: 1px solid; cursor: pointer; padding: 0.3rem 0.75rem;
-      background: none; transition: background 120ms;
+
+    /* definition list rows */
+    .ir-dl { display: grid; grid-template-columns: 160px 1fr; gap: 0.15rem 1rem; }
+    .ir-dt {
+      font-family: var(--mono); font-size: 0.68rem; color: var(--muted);
+      padding: 0.2rem 0; align-self: start; white-space: nowrap;
     }
-    .cert-modal-btn-copy  { color: var(--accent); border-color: rgba(0,212,170,0.35); }
-    .cert-modal-btn-copy:hover  { background: rgba(0,212,170,0.08); }
-    .cert-modal-btn-lint  { color: var(--accent); border-color: rgba(0,212,170,0.35); }
-    .cert-modal-btn-lint:hover  { background: rgba(0,212,170,0.08); }
-    .cert-modal-btn-parse { color: var(--purple); border-color: rgba(167,139,250,0.35); }
-    .cert-modal-btn-parse:hover { background: rgba(167,139,250,0.08); }
+    .ir-dd {
+      font-size: 0.78rem; color: var(--text); padding: 0.2rem 0;
+      word-break: break-word; font-family: var(--mono);
+    }
+    .ir-dd a { color: var(--accent); }
+    .ir-dd a:hover { color: #fff; }
+    .ir-dd-muted { color: var(--muted); }
+
+    /* browser trust cards */
+    .ir-trust-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      gap: 0.6rem;
+    }
+    .ir-trust-card {
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 0.65rem 0.85rem; background: rgba(255,255,255,0.02);
+      border-left: 3px solid var(--border);
+    }
+    .ir-trust-card.tc-included { border-left-color: var(--green); background: rgba(0,212,170,0.04); }
+    .ir-trust-card.tc-pending  { border-left-color: var(--amber); background: rgba(245,166,35,0.04); }
+    .ir-trust-card.tc-removed  { border-left-color: var(--red);   background: rgba(232,85,85,0.04); }
+    .ir-trust-card.tc-na       { opacity: 0.55; }
+    .ir-tc-browser {
+      font-family: var(--mono); font-size: 0.62rem; font-weight: 600;
+      letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+      margin-bottom: 0.25rem;
+    }
+    .ir-tc-status {
+      font-size: 0.8rem; font-weight: 500; color: var(--text); line-height: 1.3;
+    }
+    .ir-tc-status.s-included { color: var(--green); }
+    .ir-tc-status.s-pending  { color: var(--amber); }
+    .ir-tc-status.s-removed  { color: var(--red); }
+    .ir-tc-ev {
+      font-family: var(--mono); font-size: 0.65rem; color: var(--muted); margin-top: 0.2rem;
+    }
+
+    /* EKU tags */
+    .ir-eku-tags { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+    .ir-eku-tag {
+      font-size: 0.65rem; font-family: var(--mono);
+      background: rgba(167,139,250,0.1); color: var(--purple);
+      border: 1px solid rgba(167,139,250,0.3); border-radius: 3px;
+      padding: 0.1rem 0.4rem; white-space: nowrap;
+    }
+
+    /* ── PEM section + action buttons (matching artifact_parser.php style) ── */
+    .ap-embed-cert-pem {
+      display: block; width: 100%; height: 90px; resize: none;
+      background: rgba(0,0,0,0.3); color: #8a9ab8;
+      border: 1px solid var(--border); border-radius: 4px;
+      font-family: var(--mono); font-size: 0.6rem; line-height: 1.45;
+      padding: 0.4rem 0.6rem; outline: none; white-space: pre; overflow-y: auto;
+      margin-bottom: 0.5rem;
+    }
+    .ap-embed-cert-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .ap-embed-cert-btn {
+      font-family: var(--mono); font-size: 0.65rem; text-transform: uppercase;
+      letter-spacing: 0.07em; font-weight: 600; cursor: pointer;
+      border-radius: 4px; padding: 0.3em 0.8em; background: none;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .ap-embed-cert-lint  { color: var(--accent); border: 1px solid rgba(0,212,170,0.35); }
+    .ap-embed-cert-lint:hover  { background: rgba(0,212,170,0.08); border-color: var(--accent); }
+    .ap-embed-cert-parse { color: var(--purple); border: 1px solid rgba(167,139,250,0.35); }
+    .ap-embed-cert-parse:hover { background: rgba(167,139,250,0.08); border-color: var(--purple); }
+    .ap-embed-cert-copy  { color: var(--muted); border: 1px solid var(--border); }
+    .ap-embed-cert-copy:hover  { color: var(--text); border-color: #3a4458; background: rgba(255,255,255,0.04); }
+    .ap-embed-cert-dl    { color: var(--muted); border: 1px solid var(--border); }
+    .ap-embed-cert-dl:hover    { color: var(--text); border-color: #3a4458; background: rgba(255,255,255,0.04); }
 
     @media (max-width: 640px) {
       .search-wrap { flex: 1 1 100%; }
       .toolbar-meta { margin-left: 0; width: 100%; }
+      .ir-dl { grid-template-columns: 1fr; }
+      .ir-dt { padding-bottom: 0; }
     }
   </style>
 </head>
@@ -492,32 +597,33 @@ $navLabel = 'CCADB Browser';
 
 <?php if ($tab === 'included_roots'): ?>
   <!-- ══════════════════════════════════════════════════════════════════════════
-       INCLUDED ROOTS — live-search AJAX table
+       INCLUDED ROOTS — live-search AJAX table + detail modal
   ══════════════════════════════════════════════════════════════════════════ -->
 
   <div class="toolbar">
     <div class="search-wrap">
       <input type="search" id="irSearch" value="<?= htmlspecialchars($search) ?>"
              placeholder="Search CA owner, certificate name, DN…"
-             autocomplete="off" spellcheck="false" aria-label="Search">
-      <button type="button" class="search-clear" id="irClear" style="<?= $search === '' ? 'display:none' : '' ?>"
+             autocomplete="off" spellcheck="false" aria-label="Search included roots">
+      <button type="button" class="search-clear" id="irClear"
+              style="<?= $search === '' ? 'display:none' : '' ?>"
               aria-label="Clear search">×</button>
     </div>
-    <div class="search-spinner" id="irSpinner"></div>
-    <span class="toolbar-meta" id="irMeta"></span>
+    <div class="search-spinner" id="irSpinner" aria-hidden="true"></div>
+    <span class="toolbar-meta" id="irMeta" aria-live="polite"></span>
   </div>
 
-  <div class="tbl-wrap" id="irTableWrap">
-    <table id="irTable">
+  <div class="tbl-wrap">
+    <table>
       <thead>
         <tr>
           <th>CA Owner</th>
           <th>Certificate Name</th>
-          <th>Subject DN</th>
+          <th>Subject</th>
+          <th title="Mozilla · Microsoft · Apple · Chrome">Trust</th>
+          <th>Valid Until</th>
           <th>SHA-256</th>
-          <th>Validity</th>
-          <th>Trust &amp; EKU</th>
-          <th>Actions</th>
+          <th><span class="sr-only">Open detail</span></th>
         </tr>
       </thead>
       <tbody id="irTbody">
@@ -528,35 +634,83 @@ $navLabel = 'CCADB Browser';
 
   <nav class="pagination" id="irPagination" aria-label="Page navigation"></nav>
 
-  <!-- ── Certificate Modal ── -->
-  <dialog class="cert-modal-box" id="certModal" aria-labelledby="certModalTitle">
-    <div class="cert-modal-hd">
-      <h2 id="certModalTitle">Certificate</h2>
-      <button class="cert-modal-close" id="certModalClose" aria-label="Close">×</button>
-    </div>
-    <div class="cert-modal-body">
-      <pre class="cert-modal-pem" id="certModalPem"></pre>
-    </div>
-    <div class="cert-modal-ft">
-      <button class="cert-modal-btn cert-modal-btn-copy" id="certModalCopy">Copy PEM</button>
-      <button class="cert-modal-btn cert-modal-btn-lint" id="certModalLint">Open in Linters</button>
-      <button class="cert-modal-btn cert-modal-btn-parse" id="certModalParse">Open in Artifact Parser</button>
-    </div>
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       ROOT DETAIL MODAL
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <dialog class="ir-modal" id="irModal" aria-labelledby="irModalTitle">
+    <div class="ir-modal-box">
+
+      <!-- Header -->
+      <div class="ir-modal-hd">
+        <div class="ir-modal-hd-text">
+          <div class="ir-modal-eyebrow">Root CA Certificate</div>
+          <h2 class="ir-modal-title" id="irModalTitle">—</h2>
+          <div class="ir-modal-owner" id="irModalOwner"></div>
+        </div>
+        <button class="ir-modal-close" id="irModalClose" aria-label="Close">×</button>
+      </div>
+
+      <!-- Scrollable body -->
+      <div class="ir-modal-body" id="irModalBody">
+
+        <!-- ① Browser Trust -->
+        <div class="ir-modal-sect">
+          <div class="ir-sect-title">Browser Trust</div>
+          <div class="ir-trust-grid" id="irModalTrust"></div>
+        </div>
+
+        <!-- ② Identity -->
+        <div class="ir-modal-sect">
+          <div class="ir-sect-title">Identity</div>
+          <dl class="ir-dl" id="irModalIdentity"></dl>
+        </div>
+
+        <!-- ③ Validity & Cryptography -->
+        <div class="ir-modal-sect">
+          <div class="ir-sect-title">Validity &amp; Cryptography</div>
+          <dl class="ir-dl" id="irModalValidity"></dl>
+        </div>
+
+        <!-- ④ Capabilities & EKU -->
+        <div class="ir-modal-sect">
+          <div class="ir-sect-title">Capabilities &amp; Extended Key Usage</div>
+          <dl class="ir-dl" id="irModalEku"></dl>
+        </div>
+
+        <!-- ⑤ Compliance -->
+        <div class="ir-modal-sect" id="irModalComplianceSect">
+          <div class="ir-sect-title">Compliance</div>
+          <dl class="ir-dl" id="irModalCompliance"></dl>
+        </div>
+
+        <!-- ⑥ Certificate PEM -->
+        <div class="ir-modal-sect" id="irModalPemSect" style="display:none">
+          <div class="ir-sect-title">Certificate (PEM)</div>
+          <textarea class="ap-embed-cert-pem" id="irModalPemArea" readonly spellcheck="false"></textarea>
+          <div class="ap-embed-cert-actions">
+            <button class="ap-embed-cert-btn ap-embed-cert-lint"  id="irModalLint">Lint</button>
+            <button class="ap-embed-cert-btn ap-embed-cert-parse" id="irModalParse">Inspect</button>
+            <button class="ap-embed-cert-btn ap-embed-cert-copy"  id="irModalCopy">Copy PEM</button>
+            <button class="ap-embed-cert-btn ap-embed-cert-dl"    id="irModalDl">Download .pem</button>
+          </div>
+        </div>
+
+      </div><!-- /.ir-modal-body -->
+    </div><!-- /.ir-modal-box -->
   </dialog>
 
   <script>
   (function () {
     'use strict';
 
-    // ── Initial data injected by PHP ──────────────────────────────────────────
-    var initData = <?= json_encode($irInitialData) ?>;
-    var irRows   = [];   // current page row objects
-    var irPage   = 1;
-    var irPages  = 1;
-    var irTotal  = 0;
-    var irSearch = '';
-    var irTimer  = null;
-    var modalPem = '';
+    var initData   = <?= json_encode($irInitialData) ?>;
+    var irRows     = [];
+    var irSearch   = '';
+    var irPage     = 1;
+    var irPages    = 1;
+    var irTotal    = 0;
+    var irTimer    = null;
+    var activeRow  = null; // currently open row object
 
     // ── DOM refs ──────────────────────────────────────────────────────────────
     var searchEl   = document.getElementById('irSearch');
@@ -565,103 +719,89 @@ $navLabel = 'CCADB Browser';
     var metaEl     = document.getElementById('irMeta');
     var tbody      = document.getElementById('irTbody');
     var pagination = document.getElementById('irPagination');
-    var modal      = document.getElementById('certModal');
-    var modalTitle = document.getElementById('certModalTitle');
-    var modalPemEl = document.getElementById('certModalPem');
-    var modalCopy  = document.getElementById('certModalCopy');
-    var modalLint  = document.getElementById('certModalLint');
-    var modalParse = document.getElementById('certModalParse');
+
+    var modal        = document.getElementById('irModal');
+    var modalTitle   = document.getElementById('irModalTitle');
+    var modalOwner   = document.getElementById('irModalOwner');
+    var modalTrust   = document.getElementById('irModalTrust');
+    var modalIdent   = document.getElementById('irModalIdentity');
+    var modalValid   = document.getElementById('irModalValidity');
+    var modalEku     = document.getElementById('irModalEku');
+    var modalCompSect= document.getElementById('irModalComplianceSect');
+    var modalComp    = document.getElementById('irModalCompliance');
+    var modalPemSect = document.getElementById('irModalPemSect');
+    var modalPemArea = document.getElementById('irModalPemArea');
+    var modalLint    = document.getElementById('irModalLint');
+    var modalParse   = document.getElementById('irModalParse');
+    var modalCopy    = document.getElementById('irModalCopy');
+    var modalDl      = document.getElementById('irModalDl');
 
     // ── Escape HTML ───────────────────────────────────────────────────────────
     function esc(s) {
       return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
-    // ── Browser status pill class ─────────────────────────────────────────────
-    function pillClass(status) {
-      var lc = (status || '').toLowerCase();
-      if (!lc || lc === '-') return '';
-      if (lc.indexOf('included') !== -1 || lc.indexOf('trusted') !== -1 || lc.indexOf('approved') !== -1) return 'pill-included';
-      if (lc.indexOf('pending') !== -1 || lc.indexOf('transitional') !== -1) return 'pill-pending';
-      if (lc.indexOf('removed') !== -1 || lc.indexOf('rejected') !== -1 || lc.indexOf('expired') !== -1 || lc.indexOf('not included') !== -1) return 'pill-removed';
-      return 'pill-other';
+    // ── Classify a browser status string ─────────────────────────────────────
+    function statusClass(s) {
+      var lc = (s || '').toLowerCase();
+      if (!lc || lc === '-') { return 'na'; }
+      if (lc.indexOf('included') !== -1 || lc.indexOf('trusted') !== -1) { return 'included'; }
+      if (lc.indexOf('pending')  !== -1 || lc.indexOf('transitional') !== -1) { return 'pending'; }
+      if (lc.indexOf('removed')  !== -1 || lc.indexOf('rejected') !== -1
+          || lc.indexOf('expired') !== -1 || lc.indexOf('not included') !== -1) { return 'removed'; }
+      return 'na';
     }
 
-    // ── Render browser status + EKU cell ─────────────────────────────────────
-    function renderTrustCell(row) {
-      var html = '<div class="br-pills">';
+    // ── Compact browser dots (table row) ─────────────────────────────────────
+    function renderBrowserDots(row) {
       var browsers = [
-        ['Moz', row.mozStatus],
-        ['MS',  row.msStatus],
-        ['Apple', row.appleStatus],
-        ['Chrome', row.chromeStatus],
+        { label: 'Moz',    status: row.mozStatus    },
+        { label: 'MS',     status: row.msStatus     },
+        { label: 'Apple',  status: row.appleStatus  },
+        { label: 'Chrome', status: row.chromeStatus },
       ];
-      var anyBrowser = false;
-      browsers.forEach(function(b) {
-        var name = b[0], status = b[1] || '';
-        if (!status || status === '-' || status === '') return;
-        var cls = pillClass(status);
-        if (!cls) return;
-        anyBrowser = true;
-        html += '<span class="br-pill ' + cls + '"><span class="br-label">' + esc(name) + '</span> ' + esc(status) + '</span>';
+      var dots   = '<div class="br-dots">';
+      var labels = '<div class="br-dot-labels">';
+      browsers.forEach(function (b) {
+        var sc    = statusClass(b.status);
+        var title = b.label + ': ' + (b.status || 'N/A');
+        dots   += '<span class="br-dot d-' + sc + '" title="' + esc(title) + '"></span>';
+        labels += '<span class="br-dot-label" aria-hidden="true">' + esc(b.label.substring(0,3)) + '</span>';
       });
-      if (!anyBrowser) html += '<span style="color:var(--muted);font-size:0.7rem">—</span>';
-      html += '</div>';
-
-      // EKU tags
-      var ekuSrc = row.eku || row.trustBits || '';
-      if (ekuSrc && ekuSrc !== '-') {
-        var items = ekuSrc.split(/[;,]+/);
-        html += '<div class="eku-tags">';
-        items.forEach(function(item) {
-          item = item.trim();
-          if (item) html += '<span class="eku-tag">' + esc(item) + '</span>';
-        });
-        html += '</div>';
-      }
-      return html;
+      dots   += '</div>';
+      labels += '</div>';
+      return dots + labels;
     }
 
-    // ── Render fingerprint (truncated with tooltip) ───────────────────────────
+    // ── Render fingerprint (abbr with full value as tooltip) ──────────────────
     function renderFp(sha256) {
-      if (!sha256) return '<span style="color:var(--muted)">—</span>';
-      var short = sha256.replace(/:/g, '').substring(0, 16).toUpperCase();
-      return '<abbr title="' + esc(sha256) + '">' + esc(short) + '…</abbr>';
+      if (!sha256) { return '<span style="color:var(--muted)">—</span>'; }
+      var clean = sha256.replace(/:/g, '').toUpperCase();
+      return '<abbr title="' + esc(sha256) + '">' + clean.substring(0, 16) + '…</abbr>';
     }
 
-    // ── Render validity dates ─────────────────────────────────────────────────
-    function renderValidity(from, to) {
-      var now  = new Date();
-      var toDate = to ? new Date(to) : null;
-      var expiredClass = (toDate && toDate < now) ? ' expired' : '';
-      var f = from || '—';
-      var t = to   || '—';
-      return '<span style="display:block">' + esc(f) + '</span>'
-           + '<span class="valid-to' + expiredClass + '">' + esc(t) + '</span>';
+    // ── Render validity (valid-until only) ────────────────────────────────────
+    function renderValidUntil(to) {
+      if (!to) { return '<span style="color:var(--muted)">—</span>'; }
+      var expired = to && (new Date(to)) < new Date();
+      return '<span class="vto' + (expired ? ' expired' : '') + '">' + esc(to) + '</span>';
     }
 
-    // ── Render one table row ──────────────────────────────────────────────────
+    // ── Compact table row ─────────────────────────────────────────────────────
     function renderRow(row, idx) {
-      var hasPem = !!(row.pem && row.pem.indexOf('CERTIFICATE') !== -1);
-      var actions = '';
-      if (hasPem) {
-        actions += '<button class="ir-btn ir-btn-dl"   onclick="irDownload(' + idx + ')" title="Download certificate">↓ DL</button>';
-        actions += '<button class="ir-btn ir-btn-view" onclick="irModal(' + idx + ')"    title="View certificate PEM">⊕ View</button>';
-        actions += '<button class="ir-btn ir-btn-lint" onclick="irLint(' + idx + ')"    title="Lint in linters.php">Lint</button>';
-        actions += '<button class="ir-btn ir-btn-parse" onclick="irParse(' + idx + ')"  title="Inspect in Artifact Parser">Parse</button>';
-      }
-      return '<tr>'
-        + '<td class="ir-owner">'    + esc(row.caOwner)   + '</td>'
-        + '<td class="ir-certname">' + esc(row.certName)  + '</td>'
-        + '<td class="ir-dn">'       + esc(row.subjectDN) + '</td>'
-        + '<td class="ir-fp">'       + renderFp(row.sha256) + '</td>'
-        + '<td class="ir-valid">'    + renderValidity(row.validFrom, row.validTo) + '</td>'
-        + '<td class="ir-trust">'    + renderTrustCell(row) + '</td>'
-        + '<td class="ir-actions">'  + actions + '</td>'
+      return '<tr class="ir-row" tabindex="0" role="button" aria-label="View details for '
+        + esc(row.certName || row.caOwner) + '" data-idx="' + idx + '">'
+        + '<td class="ir-owner">'   + esc(row.caOwner || '—') + '</td>'
+        + '<td class="ir-certname">'+ esc(row.certName || '—') + '</td>'
+        + '<td class="ir-subject">' + esc(row.subjectCN || row.subjectDN || '—') + '</td>'
+        + '<td>' + renderBrowserDots(row) + '</td>'
+        + '<td class="ir-valid">'   + renderValidUntil(row.validTo) + '</td>'
+        + '<td class="ir-fp">'      + renderFp(row.sha256) + '</td>'
+        + '<td class="ir-chevron" aria-hidden="true">›</td>'
         + '</tr>';
     }
 
-    // ── Render table body ─────────────────────────────────────────────────────
+    // ── Render table ──────────────────────────────────────────────────────────
     function renderTable(data) {
       irRows  = data.rows  || [];
       irTotal = data.total || 0;
@@ -670,167 +810,258 @@ $navLabel = 'CCADB Browser';
 
       if (!irRows.length) {
         tbody.innerHTML = '<tr><td colspan="7" class="tbl-empty">'
-          + (irSearch ? 'No results for &ldquo;' + esc(irSearch) + '&rdquo;.' : 'No rows.') + '</td></tr>';
+          + (irSearch ? 'No results for &ldquo;' + esc(irSearch) + '&rdquo;.' : 'No rows.')
+          + '</td></tr>';
       } else {
         var html = '';
-        irRows.forEach(function(row, idx) { html += renderRow(row, idx); });
+        irRows.forEach(function (row, idx) { html += renderRow(row, idx); });
         tbody.innerHTML = html;
       }
 
-      // Meta
       var unit   = irSearch ? 'result' : 'row';
       var plural = irTotal !== 1 ? 's' : '';
-      metaEl.textContent = irTotal.toLocaleString() + ' ' + unit + plural
-        + (irPages > 1 ? ' · page ' + irPage + ' of ' + irPages : '');
+      metaEl.textContent = irTotal.toLocaleString() + ' ' + unit + plural
+        + (irPages > 1 ? ' · page ' + irPage + ' of ' + irPages : '');
 
       renderPagination();
     }
 
-    // ── Render pagination ─────────────────────────────────────────────────────
+    // ── Pagination ────────────────────────────────────────────────────────────
     function renderPagination() {
       if (irPages <= 1) { pagination.innerHTML = ''; return; }
-
       var html = '';
       var prev = irPage > 1;
       var next = irPage < irPages;
-
       html += prev ? '<a href="#" data-p="1" aria-label="First">&laquo;</a>'
                    : '<span aria-disabled="true">&laquo;</span>';
-      html += prev ? '<a href="#" data-p="' + (irPage - 1) + '" aria-label="Previous">&lsaquo;</a>'
+      html += prev ? '<a href="#" data-p="' + (irPage-1) + '" aria-label="Previous">&lsaquo;</a>'
                    : '<span aria-disabled="true">&lsaquo;</span>';
-
-      var win = 2;
-      var s   = Math.max(1, irPage - win);
-      var e   = Math.min(irPages, irPage + win);
-      if (s > 1) html += '<span class="dots">&hellip;</span>';
+      var s = Math.max(1, irPage - 2), e = Math.min(irPages, irPage + 2);
+      if (s > 1) { html += '<span class="dots">&hellip;</span>'; }
       for (var i = s; i <= e; i++) {
-        if (i === irPage) html += '<span class="cur" aria-current="page">' + i + '</span>';
-        else html += '<a href="#" data-p="' + i + '" aria-label="Page ' + i + '">' + i + '</a>';
+        if (i === irPage) { html += '<span class="cur" aria-current="page">' + i + '</span>'; }
+        else { html += '<a href="#" data-p="' + i + '" aria-label="Page ' + i + '">' + i + '</a>'; }
       }
-      if (e < irPages) html += '<span class="dots">&hellip;</span>';
-
-      html += next ? '<a href="#" data-p="' + (irPage + 1) + '" aria-label="Next">&rsaquo;</a>'
+      if (e < irPages) { html += '<span class="dots">&hellip;</span>'; }
+      html += next ? '<a href="#" data-p="' + (irPage+1) + '" aria-label="Next">&rsaquo;</a>'
                    : '<span aria-disabled="true">&rsaquo;</span>';
       html += next ? '<a href="#" data-p="' + irPages + '" aria-label="Last">&raquo;</a>'
                    : '<span aria-disabled="true">&raquo;</span>';
-
       pagination.innerHTML = html;
     }
 
-    // ── Fetch from server ─────────────────────────────────────────────────────
+    // ── AJAX fetch ────────────────────────────────────────────────────────────
     function fetchPage(q, page) {
       irSearch = q;
       spinner.classList.add('active');
       var url = '/ccadb.php?tab=included_roots&json=1&q=' + encodeURIComponent(q) + '&p=' + page;
       fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-        .then(function(r) { return r.json(); })
-        .then(function(data) { renderTable(data); })
-        .catch(function() {
+        .then(function (r) { return r.json(); })
+        .then(function (data) { renderTable(data); })
+        .catch(function () {
           tbody.innerHTML = '<tr><td colspan="7" class="tbl-empty">Request failed — please try again.</td></tr>';
         })
-        .finally(function() { spinner.classList.remove('active'); });
+        .finally(function () { spinner.classList.remove('active'); });
     }
 
-    // ── Search input handler ──────────────────────────────────────────────────
-    searchEl.addEventListener('input', function() {
+    // ── Search ────────────────────────────────────────────────────────────────
+    searchEl.addEventListener('input', function () {
       var q = this.value;
       clearBtn.style.display = q ? '' : 'none';
       clearTimeout(irTimer);
-      irTimer = setTimeout(function() { fetchPage(q, 1); }, 320);
+      irTimer = setTimeout(function () { fetchPage(q, 1); }, 320);
     });
 
-    clearBtn.addEventListener('click', function() {
+    clearBtn.addEventListener('click', function () {
       searchEl.value = '';
       clearBtn.style.display = 'none';
       fetchPage('', 1);
       searchEl.focus();
     });
 
-    // ── Pagination click ──────────────────────────────────────────────────────
-    pagination.addEventListener('click', function(e) {
+    // ── Pagination clicks ─────────────────────────────────────────────────────
+    pagination.addEventListener('click', function (e) {
       var a = e.target.closest('a[data-p]');
-      if (!a) return;
+      if (!a) { return; }
       e.preventDefault();
       fetchPage(irSearch, parseInt(a.dataset.p, 10));
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
 
-    // ── Action: download ──────────────────────────────────────────────────────
-    window.irDownload = function(idx) {
-      var row = irRows[idx];
-      if (!row || !row.pem) return;
-      var blob = new Blob([row.pem], { type: 'application/x-pem-file' });
-      var url  = URL.createObjectURL(blob);
-      var a    = document.createElement('a');
-      var name = (row.sha256 || 'certificate').replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 40) || 'certificate';
-      a.href = url; a.download = name + '.pem'; a.click();
-      URL.revokeObjectURL(url);
-    };
+    // ── Row click (open modal) ────────────────────────────────────────────────
+    tbody.addEventListener('click', function (e) {
+      var row = e.target.closest('tr.ir-row');
+      if (!row) { return; }
+      openModal(parseInt(row.dataset.idx, 10));
+    });
+    tbody.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') { return; }
+      var row = e.target.closest('tr.ir-row');
+      if (!row) { return; }
+      e.preventDefault();
+      openModal(parseInt(row.dataset.idx, 10));
+    });
 
-    // ── Action: modal ─────────────────────────────────────────────────────────
-    window.irModal = function(idx) {
-      var row = irRows[idx];
-      if (!row || !row.pem) { return; }
-      modalPem = row.pem;
-      modalTitle.textContent = row.certName || row.caOwner || 'Certificate';
-      modalPemEl.textContent = row.pem;
-      modal.showModal();
-    };
-
-    function closeModal() {
-      modal.close();
+    // ── Modal helpers ─────────────────────────────────────────────────────────
+    function dlRow(label, value, isLink) {
+      var valHtml;
+      if (!value || value === '-') {
+        valHtml = '<span class="ir-dd-muted">—</span>';
+      } else if (isLink && value.match(/^https?:\/\//)) {
+        valHtml = '<a href="' + esc(value) + '" target="_blank" rel="noopener noreferrer">'
+                + esc(value.length > 60 ? value.substring(0, 57) + '…' : value) + '</a>';
+      } else {
+        valHtml = esc(value);
+      }
+      return '<dt class="ir-dt">' + esc(label) + '</dt><dd class="ir-dd">' + valHtml + '</dd>';
     }
 
-    document.getElementById('certModalClose').addEventListener('click', closeModal);
-    modal.addEventListener('click', function(e) { if (e.target === modal) { closeModal(); } });
-    // <dialog> handles Escape natively; this listener is a belt-and-suspenders fallback.
-    modal.addEventListener('cancel', function(e) { e.preventDefault(); closeModal(); });
+    function trustCardHtml(browser, status, evStatus) {
+      var sc  = statusClass(status);
+      var cardCls = 'ir-trust-card tc-' + sc;
+      var statCls = 's-' + sc;
+      var ev = evStatus ? '<div class="ir-tc-ev">EV: ' + esc(evStatus) + '</div>' : '';
+      return '<div class="' + cardCls + '">'
+           + '<div class="ir-tc-browser">' + esc(browser) + '</div>'
+           + '<div class="ir-tc-status ' + statCls + '">' + esc(status || 'Not listed') + '</div>'
+           + ev
+           + '</div>';
+    }
 
-    modalCopy.addEventListener('click', function() {
-      if (!modalPem) return;
-      navigator.clipboard.writeText(modalPem).then(function() {
+    function ekuTagsHtml(src) {
+      if (!src || src === '-') { return '<span class="ir-dd-muted" style="font-family:var(--mono);font-size:.75rem">—</span>'; }
+      var tags = '';
+      src.split(/[;,]+/).forEach(function (item) {
+        item = item.trim();
+        if (item) { tags += '<span class="ir-eku-tag">' + esc(item) + '</span>'; }
+      });
+      return '<div class="ir-eku-tags">' + tags + '</div>';
+    }
+
+    // ── Open modal ────────────────────────────────────────────────────────────
+    function openModal(idx) {
+      var r = irRows[idx];
+      if (!r) { return; }
+      activeRow = r;
+
+      // Header
+      modalTitle.textContent = r.certName || r.caOwner || 'Certificate';
+      modalOwner.textContent = r.caOwner ? 'CA Owner: ' + r.caOwner : '';
+
+      // ① Browser trust cards
+      modalTrust.innerHTML =
+        trustCardHtml('Mozilla',   r.mozStatus,    r.mozEvStatus)
+      + trustCardHtml('Microsoft', r.msStatus,     r.msEvStatus)
+      + trustCardHtml('Apple',     r.appleStatus,  r.appleEvStatus)
+      + trustCardHtml('Chrome',    r.chromeStatus, '');
+
+      // ② Identity
+      modalIdent.innerHTML =
+          dlRow('Certificate Name', r.certName)
+        + dlRow('Subject CN',       r.subjectCN)
+        + dlRow('Subject O',        r.subjectO)
+        + dlRow('Subject OU',       r.subjectOU)
+        + dlRow('Issuer CN',        r.issuerCN)
+        + dlRow('Issuer O',         r.issuerO)
+        + dlRow('Issuer OU',        r.issuerOU)
+        + dlRow('Serial Number',    r.serial)
+        + dlRow('SHA-256',          r.sha256)
+        + dlRow('Subject+SPKI SHA-256', r.spkiSha256);
+
+      // ③ Validity & Crypto
+      var expired = r.validTo && (new Date(r.validTo)) < new Date();
+      var toHtml  = r.validTo
+        ? '<span style="' + (expired ? 'color:var(--red)' : '') + '">' + esc(r.validTo) + (expired ? ' (expired)' : '') + '</span>'
+        : '<span class="ir-dd-muted">—</span>';
+      modalValid.innerHTML =
+          dlRow('Valid From', r.validFrom)
+        + '<dt class="ir-dt">Valid To</dt><dd class="ir-dd">' + toHtml + '</dd>'
+        + dlRow('Public Key Algo', r.pubKeyAlgo)
+        + dlRow('Sig Hash Algo',   r.sigHash);
+
+      // ④ Capabilities / EKU
+      modalEku.innerHTML =
+          '<dt class="ir-dt">Extended Key Usage</dt><dd class="ir-dd">' + ekuTagsHtml(r.eku || r.trustBits) + '</dd>'
+        + dlRow('Trust Bits',       r.trustBits)
+        + dlRow('TLS Capable',      r.tlsCapable)
+        + dlRow('TLS EV Capable',   r.tlsEvCapable)
+        + dlRow('EV Policy OIDs',   r.evPolicies)
+        + dlRow('Code Signing',     r.codeSign);
+
+      // ⑤ Compliance
+      var compRows = dlRow('CPS URI', r.cpsUri, true)
+        + dlRow('Test Website (Valid)',   r.testValid,   true)
+        + dlRow('Test Website (Revoked)', r.testRevoked, true)
+        + dlRow('Test Website (Expired)', r.testExpired, true);
+      modalComp.innerHTML = compRows;
+
+      // ⑥ PEM
+      if (r.pem && r.pem.indexOf('CERTIFICATE') !== -1) {
+        modalPemArea.value = r.pem;
+        modalPemSect.style.display = '';
+      } else {
+        modalPemSect.style.display = 'none';
+      }
+
+      // Scroll body to top
+      document.getElementById('irModalBody').scrollTop = 0;
+      modal.showModal();
+    }
+
+    // ── Close modal ───────────────────────────────────────────────────────────
+    function closeModal() {
+      modal.close();
+      activeRow = null;
+    }
+
+    document.getElementById('irModalClose').addEventListener('click', closeModal);
+    // Clicks on backdrop (the dialog element itself, outside the box)
+    modal.addEventListener('click', function (e) {
+      if (e.target === this) { closeModal(); }
+    });
+    modal.addEventListener('cancel', function (e) { e.preventDefault(); closeModal(); });
+
+    // ── PEM actions ───────────────────────────────────────────────────────────
+    modalLint.addEventListener('click', function () {
+      if (!activeRow || !activeRow.pem) { return; }
+      sessionStorage.setItem('pki_prefill_cert', activeRow.pem);
+      window.open('/linters.php', '_blank', 'noopener');
+    });
+
+    modalParse.addEventListener('click', function () {
+      if (!activeRow || !activeRow.pem) { return; }
+      sessionStorage.removeItem('mkt_eseal_cms');
+      sessionStorage.removeItem('mkt_eseal_xades');
+      sessionStorage.removeItem('meerkat_pem');
+      sessionStorage.setItem('pki_prefill_cert', activeRow.pem);
+      window.open('/artifact_parser.php', '_blank', 'noopener');
+    });
+
+    modalCopy.addEventListener('click', function () {
+      if (!activeRow || !activeRow.pem) { return; }
+      navigator.clipboard.writeText(activeRow.pem).then(function () {
         var orig = modalCopy.textContent;
         modalCopy.textContent = 'Copied!';
-        setTimeout(function() { modalCopy.textContent = orig; }, 1500);
+        setTimeout(function () { modalCopy.textContent = orig; }, 1500);
       });
     });
 
-    modalLint.addEventListener('click', function() {
-      if (!modalPem) return;
-      sessionStorage.setItem('pki_prefill_cert', modalPem);
-      window.open('/linters.php', '_blank', 'noopener');
-      closeModal();
+    modalDl.addEventListener('click', function () {
+      if (!activeRow || !activeRow.pem) { return; }
+      var blob = new Blob([activeRow.pem], { type: 'application/x-pem-file' });
+      var url  = URL.createObjectURL(blob);
+      var a    = document.createElement('a');
+      var name = (activeRow.sha256 || 'certificate').replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 40) || 'certificate';
+      a.href = url; a.download = name + '.pem'; a.click();
+      URL.revokeObjectURL(url);
     });
 
-    modalParse.addEventListener('click', function() {
-      if (!modalPem) return;
-      sessionStorage.setItem('pki_prefill_cert', modalPem);
-      window.open('/artifact_parser.php', '_blank', 'noopener');
-      closeModal();
-    });
-
-    // ── Action: lint (direct) ─────────────────────────────────────────────────
-    window.irLint = function(idx) {
-      var row = irRows[idx];
-      if (!row || !row.pem) return;
-      sessionStorage.setItem('pki_prefill_cert', row.pem);
-      window.open('/linters.php', '_blank', 'noopener');
-    };
-
-    // ── Action: parse (direct) ────────────────────────────────────────────────
-    window.irParse = function(idx) {
-      var row = irRows[idx];
-      if (!row || !row.pem) return;
-      sessionStorage.setItem('pki_prefill_cert', row.pem);
-      window.open('/artifact_parser.php', '_blank', 'noopener');
-    };
-
-    // ── Initial render from PHP data ──────────────────────────────────────────
+    // ── Initial render ────────────────────────────────────────────────────────
+    irSearch = searchEl.value;
     if (initData) {
-      irSearch = searchEl.value;
       renderTable(initData);
     } else {
-      fetchPage(searchEl.value, 1);
+      fetchPage(irSearch, 1);
     }
 
   }());
@@ -873,7 +1104,9 @@ $navLabel = 'CCADB Browser';
   <?php elseif ($syncInfo === null && $total === 0): ?>
   <div class="tbl-empty">No data yet — run <code>cron/ccadb_sync.php</code> to populate.</div>
   <?php elseif (empty($rows)): ?>
-  <div class="tbl-empty"><?= $search !== '' ? 'No results for &ldquo;' . htmlspecialchars($search) . '&rdquo;.' : 'No rows.' ?></div>
+  <div class="tbl-empty">
+    <?= $search !== '' ? 'No results for &ldquo;' . htmlspecialchars($search) . '&rdquo;.' : 'No rows.' ?>
+  </div>
   <?php else: ?>
   <div class="tbl-wrap">
     <table>
@@ -896,7 +1129,6 @@ $navLabel = 'CCADB Browser';
     </table>
   </div>
 
-  <!-- ── Pagination ── -->
   <?php if ($pages > 1): ?>
   <nav class="pagination" aria-label="Page navigation">
     <?php if ($page > 1): ?>
