@@ -20,15 +20,15 @@ $_navLabel = $navLabel ?? '';
 <style>
 @media (pointer: coarse) { body { overscroll-behavior-y: none; } }
 
-/* ── Light theme: invert everything, then restore media to original ── */
+/* ── Light theme: invert + contrast boost, then restore media to original ── */
 html[data-theme="light"] {
-  filter: invert(1) hue-rotate(180deg);
+  filter: invert(1) hue-rotate(180deg) contrast(1.1);
 }
 html[data-theme="light"] img,
 html[data-theme="light"] video,
 html[data-theme="light"] iframe,
 html[data-theme="light"] canvas {
-  filter: invert(1) hue-rotate(180deg);
+  filter: invert(1) hue-rotate(180deg) contrast(0.91);
 }
 
 /* ── Shared site nav ──────────────────────────────────────────────────────── */
