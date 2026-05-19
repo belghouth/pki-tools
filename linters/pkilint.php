@@ -141,8 +141,8 @@ function pkilint_render_html(string $raw, string $cmd_label): string {
 
     // Severity → colour map.
     $colours = [
-        'DEBUG'    => ['bg' => 'rgba(107,122,144,0.05)', 'border' => 'rgba(107,122,144,0.15)', 'text' => '#556070', 'badge_bg' => 'rgba(107,122,144,0.10)'],
-        'INFO'     => ['bg' => 'rgba(107,122,144,0.07)', 'border' => 'rgba(107,122,144,0.20)', 'text' => '#8899aa', 'badge_bg' => 'rgba(107,122,144,0.14)'],
+        'DEBUG'    => ['bg' => 'rgba(107,122,144,0.05)', 'border' => 'rgba(107,122,144,0.20)', 'text' => '#8899aa', 'badge_bg' => 'rgba(107,122,144,0.22)'],
+        'INFO'     => ['bg' => 'rgba(107,122,144,0.07)', 'border' => 'rgba(107,122,144,0.28)', 'text' => '#aabccc', 'badge_bg' => 'rgba(107,122,144,0.28)'],
         'NOTICE'   => ['bg' => 'rgba(0,153,255,0.07)',   'border' => 'rgba(0,153,255,0.22)',   'text' => '#4db8ff', 'badge_bg' => 'rgba(0,153,255,0.13)'],
         'WARNING'  => ['bg' => 'rgba(245,166,35,0.08)',  'border' => 'rgba(245,166,35,0.28)',  'text' => '#f5a623', 'badge_bg' => 'rgba(245,166,35,0.15)'],
         'ERROR'    => ['bg' => 'rgba(224,92,92,0.08)',   'border' => 'rgba(224,92,92,0.28)',   'text' => '#e05c5c', 'badge_bg' => 'rgba(224,92,92,0.15)'],
@@ -203,8 +203,8 @@ function pkilint_render_html(string $raw, string $cmd_label): string {
         'ERROR'    => '#e05c5c',
         'WARNING'  => '#f5a623',
         'NOTICE'   => '#4db8ff',
-        'INFO'     => '#8899aa',
-        'DEBUG'    => '#556070',
+        'INFO'     => '#aabccc',
+        'DEBUG'    => '#8899aa',
     ];
     $total = array_sum($counts);
     $summary = '<div class="pkilint-summary">';
@@ -283,10 +283,10 @@ function pkilint_render_html(string $raw, string $cmd_label): string {
     display: flex; flex-direction: column; gap: 0.1rem; flex: 1;
     word-break: break-all;
 }
-.pkilint-code    { color: #d4dae6; font-weight: 500; }
-.pkilint-message { color: #a8b4c8; font-size: 0.69rem; }
-.pkilint-path    { color: #6b7a90; font-size: 0.67rem; font-style: italic; }
-.pkilint-validator { color: #4a5568; font-size: 0.65rem; }
+.pkilint-code    { color: #ffffff; font-weight: 700; }
+.pkilint-message { color: #c8d4e4; font-size: 0.69rem; }
+.pkilint-path    { color: #8899aa; font-size: 0.67rem; font-style: italic; }
+.pkilint-validator { color: #6b7a90; font-size: 0.65rem; }
 </style>';
 
     return $styles
