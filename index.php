@@ -927,7 +927,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
             <div class="tool-card-body">
               <div class="tool-card-icon">🗄️</div>
               <div class="tool-card-name">CCADB Browser</div>
-              <div class="tool-card-desc">Browse all CCADB root and intermediate CA certificates grouped by CA owner. Shows browser trust status (Chrome, Firefox, Safari, Edge), audit info, EKU capabilities, and policy OIDs. Includes inline chain linting. Updated weekly.</div>
+              <div class="tool-card-desc">Browse all CCADB root and intermediate CA certificates grouped by CA owner. Shows browser trust status (Chrome, Mozilla, Apple, Microsoft), audit info, EKU capabilities, and policy OIDs. Includes inline chain linting. Updated weekly.</div>
               <div class="tool-card-tags">
                 <span class="tag">CCADB</span>
                 <span class="tag">Root Programs</span>
