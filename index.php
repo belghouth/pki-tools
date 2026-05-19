@@ -375,28 +375,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
     }
 
     /* ── Tools grid ─────────────────────────────────────────────────────────── */
-    .tool-group { margin-bottom: 3rem; }
+    .tool-group {
+      margin-bottom: 2rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--surface);
+    }
     .tool-group:last-child { margin-bottom: 0; }
 
     .tool-group-header {
-      padding: 0.85rem 1.25rem;
+      padding: 0.75rem 1.25rem;
       background: var(--surface2);
-      border: 1px solid var(--border2);
+      border-bottom: 1px solid var(--border);
       border-left: 3px solid var(--accent);
-      border-radius: var(--radius);
-      margin-bottom: 1.25rem;
     }
     .tool-group-label {
-      font-size: 0.95rem;
+      font-size: 0.82rem;
       font-weight: 600;
-      color: #fff;
-      letter-spacing: -0.01em;
+      color: var(--accent);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-family: var(--mono);
     }
 
     .tools-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
       gap: 1.25rem;
+      padding: 1.25rem;
     }
 
     .tool-card {
