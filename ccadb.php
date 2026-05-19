@@ -1549,14 +1549,14 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
 
     lint.addEventListener('click', function() {
       sessionStorage.setItem('pki_prefill_cert', pem);
-      window.open('/linters.php', '_blank', 'noopener');
+      window.open('/linters.php', '_blank');
     });
     parse.addEventListener('click', function() {
       sessionStorage.removeItem('mkt_eseal_cms');
       sessionStorage.removeItem('mkt_eseal_xades');
       sessionStorage.removeItem('meerkat_pem');
       sessionStorage.setItem('pki_prefill_cert', pem);
-      window.open('/artifact_parser.php', '_blank', 'noopener');
+      window.open('/artifact_parser.php', '_blank');
     });
     copy.addEventListener('click', function() {
       navigator.clipboard.writeText(pem).then(function() {
