@@ -25,15 +25,19 @@ define('DT_FMT',        'Y-m-d H:i:s');
 const CCADB_RESOURCES = [
     'caa' => [
         'name' => 'CAA Identifiers',
-        'url'  => 'https://ccadb.my.salesforce-sites.com/ccadb/AllCAAIdentifiersReport',
+        'url'  => 'https://ccadb.my.salesforce-sites.com/ccadb/AllCAAIdentifiersReportCSVV2',
     ],
     'problem_reporting' => [
         'name' => 'Problem Reporting Mechanisms',
-        'url'  => 'https://ccadb.my.salesforce-sites.com/ccadb/AllProblemReportingMechanismsReport',
+        'url'  => 'https://ccadb.my.salesforce-sites.com/ccadb/AllProblemReportingMechanismsCSV',
     ],
     'all_certs' => [
-        'name' => 'All Certificate Records',
-        'url'  => 'https://ccadb.my.salesforce-sites.com/ccadb/AllCertificateRecordsCSVFormatv2',
+        'name' => 'All Certificate Records (V5)',
+        'url'  => 'https://ccadb.my.salesforce-sites.com/ccadb/AllCertificateRecordsCSVFormatV5',
+    ],
+    'included_roots' => [
+        'name' => 'Included Root Certificates',
+        'url'  => 'https://ccadb.my.salesforce-sites.com/ccadb/AllIncludedRootCertsCSV',
     ],
 ];
 
@@ -63,26 +67,27 @@ exit(0);
 
 // ── Core sync function ────────────────────────────────────────────────────────
 
-function syncResource(PDO $pdo, string $key, array $res): void {
-    $name = $res['name'];
-    $url  = $res['url'];
+function recentSyncAt(PDO $pdo, string $key): ?string {
+    $st = $pdo->prepare(
+        "SELECT synced_at FROM ccadb_sync_log
+         WHERE resource_key = ? AND status = 'ok' AND synced_at >= NOW() - INTERVAL 1 DAY
+         ORDER BY synced_at DESC LIMIT 1"
+    );
+    $st->execute([$key]);
+    $val = $st->fetchColumn();
+    return $val !== false ? (string)$val : null;
+}
 
-    echo '[' . gmdate(DT_FMT) . " UTC] Syncing $name ($key)…\n";
-
-    // Download to a temp file
+function downloadToTemp(PDO $pdo, string $key, string $url): ?string {
     $tmp = tempnam(sys_get_temp_dir(), 'ccadb_');
-    if ($tmp === false) {
-        logSync($pdo, $key, 'error', 0, 'tempnam() failed');
-        return;
+    $fh  = $tmp !== false ? fopen($tmp, 'wb') : false;
+    if ($fh === false) {
+        if ($tmp !== false) {
+            @unlink($tmp);
+        }
+        logSync($pdo, $key, 'error', 0, $tmp === false ? 'tempnam() failed' : 'Cannot open temp file');
+        return null;
     }
-
-    $fh = fopen($tmp, 'wb');
-    if (!$fh) {
-        @unlink($tmp);
-        logSync($pdo, $key, 'error', 0, 'Cannot open temp file');
-        return;
-    }
-
     $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_FILE           => $fh,
@@ -93,21 +98,35 @@ function syncResource(PDO $pdo, string $key, array $res): void {
         CURLOPT_SSL_VERIFYPEER => true,
         CURLOPT_SSL_VERIFYHOST => 2,
     ]);
-    $ok  = curl_exec($ch);
-    $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $ok      = curl_exec($ch);
+    $http    = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curlErr = $ok ? '' : curl_error($ch);
     curl_close($ch);
     fclose($fh);
-
     if (!$ok || $http !== 200) {
         @unlink($tmp);
         $msg = $curlErr ?: "HTTP $http";
         logSync($pdo, $key, 'error', 0, "Download failed: $msg");
         fwrite(STDERR, "[ccadb_sync] $key download failed: $msg\n");
+        return null;
+    }
+    return $tmp;
+}
+
+function syncResource(PDO $pdo, string $key, array $res): void {
+    $lastSync = recentSyncAt($pdo, $key);
+    if ($lastSync !== null) {
+        echo '[' . gmdate(DT_FMT) . " UTC] {$res['name']} ($key) synced at $lastSync UTC — skipping\n";
         return;
     }
 
-    // Parse CSV and insert
+    echo '[' . gmdate(DT_FMT) . " UTC] Syncing {$res['name']} ($key)…\n";
+
+    $tmp = downloadToTemp($pdo, $key, $res['url']);
+    if ($tmp === null) {
+        return;
+    }
+
     $result = importCsv($pdo, $key, $tmp);
     @unlink($tmp);
 

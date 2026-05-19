@@ -23,17 +23,22 @@ const CCADB_RESOURCES = [
     'caa' => [
         'name'  => 'CAA Identifiers',
         'label' => 'CAA',
-        'desc'  => 'Authorized CA DNS names from CA entries in the CCADB.',
+        'desc'  => 'CAA domain identifiers CAs are authorized to use in DNS CAA records (V2).',
     ],
     'problem_reporting' => [
         'name'  => 'Problem Reporting Mechanisms',
         'label' => 'Problem Reporting',
-        'desc'  => 'Mechanisms CAs provide for reporting certificate problems.',
+        'desc'  => 'Email addresses and URLs for reporting certificate problems directly to CAs.',
     ],
     'all_certs' => [
         'name'  => 'All Certificate Records',
         'label' => 'All Certs',
-        'desc'  => 'All CA certificates disclosed in the CCADB (v2 format).',
+        'desc'  => 'All root and intermediate CA certificates disclosed in the CCADB (V5).',
+    ],
+    'included_roots' => [
+        'name'  => 'Included Root Certificates',
+        'label' => 'Included Roots',
+        'desc'  => 'Trust bit settings for all root certificates included in participating root stores.',
     ],
 ];
 
@@ -272,12 +277,11 @@ $navLabel = 'CCADB Browser';
   </div>
 
   <!-- ── Tabs ── -->
-  <nav class="tab-nav" role="tablist">
+  <nav class="tab-nav" aria-label="CCADB data sets">
     <?php foreach (CCADB_RESOURCES as $key => $res): ?>
     <a href="/ccadb.php?tab=<?= urlencode($key) ?>"
        class="tab-btn<?= $tab === $key ? ' active' : '' ?>"
-       role="tab"
-       aria-selected="<?= $tab === $key ? 'true' : 'false' ?>"><?= htmlspecialchars($res['label']) ?></a>
+       aria-label="<?= htmlspecialchars($res['label']) ?>"><?= htmlspecialchars($res['label']) ?></a>
     <?php endforeach; ?>
   </nav>
 
@@ -311,7 +315,11 @@ $navLabel = 'CCADB Browser';
     <button type="submit" style="display:none;">Search</button>
     <?php if ($total > 0): ?>
     <span class="toolbar-meta">
-      <?= number_format($total) ?> <?= $search !== '' ? 'result' . ($total !== 1 ? 's' : '') : 'row' . ($total !== 1 ? 's' : '') ?>
+      <?php
+      $unit = $search !== '' ? 'result' : 'row';
+      $plural = $total !== 1 ? 's' : '';
+      echo number_format($total) . ' ' . $unit . $plural;
+      ?>
       · page <?= $page ?> of <?= $pages ?>
     </span>
     <?php endif; ?>
