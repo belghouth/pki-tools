@@ -212,7 +212,7 @@ if ($detail !== '' && $pdo) {
                 'found'      => true,
                 'fields'     => $fields,
                 'pemInfo'    => $row['pem_info'],
-                'policyOids' => json_decode($row['cert_policy_oids'] ?? 'null', true) ?? [],
+                'policyOids' => decodePolicyOids($row['cert_policy_oids'] ?? null),
             ]);
         } else {
             echo json_encode(['found' => false]);
@@ -257,6 +257,16 @@ if ($syncInfo) {
 $navLabel = 'CCADB Browser';
 
 // ── Query helpers ─────────────────────────────────────────────────────────────
+
+/** Decode cert_policy_oids JSON and return only valid dotted-numeric OIDs. */
+function decodePolicyOids(?string $json): array {
+    $raw = json_decode($json ?? 'null', true);
+    if (!is_array($raw)) { return []; }
+    return array_values(array_filter(
+        $raw,
+        fn($o) => is_string($o) && (bool)preg_match('/^\d+(\.\d+){3,}$/', $o)
+    ));
+}
 
 function queryGrouped(PDO $pdo, string $search, int $page): array {
     $offset     = ($page - 1) * OWNERS_PER_PAGE;
@@ -345,7 +355,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
             'ski'         => $raw['Subject Key Identifier']   ?? '',
             'revocation'  => $raw['Revocation Status']        ?? '',
             'constrained' => $raw['Technically Constrained']  ?? '',
-            'policyOids'  => json_decode($row['cert_policy_oids'] ?? 'null', true) ?? [],
+            'policyOids'  => decodePolicyOids($row['cert_policy_oids'] ?? null),
         ];
     }
 

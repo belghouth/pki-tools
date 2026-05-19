@@ -599,14 +599,19 @@ function parseCertPolicyOids(string $pem): array {
     if (!is_array($parsed) || !isset($parsed['extensions']['certificatePolicies'])) {
         return [];
     }
-    return extractPolicyOidsFromText($parsed['extensions']['certificatePolicies']);
+    $ext = $parsed['extensions']['certificatePolicies'];
+    // Some PHP/OpenSSL combinations return complex extensions as arrays.
+    if (is_array($ext)) {
+        $ext = implode("\n", array_map('strval', $ext));
+    }
+    return extractPolicyOidsFromText((string)$ext);
 }
 
 /**
  * Parse the OpenSSL text representation of a certificatePolicies extension.
  * Each policy is on a line starting with "Policy: <OID_or_name>".
  * Some OpenSSL versions substitute the numeric OID with a text name, e.g.
- * anyPolicy (numeric form) becomes "X509v3 Any Policy".
+ * anyPolicy (2.5.29.32.0) becomes "X509v3 Any Policy".
  */
 function extractPolicyOidsFromText(string $raw): array {
     // avoids S1313 false-positive (dotted notation mistaken for IP address)
@@ -614,13 +619,15 @@ function extractPolicyOidsFromText(string $raw): array {
     static $nameToOid = null;
     if ($nameToOid === null) {
         $nameToOid = array_fill_keys(
-            ['x509v3 any policy', 'any policy', 'anypolicy'],
+            ['x509v3 any policy', 'any policy', 'anypolicy', 'x509v3 any'],
             $anyPolicyOid
         );
     }
     $oids = [];
     foreach (explode("\n", $raw) as $line) {
-        if (!preg_match('/Policy:\s*(.+)$/i', trim($line), $m)) {
+        $line = trim($line);
+        // Match "Policy: <value>" lines; value may be numeric OID or text name.
+        if (!preg_match('/Policy:\s*(.+)/i', $line, $m)) {
             continue;
         }
         $val = trim($m[1]);
