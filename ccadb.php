@@ -28,7 +28,8 @@ require_once __DIR__ . '/recaptcha.php';
 
 const OWNERS_PER_PAGE = 25;
 
-define('HDR_JSON', 'Content-Type: application/json; charset=utf-8');
+define('HDR_JSON',       'Content-Type: application/json; charset=utf-8');
+define('ERR_RECAPTCHA', 'reCAPTCHA failed');
 
 // ── Input ─────────────────────────────────────────────────────────────────────
 
@@ -37,7 +38,8 @@ $page       = max(1, (int)($_GET['p']         ?? 1));
 $isJson     = isset($_GET['json'])   && $_GET['json']   === '1';
 $detail     = trim($_GET['detail']   ?? '');
 $verifyUrl  = trim($_POST['verify_url'] ?? '');
-$verifyCps  = isset($_POST['verify_cps']) && $_POST['verify_cps'] === '1';
+$verifyCps  = isset($_POST['verify_cps'])  && $_POST['verify_cps']  === '1';
+$chainLint  = isset($_POST['chain_lint'])  && $_POST['chain_lint']  === '1';
 
 // ── ?verify_url= — must run before DB init to guarantee clean JSON output ────
 
@@ -45,7 +47,7 @@ if ($verifyUrl !== '') {
     header(HDR_JSON);
     $rcToken = trim($_POST['g_recaptcha_token'] ?? '');
     if (recaptcha_configured() && !recaptcha_verify($rcToken, 'verify_url')) {
-        echo json_encode(['ok' => false, 'status' => 'reCAPTCHA failed']);
+        echo json_encode(['ok' => false, 'status' => ERR_RECAPTCHA]);
         exit;
     }
     if (!preg_match('#^https?://#i', $verifyUrl)) {
@@ -131,7 +133,7 @@ if ($verifyCps) {
     }
     $rcToken = trim($_POST['g_recaptcha_token'] ?? '');
     if (recaptcha_configured() && !recaptcha_verify($rcToken, 'verify_cps')) {
-        echo json_encode(['ok' => false, 'error' => 'reCAPTCHA failed']);
+        echo json_encode(['ok' => false, 'error' => ERR_RECAPTCHA]);
         exit;
     }
     $cpsSha    = substr(preg_replace('/[^a-f0-9]/i', '', trim($_POST['cert_sha256'] ?? '')), 0, 64);
@@ -157,6 +159,37 @@ if ($verifyCps) {
     try {
         ensureCpsCacheTable($pdo);
         echo json_encode(doVerifyAllDocs($pdo, $cpsSha, $certUrls, $certOids));
+    } catch (Throwable $e) {
+        echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// ── ?chain_lint=1 — run lint_pkix_signer_signee_cert_chain inline ────────────
+
+if ($chainLint) {
+    header(HDR_JSON);
+    $rcToken = trim($_POST['g_recaptcha_token'] ?? '');
+    if (recaptcha_configured() && !recaptcha_verify($rcToken, 'chain_lint')) {
+        echo json_encode(['ok' => false, 'error' => ERR_RECAPTCHA]);
+        exit;
+    }
+    $certPem   = trim($_POST['cert_pem']   ?? '');
+    $parentPem = trim($_POST['parent_pem'] ?? '');
+    if ($certPem === '' || $parentPem === '') {
+        echo json_encode(['ok' => false, 'error' => 'Both certificate PEMs are required']);
+        exit;
+    }
+    $linters_dir = __DIR__ . '/linters';
+    require_once $linters_dir . '/pkilint.php';
+    $chainBin = pkilint_binary('lint_pkix_signer_signee_cert_chain');
+    if ($chainBin === null) {
+        echo json_encode(['ok' => false, 'error' => 'lint_pkix_signer_signee_cert_chain is not installed on this server']);
+        exit;
+    }
+    try {
+        $run = pkilint_make_run('lint_pkix_signer_signee_cert_chain', [], true);
+        echo json_encode(['ok' => true, 'html' => $run($certPem, $parentPem)]);
     } catch (Throwable $e) {
         echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
     }
@@ -1683,6 +1716,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
           wirePemButtons(data.pemInfo, cert);
           wireVerifyButtons(cmBody);
           wireCpsVerifyButton(cmBody);
+          wireChainLintButton(cert, data.pemInfo);
         } else {
           cmBody.innerHTML = '<div class="cm-loading">Certificate data not found.</div>';
         }
@@ -2047,6 +2081,22 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     return html;
   }
 
+  function buildChainLintSection(cert) {
+    var html = '<div class="cm-sect">'
+      + '<div class="cm-sect-title">Chain Validation</div>';
+    if (!cert.hasPem) {
+      html += '<div class="oid-empty">PEM not imported — run CCADB PEM sync</div>';
+    } else if (!cert.parentSha256) {
+      html += '<div class="oid-empty">No parent certificate in CCADB — chain lint requires issuer</div>';
+    } else {
+      html += '<button type="button" class="oid-cps-btn" id="cmChainLintBtn">'
+        + 'Run <code>lint_pkix_signer_signee_cert_chain</code>'
+        + '</button>'
+        + '<div id="cmChainLintResults" class="oid-cps-results"></div>';
+    }
+    return html + '</div>';
+  }
+
   function buildModalBody(cert, fields, pem, certPolicyOids, ownerCerts) {
     var html = '';
 
@@ -2131,7 +2181,10 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     // ⑥ Policy OIDs — cert-derived vs CCADB administrative declaration
     html += buildOidSection(cert, fields, certPolicyOids, ownerCerts);
 
-    // ⑦ Infrastructure
+    // ⑦ Chain validation — lint_pkix_signer_signee_cert_chain
+    html += buildChainLintSection(cert);
+
+    // ⑧ Infrastructure
     html += '<div class="cm-sect">'
       + '<div class="cm-sect-title">Infrastructure</div>'
       + '<dl class="cm-dl">'
@@ -2452,6 +2505,82 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
 
   function escRe(s) {
     return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  // ── Chain lint ────────────────────────────────────────────────────────────
+
+  function wireChainLintButton(cert, pem) {
+    var btn     = document.getElementById('cmChainLintBtn');
+    var results = document.getElementById('cmChainLintResults');
+    if (!btn) { return; }
+    btn.addEventListener('click', function() {
+      if (btn.disabled) { return; }
+      btn.disabled    = true;
+      btn.textContent = 'Loading parent PEM…';
+      fetch('/ccadb.php?detail=' + encodeURIComponent(cert.parentSha256))
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (!d.found || !d.pemInfo || d.pemInfo.indexOf('CERTIFICATE') === -1) {
+            btn.disabled    = false;
+            btn.textContent = 'Run lint_pkix_signer_signee_cert_chain';
+            if (results) {
+              results.innerHTML = '<div class="oid-cps-flag cps-err">Parent certificate PEM not available in database</div>';
+              results.classList.add('visible');
+            }
+            return;
+          }
+          btn.textContent = 'Running…';
+          doChainLint(pem, d.pemInfo, btn, results);
+        })
+        .catch(function() {
+          btn.disabled    = false;
+          btn.textContent = 'Run lint_pkix_signer_signee_cert_chain';
+          if (results) {
+            results.innerHTML = '<div class="oid-cps-flag cps-err">Failed to fetch parent certificate</div>';
+            results.classList.add('visible');
+          }
+        });
+    });
+  }
+
+  function doChainLint(certPem, parentPem, btn, results) {
+    function execute(token) {
+      fetch('/ccadb.php', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'chain_lint=1'
+          + '&cert_pem='           + encodeURIComponent(certPem)
+          + '&parent_pem='         + encodeURIComponent(parentPem)
+          + '&g_recaptcha_token='  + encodeURIComponent(token || ''),
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          btn.disabled    = false;
+          btn.textContent = 'Re-run lint_pkix_signer_signee_cert_chain';
+          if (!results) { return; }
+          results.innerHTML = data.ok
+            ? data.html
+            : '<div class="oid-cps-flag cps-err">' + esc(data.error || 'Unknown error') + '</div>';
+          results.classList.add('visible');
+        })
+        .catch(function() {
+          btn.disabled    = false;
+          btn.textContent = 'Run lint_pkix_signer_signee_cert_chain';
+          if (results) {
+            results.innerHTML = '<div class="oid-cps-flag cps-err">Network error</div>';
+            results.classList.add('visible');
+          }
+        });
+    }
+    if (typeof grecaptcha !== 'undefined' && RCAPTCHA_KEY && RCAPTCHA_KEY.indexOf('YOUR_') === -1) {
+      grecaptcha.ready(function() {
+        grecaptcha.execute(RCAPTCHA_KEY, { action: 'chain_lint' })
+          .then(function(token) { execute(token); })
+          .catch(function() { execute(''); });
+      });
+    } else {
+      execute('');
+    }
   }
 
   // ── Initial render ────────────────────────────────────────────────────────
