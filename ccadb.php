@@ -605,12 +605,17 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
 
     /* PEM + actions (same style as artifact_parser.php) */
     .ap-embed-cert-pem{
-      display:block;width:100%;height:90px;resize:none;
-      background:rgba(0,0,0,.3);color:#8a9ab8;
+      display:block;width:100%;height:140px;resize:vertical;min-height:80px;
+      background:rgba(0,0,0,.35);color:#8a9ab8;
       border:1px solid var(--border);border-radius:4px;
-      font-family:var(--mono);font-size:.6rem;line-height:1.45;
-      padding:.4rem .6rem;outline:none;white-space:pre;overflow-y:auto;
-      margin-bottom:.5rem
+      font-family:var(--mono);font-size:.6rem;line-height:1.5;
+      padding:.5rem .65rem;outline:none;white-space:pre;overflow-y:auto;
+      margin-bottom:.6rem;user-select:text;cursor:text
+    }
+    .ap-embed-cert-pem.pem-empty{
+      color:#2e3748;font-style:italic;cursor:default;user-select:none;
+      display:flex;align-items:center;justify-content:center;text-align:center;
+      height:72px;resize:none
     }
     .ap-embed-cert-actions{display:flex;gap:.5rem;flex-wrap:wrap}
     .ap-embed-cert-btn{
@@ -619,6 +624,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
       border-radius:4px;padding:.3em .8em;background:none;
       transition:background .15s,border-color .15s
     }
+    .ap-embed-cert-btn:disabled{opacity:.3;cursor:not-allowed;pointer-events:none}
     .ap-embed-cert-lint{color:var(--accent);border:1px solid rgba(0,212,170,.35)}
     .ap-embed-cert-lint:hover{background:rgba(0,212,170,.08);border-color:var(--accent)}
     .ap-embed-cert-parse{color:var(--purple);border:1px solid rgba(167,139,250,.35)}
@@ -1509,31 +1515,37 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
       + urlFieldRow('Test (Revoked)', f(fields,'Test Website URL - Revoked'))
       + '</dl></div>';
 
-    // ⑦ PEM
-    if (pem && pem.indexOf('CERTIFICATE') !== -1) {
-      html += '<div class="cm-sect" id="cmPemSect">'
-        + '<div class="cm-sect-title">Certificate (PEM)</div>'
-        + '<textarea class="ap-embed-cert-pem" id="cmPemArea" readonly spellcheck="false">'
-        + esc(pem)
-        + '</textarea>'
-        + '<div class="ap-embed-cert-actions">'
-        + '<button class="ap-embed-cert-btn ap-embed-cert-lint"  id="cmLint">Lint</button>'
-        + '<button class="ap-embed-cert-btn ap-embed-cert-parse" id="cmParse">Inspect</button>'
-        + '<button class="ap-embed-cert-btn ap-embed-cert-copy"  id="cmCopy">Copy PEM</button>'
-        + '<button class="ap-embed-cert-btn ap-embed-cert-dl"    id="cmDl">Download .pem</button>'
-        + '</div></div>';
-    }
+    // ⑦ PEM — always shown; buttons disabled when no PEM available
+    var hasPemData = pem && pem.indexOf('CERTIFICATE') !== -1;
+    var dis        = hasPemData ? '' : ' disabled';
+    var pemContent = hasPemData
+      ? '<textarea class="ap-embed-cert-pem" id="cmPemArea" readonly spellcheck="false" aria-label="Certificate PEM">'
+          + esc(pem) + '</textarea>'
+      : '<div class="ap-embed-cert-pem pem-empty" id="cmPemArea" role="status" aria-live="polite">'
+          + 'PEM not yet imported — run the CCADB PEM sync'
+          + '</div>';
+    html += '<div class="cm-sect" id="cmPemSect">'
+      + '<div class="cm-sect-title">Certificate (PEM)</div>'
+      + pemContent
+      + '<div class="ap-embed-cert-actions">'
+      + '<button class="ap-embed-cert-btn ap-embed-cert-lint"  id="cmLint"' + dis + '>Run Linters</button>'
+      + '<button class="ap-embed-cert-btn ap-embed-cert-parse" id="cmParse"' + dis + '>Parse Certificate</button>'
+      + '<button class="ap-embed-cert-btn ap-embed-cert-copy"  id="cmCopy"' + dis + '>Copy PEM</button>'
+      + '<button class="ap-embed-cert-btn ap-embed-cert-dl"    id="cmDl"'   + dis + '>Download .pem</button>'
+      + '</div></div>';
 
     return html;
   }
 
   // ── Wire PEM buttons (after modal body is in DOM) ─────────────────────────
   function wirePemButtons(pem, cert) {
+    var hasPemData = pem && pem.indexOf('CERTIFICATE') !== -1;
     var lint  = document.getElementById('cmLint');
     var parse = document.getElementById('cmParse');
     var copy  = document.getElementById('cmCopy');
     var dl    = document.getElementById('cmDl');
-    if (!lint) { return; }
+    // Buttons always rendered — only wire if PEM data is present
+    if (!lint || !hasPemData) { return; }
 
     lint.addEventListener('click', function() {
       sessionStorage.setItem('pki_prefill_cert', pem);

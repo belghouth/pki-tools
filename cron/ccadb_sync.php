@@ -3,7 +3,7 @@
  * ccadb_sync.php — CCADB V5 sync (root + intermediate certificates)
  *
  * Phase 1 : AllCertificateRecordsCSVFormatV5  →  ccadb_v5_certs  (89 columns)
- * Phase 2 : AllIncludedRootCertsCSV           →  update pem_info via SHA-256 join
+ * Phase 2 : AllCertificatePEMsCSVFormat (2010+2020 decade splits) → update pem_info via SHA-256
  *
  * Usage:
  *   php ccadb_sync.php              # run both phases
@@ -23,8 +23,9 @@ require_once __DIR__ . '/../config.php';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-define('V5_URL',     'https://ccadb.my.salesforce-sites.com/ccadb/AllCertificateRecordsCSVFormatV5');
-define('PEM_URL',    'https://ccadb.my.salesforce-sites.com/ccadb/AllIncludedRootCertsCSV');
+define('V5_URL',      'https://ccadb.my.salesforce-sites.com/ccadb/AllCertificateRecordsCSVFormatV5');
+define('PEM_URL_2010', 'https://ccadb.my.salesforce-sites.com/ccadb/AllCertificatePEMsCSVFormat?NotBeforeDecade=2010');
+define('PEM_URL_2020', 'https://ccadb.my.salesforce-sites.com/ccadb/AllCertificatePEMsCSVFormat?NotBeforeDecade=2020');
 define('BATCH_SZ',   500);
 define('DL_TIMEOUT', 180);
 define('DT_FMT',     'Y-m-d H:i:s');
@@ -311,7 +312,7 @@ function finaliseV5Sync(PDO $pdo, int $syncId, string $key, int $inserted): void
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Phase 2 — PEM from AllIncludedRootCertsCSV
+// Phase 2 — PEM from AllCertificatePEMsCSVFormat (two decade URLs)
 // ══════════════════════════════════════════════════════════════════════════════
 
 function syncPem(PDO $pdo, bool $force): bool {
@@ -320,22 +321,29 @@ function syncPem(PDO $pdo, bool $force): bool {
         echo '[' . gmdate(DT_FMT) . " UTC] $key already synced today — skipping\n";
         return true;
     }
-    echo '[' . gmdate(DT_FMT) . " UTC] Downloading AllIncludedRootCertsCSV for PEM data…\n";
-    $tmp = downloadToTemp($key, PEM_URL);
-    if ($tmp === null) {
-        return false;
+    $totalUpdated = 0;
+    $lastErr      = null;
+    foreach ([PEM_URL_2010 => '2010s', PEM_URL_2020 => '2020s'] as $url => $label) {
+        echo '[' . gmdate(DT_FMT) . " UTC] Downloading PEM CSV ($label)…\n";
+        $tmp = downloadToTemp($key . '_' . $label, $url);
+        if ($tmp === null) {
+            $lastErr = "Download failed for $label";
+            continue;
+        }
+        $result = updatePem($pdo, $tmp);
+        @unlink($tmp);
+        if ($result['error'] !== null) {
+            fwrite(STDERR, "[ccadb_sync] PEM $label error: {$result['error']}\n");
+            $lastErr = $result['error'];
+        } else {
+            $totalUpdated += $result['updated'];
+            echo '[' . gmdate(DT_FMT) . " UTC] PEM $label: {$result['updated']} certs updated\n";
+        }
     }
-    $result = updatePem($pdo, $tmp);
-    @unlink($tmp);
-    $isColMissing = ($result['error'] !== null && str_contains($result['error'], 'Could not locate'));
-    $ok = ($result['error'] === null || $isColMissing);
-    logSync($pdo, $key, $ok ? 'ok' : 'error', $result['updated'], $result['error']);
-    if ($result['updated'] > 0) {
-        echo '[' . gmdate(DT_FMT) . " UTC] PEM update: {$result['updated']} certs updated\n";
-    } elseif ($isColMissing) {
-        echo '[' . gmdate(DT_FMT) . " UTC] PEM update skipped: no PEM column in CSV (will retry on next sync)\n";
-    } else {
-        fwrite(STDERR, "[ccadb_sync] PEM update failed: {$result['error']}\n");
+    $ok = ($lastErr === null);
+    logSync($pdo, $key, $ok ? 'ok' : 'error', $totalUpdated, $lastErr);
+    if ($totalUpdated > 0) {
+        echo '[' . gmdate(DT_FMT) . " UTC] PEM total: $totalUpdated certs updated\n";
     }
     return $ok;
 }
