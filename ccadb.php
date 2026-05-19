@@ -955,6 +955,26 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     .cm-loading{text-align:center;padding:4rem 1rem;color:var(--muted);font-family:var(--mono);font-size:.82rem}
     .cm-loading-inline{color:var(--muted);font-family:var(--mono);font-size:.72rem;font-style:italic}
 
+    /* pkilint output injected into modal — must live in <head>, not inside innerHTML */
+    .pkilint-output{font-family:var(--mono);font-size:.72rem}
+    .pkilint-clean{padding:.9rem;color:#3ddc7a;background:rgba(0,212,100,0.07);border:1px solid rgba(0,212,100,0.22);border-radius:4px;font-weight:600}
+    .pkilint-parse-error{padding:.55rem .85rem;color:#f5a623;background:rgba(245,166,35,0.09);border:1px solid rgba(245,166,35,0.28);border-radius:4px;margin-bottom:.5rem}
+    .pkilint-raw{font-family:var(--mono);font-size:.7rem;color:#d4dae6;background:#161a21;border:1px solid #2a3040;border-radius:4px;padding:.9rem;white-space:pre-wrap;word-break:break-all;max-height:400px;overflow-y:auto}
+    .pkilint-summary{display:flex;align-items:center;gap:1.25rem;flex-wrap:wrap;padding:.55rem .85rem;background:rgba(29,35,48,.85);border:1px solid #2a3040;border-radius:4px;margin-bottom:.65rem;font-size:.7rem;letter-spacing:.05em}
+    .pkilint-summary-total{color:#ffffff;font-weight:700}
+    .pkilint-summary-total strong{font-size:.85rem}
+    .pkilint-summary-item{display:flex;align-items:center;gap:.3rem}
+    .pkilint-summary-item strong{font-size:.82rem}
+    .pkilint-rows{display:flex;flex-direction:column;gap:2px;max-height:560px;overflow-y:auto;border:1px solid #2a3040;border-radius:4px;background:#161a21}
+    .pkilint-row{display:flex;align-items:flex-start;gap:.75rem;padding:.35rem .75rem;line-height:1.6;transition:filter 80ms ease}
+    .pkilint-row:hover{filter:brightness(1.2)}
+    .pkilint-badge{flex-shrink:0;width:5.5rem;text-align:center;font-weight:700;font-size:.6rem;letter-spacing:.1em;border-radius:2px;padding:.15em .3em;margin-top:.15em}
+    .pkilint-body{display:flex;flex-direction:column;gap:.1rem;flex:1;word-break:break-all}
+    .pkilint-code{color:#ffffff !important;font-weight:700 !important}
+    .pkilint-message{color:#c8d4e4 !important;font-size:.69rem}
+    .pkilint-path{color:#8899aa !important;font-size:.67rem;font-style:italic}
+    .pkilint-validator{color:#6b7a90 !important;font-size:.65rem}
+
     /* scrollable body */
     .cm-body{overflow-y:auto;flex:1}
 
