@@ -78,11 +78,23 @@ if ($verifyUrl !== '') {
     $curlErr  = curl_error($ch);
     curl_close($ch);
     if ($curlErr !== '') {
-        echo json_encode(['ok' => false, 'status' => 'cURL: ' . $curlErr]);
+        $errLc = strtolower($curlErr);
+        if (str_contains($errLc, 'ssl') || str_contains($errLc, 'tls') || str_contains($errLc, 'certificate')) {
+            $friendly = 'SSL Error';
+        } elseif (str_contains($errLc, 'timed out') || str_contains($errLc, 'timeout')) {
+            $friendly = 'Timeout';
+        } elseif (str_contains($errLc, 'could not resolve') || str_contains($errLc, 'name resolution')) {
+            $friendly = 'DNS Error';
+        } elseif (str_contains($errLc, 'connection refused')) {
+            $friendly = 'Connection Refused';
+        } else {
+            $friendly = 'Network Error';
+        }
+        echo json_encode(['ok' => false, 'status' => $friendly]);
     } elseif ($httpCode >= 200 && $httpCode < 400) {
         echo json_encode(['ok' => true,  'status' => (string)$httpCode]);
     } else {
-        echo json_encode(['ok' => false, 'status' => (string)$httpCode]);
+        echo json_encode(['ok' => false, 'status' => (string)($httpCode ?: 'No Response')]);
     }
     exit;
 }
@@ -994,18 +1006,25 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
   }
 
   function multiLinkRow(label, value) {
+    var dt = '<dt class="cm-dt">' + esc(label) + '</dt>';
     if (!value || value === '-') {
-      return '<dt class="cm-dt">' + esc(label) + '</dt><dd class="cm-dd"><span class="cm-dd-muted">—</span></dd>';
+      return dt + '<dd class="cm-dd"><span class="cm-dd-muted">—</span></dd>';
     }
-    var links = value.split(/[;\n]+/).map(function(u) {
+    var rows = '';
+    value.split(/[;\n]+/).forEach(function(u) {
       u = u.trim();
-      if (!u) { return ''; }
+      if (!u) { return; }
+      var id = 'url-verify-' + (++_crlVerifyId);
       if (/^https?:\/\//.test(u)) {
-        return '<a href="' + esc(u) + '" target="_blank" rel="noopener noreferrer">' + esc(u.length > 60 ? u.substring(0,57)+'…' : u) + '</a>';
+        rows += '<div class="cm-crl-row">'
+              +   '<input class="cm-crl-input" type="text" readonly value="' + esc(u) + '" aria-label="' + esc(label) + '">'
+              +   '<button class="cm-crl-verify" data-url="' + esc(u) + '" id="' + id + '">Verify</button>'
+              + '</div>';
+      } else {
+        rows += '<div class="cm-crl-row"><span class="cm-dd">' + esc(u) + '</span></div>';
       }
-      return esc(u);
-    }).filter(Boolean);
-    return '<dt class="cm-dt">' + esc(label) + '</dt><dd class="cm-dd">' + links.join('<br>') + '</dd>';
+    });
+    return dt + '<dd class="cm-dd"><div class="cm-crl-list">' + rows + '</div></dd>';
   }
 
   // ── Bool badge ────────────────────────────────────────────────────────────
@@ -1130,10 +1149,10 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
 
   function auditBlock(label, url, type, date, start, end) {
     if (!url && !type && !date) { return ''; }
-    var rows = dlRow('Audit URL',   url,  true)
-             + dlRow('Type',        type)
-             + dlRow('Statement',   date)
-             + dlRow('Period',      start && end ? start + ' – ' + end : (start || end || ''));
+    var rows = urlFieldRow('Audit URL', url)
+             + dlRow('Type',       type)
+             + dlRow('Statement',  date)
+             + dlRow('Period',     start && end ? start + ' – ' + end : (start || end || ''));
     return '<div class="cm-audit-block">'
       + '<div class="cm-audit-label">' + esc(label) + '</div>'
       + '<dl class="cm-dl">' + rows + '</dl>'
