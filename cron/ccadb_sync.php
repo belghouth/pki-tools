@@ -98,6 +98,20 @@ CREATE TABLE IF NOT EXISTS ccadb_v5_certs (
     FULLTEXT KEY ft_search (search_text)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
 
+CREATE TABLE IF NOT EXISTS cps_cache (
+    id            INT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    cert_sha256   VARCHAR(64)   NOT NULL DEFAULT '',
+    cps_url_hash  VARCHAR(64)   NOT NULL DEFAULT '',
+    cps_url       TEXT          NOT NULL,
+    downloaded_at DATETIME      NOT NULL,
+    content_type  VARCHAR(200)           DEFAULT NULL,
+    cps_text      MEDIUMTEXT             DEFAULT NULL,
+    fetch_error   VARCHAR(500)           DEFAULT NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_cert_url (cert_sha256, cps_url_hash(64)),
+    KEY idx_dl (downloaded_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS ccadb_v5_sync_log (
     id            INT UNSIGNED          NOT NULL AUTO_INCREMENT,
     resource_key  VARCHAR(50)           NOT NULL DEFAULT 'v5_certs',
@@ -628,7 +642,7 @@ function extractPolicyOidsFromText(string $raw): array {
 function backfillOids(PDO $pdo): int {
     $select = $pdo->query(
         "SELECT sha256, pem_info FROM ccadb_v5_certs
-         WHERE pem_info IS NOT NULL AND pem_info != '' AND cert_policy_oids IS NULL"
+         WHERE pem_info IS NOT NULL AND pem_info != ''"
     );
     $update = $pdo->prepare(
         "UPDATE ccadb_v5_certs SET cert_policy_oids = ? WHERE sha256 = ?"
