@@ -327,10 +327,13 @@ function syncPem(PDO $pdo, bool $force): bool {
     }
     $result = updatePem($pdo, $tmp);
     @unlink($tmp);
-    $ok = ($result['error'] === null);
+    $isColMissing = ($result['error'] !== null && str_contains($result['error'], 'Could not locate'));
+    $ok = ($result['error'] === null || $isColMissing);
     logSync($pdo, $key, $ok ? 'ok' : 'error', $result['updated'], $result['error']);
-    if ($ok) {
+    if ($result['updated'] > 0) {
         echo '[' . gmdate(DT_FMT) . " UTC] PEM update: {$result['updated']} certs updated\n";
+    } elseif ($isColMissing) {
+        echo '[' . gmdate(DT_FMT) . " UTC] PEM update skipped: no PEM column in CSV (will retry on next sync)\n";
     } else {
         fwrite(STDERR, "[ccadb_sync] PEM update failed: {$result['error']}\n");
     }
