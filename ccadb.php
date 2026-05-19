@@ -882,7 +882,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     .trust-tag.cs{color:#f97316;background:rgba(249,115,22,.1);border-color:rgba(249,115,22,.25)}
 
     /* ── Browser trust badges ── */
-    .br-badges{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .br-badges{display:flex;gap:10px;align-items:center;flex-wrap:nowrap;white-space:nowrap}
     .br-badge{display:inline-flex;flex-shrink:0}
     .br-badge img{width:26px;height:26px;display:block;transition:transform .15s}
     .br-badge img.br-grey{opacity:.2}
@@ -1507,7 +1507,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
       +   '</div>'
       + '</td>'
       + '<td>' + typeBadge(cert.type) + '</td>'
-      + '<td>' + browserDots(cert) + '</td>'
+      + '<td style="white-space:nowrap">' + browserDots(cert) + '</td>'
       + '<td>' + capTags(cert) + '</td>'
       + '<td class="cert-valid">' + validUntil(cert.validTo) + '</td>'
       + '<td class="cert-fp">' + shortFp(cert.sha256) + '</td>'
