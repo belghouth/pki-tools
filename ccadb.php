@@ -121,7 +121,7 @@ if ($pdo) {
     }
 }
 
-// ── ?verify_cps=1 — download CPS and check policy OIDs ───────────────────────
+// ── ?verify_cps=1 — download CP/CPS docs and check policy OIDs ───────────────
 
 if ($verifyCps) {
     header(HDR_JSON);
@@ -134,20 +134,29 @@ if ($verifyCps) {
         echo json_encode(['ok' => false, 'error' => 'reCAPTCHA failed']);
         exit;
     }
-    $cpsSha   = substr(preg_replace('/[^a-f0-9]/i', '', trim($_POST['cert_sha256'] ?? '')), 0, 64);
-    $cpsUrl   = substr(trim($_POST['cps_url']     ?? ''), 0, 2000);
-    $rawOids  = json_decode(trim($_POST['cert_oids'] ?? '[]'), true) ?? [];
-    $certOids = array_values(array_filter(
+    $cpsSha    = substr(preg_replace('/[^a-f0-9]/i', '', trim($_POST['cert_sha256'] ?? '')), 0, 64);
+    $rawUrls   = json_decode(trim($_POST['cert_urls'] ?? '[]'), true) ?? [];
+    $rawOids   = json_decode(trim($_POST['cert_oids'] ?? '[]'), true) ?? [];
+    $certOids  = array_values(array_filter(
         array_map('trim', is_array($rawOids) ? $rawOids : []),
         fn($o) => (bool)preg_match('/^\d+(\.\d+)+$/', $o)
     ));
-    if ($cpsSha === '' || !preg_match('#^https?://#i', $cpsUrl)) {
+    $certUrls  = [];
+    foreach (is_array($rawUrls) ? $rawUrls : [] as $entry) {
+        if (!is_array($entry)) { continue; }
+        $url = substr(trim((string)($entry['url'] ?? '')), 0, 2000);
+        $lbl = substr(trim((string)($entry['label'] ?? '')), 0, 100);
+        if (preg_match('#^https?://#i', $url)) {
+            $certUrls[] = ['label' => $lbl, 'url' => $url];
+        }
+    }
+    if ($cpsSha === '' || empty($certUrls)) {
         echo json_encode(['ok' => false, 'error' => 'Invalid parameters']);
         exit;
     }
     try {
         ensureCpsCacheTable($pdo);
-        echo json_encode(doVerifyCps($pdo, $cpsSha, $cpsUrl, $certOids));
+        echo json_encode(doVerifyAllDocs($pdo, $cpsSha, $certUrls, $certOids));
     } catch (Throwable $e) {
         echo json_encode(['ok' => false, 'error' => $e->getMessage()]);
     }
@@ -337,13 +346,59 @@ function ensureCpsCacheTable(PDO $pdo): void {
     );
 }
 
-function doVerifyCps(PDO $pdo, string $sha256, string $cpsUrl, array $certOids): array {
-    $urlHash = hash('sha256', $cpsUrl);
-    $row     = loadOrRefreshCps($pdo, $sha256, $urlHash, $cpsUrl);
-    if (isset($row['__error'])) {
-        return $row['__error'];
+function doVerifyAllDocs(PDO $pdo, string $sha256, array $certUrls, array $certOids): array {
+    $docs = [];
+    foreach ($certUrls as $entry) {
+        $url     = $entry['url'];
+        $urlHash = hash('sha256', $url);
+        $row     = loadOrRefreshCps($pdo, $sha256, $urlHash, $url);
+        if (isset($row['__error'])) {
+            $docs[] = $row['__error'] + ['label' => $entry['label']];
+            continue;
+        }
+        $docs[] = buildCpsSearchResult($certOids, $row) + ['label' => $entry['label']];
     }
-    return buildCpsSearchResult($certOids, $row);
+    $summary = buildOidSummary($certOids, $docs);
+    $allOk   = !empty($certOids) && array_reduce(
+        $summary,
+        fn($c, $s) => $c && $s['status'] === 'VERIFIED_IN_CPS',
+        true
+    );
+    return ['ok' => $allOk, 'docs' => $docs, 'summary' => $summary];
+}
+
+function buildOidSummary(array $certOids, array $docs): array {
+    $summary = [];
+    foreach ($certOids as $oid) {
+        $best = bestOidAcrossDocs($oid, $docs);
+        if ($best !== null) {
+            $summary[] = $best;
+        }
+    }
+    return $summary;
+}
+
+function bestOidAcrossDocs(string $oid, array $docs): ?array {
+    static $priority = [
+        'VERIFIED_IN_CPS'     => 0,
+        'FOUND_ELSEWHERE'     => 1,
+        'DIFFERENT_OIDS_FOUND'=> 2,
+        'NOT_FOUND'           => 3,
+        'CPS_PARSE_FAILED'    => 4,
+        'CPS_UNAVAILABLE'     => 5,
+    ];
+    $best = null;
+    foreach ($docs as $doc) {
+        foreach ($doc['results'] ?? [] as $r) {
+            if ($r['oid'] !== $oid) { continue; }
+            $rp = $priority[$r['status']] ?? 99;
+            $bp = $priority[$best['status'] ?? ''] ?? 99;
+            if ($best === null || $rp < $bp) {
+                $best = $r + ['docLabel' => $doc['label'] ?? '', 'docUrl' => $doc['cpsUrl'] ?? ''];
+            }
+        }
+    }
+    return $best;
 }
 
 function loadOrRefreshCps(PDO $pdo, string $sha256, string $urlHash, string $cpsUrl): array {
@@ -1851,11 +1906,25 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
   }
 
   function buildOidSection(cert, fields, certPolicyOids, ownerCerts) {
-    var certOids     = Array.isArray(certPolicyOids) ? certPolicyOids : [];
-    var ccadbEvOids  = parseOidList(f(fields, 'EV OIDs for Root Cert'));
-    var cpsUrl       = f(fields, 'Certificate Practice Statement (CPS) URL')
-                    || f(fields, 'Certificate Practice & Policy Statement')
-                    || f(fields, 'MD/AsciiDoc CP/CPS URL');
+    var certOids    = Array.isArray(certPolicyOids) ? certPolicyOids : [];
+    var ccadbEvOids = parseOidList(f(fields, 'EV OIDs for Root Cert'));
+
+    // Collect all distinct CP/CPS document URLs present on this cert
+    var docUrlDefs = [
+      { label: 'CP',      key: 'Certificate Policy (CP) URL' },
+      { label: 'CPS',     key: 'Certificate Practice Statement (CPS) URL' },
+      { label: 'CP/CPS',  key: 'Certificate Practice & Policy Statement' },
+      { label: 'CP/CPS',  key: 'MD/AsciiDoc CP/CPS URL' },
+    ];
+    var seenUrls = {};
+    var certUrls = [];
+    docUrlDefs.forEach(function(d) {
+      var u = f(fields, d.key);
+      if (u && /^https?:\/\//.test(u) && !seenUrls[u]) {
+        seenUrls[u] = true;
+        certUrls.push({ label: d.label, url: u });
+      }
+    });
 
     // Build the section HTML
     var html = '<div class="cm-sect">'
@@ -1874,12 +1943,13 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
         + (cert.hasPem ? 'No certificatePolicies extension in certificate' : 'PEM not yet imported — run CCADB PEM sync')
         + '</div>';
     }
-    if (certOids.length > 0 && cpsUrl) {
+    if (certOids.length > 0 && certUrls.length > 0) {
+      var btnLabel = certUrls.length > 1 ? 'Verify OIDs in CP/CPS' : 'Verify OIDs in ' + certUrls[0].label;
       html += '<button type="button" class="oid-cps-btn"'
         + ' data-sha256="' + esc(cert.sha256) + '"'
         + ' data-oids="' + esc(JSON.stringify(certOids)) + '"'
-        + ' data-cps-url="' + esc(cpsUrl) + '"'
-        + '>Verify OIDs in CPS</button>'
+        + ' data-cert-urls="' + esc(JSON.stringify(certUrls)) + '"'
+        + '>' + esc(btnLabel) + '</button>'
         + '<div id="cmCpsResults" class="oid-cps-results"></div>';
     }
     html += '</div>';
@@ -2239,14 +2309,14 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
       if (btn.disabled) { return; }
       btn.disabled = true;
       btn.textContent = 'Verifying…';
-      var sha256  = btn.getAttribute('data-sha256');
-      var oidsRaw = btn.getAttribute('data-oids');
-      var cpsUrl  = btn.getAttribute('data-cps-url');
-      var results = document.getElementById('cmCpsResults');
+      var sha256   = btn.getAttribute('data-sha256');
+      var oidsRaw  = btn.getAttribute('data-oids');
+      var urlsRaw  = btn.getAttribute('data-cert-urls');
+      var results  = document.getElementById('cmCpsResults');
       function doVerifyCps(token) {
         var body = 'verify_cps=1'
           + '&cert_sha256=' + encodeURIComponent(sha256)
-          + '&cps_url='     + encodeURIComponent(cpsUrl)
+          + '&cert_urls='   + encodeURIComponent(urlsRaw)
           + '&cert_oids='   + encodeURIComponent(oidsRaw)
           + '&g_recaptcha_token=' + encodeURIComponent(token || '');
         fetch('/ccadb.php', {
@@ -2291,50 +2361,39 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
   };
 
   function renderCpsResults(container, data) {
-    if (!data.ok && !data.results) {
+    // Top-level error (e.g. reCAPTCHA failed, invalid params)
+    if (data.error && !data.docs) {
       var lbl = CPS_STATUS_LABELS[data.status] || { label: data.status || 'Error', cls: 'cps-s-failed' };
       container.innerHTML = '<div class="oid-cps-flag cps-err">'
         + '<strong>' + esc(lbl.label) + '</strong>'
-        + (data.error ? ' — ' + esc(data.error) : '')
+        + ' — ' + esc(data.error)
         + '</div>';
       container.classList.add('visible');
       return;
     }
 
     var html = '';
-
-    // Metadata row
-    var meta = [];
-    if (data.cpsUrl) {
-      var urlDisp = data.cpsUrl.length > 60 ? data.cpsUrl.substring(0, 57) + '…' : data.cpsUrl;
-      meta.push('<span class="oid-cps-meta-item"><span class="oid-cps-meta-label">CPS</span>'
-        + '<a href="' + esc(data.cpsUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(urlDisp) + '</a></span>');
-    }
-    if (data.contentType) {
-      meta.push('<span class="oid-cps-meta-item"><span class="oid-cps-meta-label">Type</span>' + esc(data.contentType) + '</span>');
-    }
-    if (data.downloadedAt) {
-      var age = data.fromCache ? ' (cached' + (data.cacheAgeDays != null ? ', ' + data.cacheAgeDays + 'd ago' : '') + ')' : ' (fresh)';
-      meta.push('<span class="oid-cps-meta-item"><span class="oid-cps-meta-label">Downloaded</span>' + esc(data.downloadedAt) + esc(age) + '</span>');
-    }
-    if (meta.length) {
-      html += '<div class="oid-cps-meta">' + meta.join('') + '</div>';
-    }
+    var multiDoc = data.docs && data.docs.length > 1;
 
     // Overall flag
     if (data.ok) {
-      html += '<div class="oid-cps-flag cps-ok">All OIDs verified in CPS</div>';
+      html += '<div class="oid-cps-flag cps-ok">All OIDs verified in CP/CPS</div>';
     } else {
       html += '<div class="oid-cps-flag cps-warn">One or more OIDs could not be verified</div>';
     }
 
-    // Per-OID results table
-    if (data.results && data.results.length) {
+    // Summary table (best result per OID across all docs)
+    if (data.summary && data.summary.length) {
       html += '<table class="oid-cps-table"><thead><tr>'
-        + '<th>OID</th><th>Status</th><th>Section</th><th>Notes / Snippet</th>'
+        + '<th>OID</th><th>Status</th>'
+        + (multiDoc ? '<th>Document</th>' : '<th>Section</th>')
+        + '<th>Notes / Snippet</th>'
         + '</tr></thead><tbody>';
-      data.results.forEach(function(r) {
-        var si = CPS_STATUS_LABELS[r.status] || { label: r.status, cls: 'cps-s-failed' };
+      data.summary.forEach(function(r) {
+        var si      = CPS_STATUS_LABELS[r.status] || { label: r.status, cls: 'cps-s-failed' };
+        var docCell = multiDoc
+          ? esc(r.docLabel || '—')
+          : esc(r.section  || '—');
         var snippet = '';
         if (r.snippet) {
           var hi = r.snippet.replace(new RegExp('(' + escRe(r.oid) + ')', 'g'), '<mark>$1</mark>');
@@ -2343,19 +2402,48 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
         html += '<tr>'
           + '<td>' + oidChip(r.oid) + '</td>'
           + '<td><span class="oid-cps-status ' + si.cls + '">' + esc(si.label) + '</span></td>'
-          + '<td class="oid-cps-section">' + esc(r.section || '—') + '</td>'
+          + '<td class="oid-cps-section">' + docCell + '</td>'
           + '<td>' + esc(r.notes || '') + snippet + '</td>'
           + '</tr>';
       });
       html += '</tbody></table>';
     }
 
-    // All OIDs detected in CPS
-    if (data.allCpsOids && data.allCpsOids.length) {
-      html += '<div class="oid-cps-all-oids">'
-        + '<div class="oid-cps-all-label">All OIDs detected in CPS</div>'
-        + '<div class="oid-chips">' + data.allCpsOids.map(oidChip).join('') + '</div>'
-        + '</div>';
+    // Per-document metadata + all detected OIDs
+    if (data.docs && data.docs.length) {
+      data.docs.forEach(function(doc) {
+        var meta = [];
+        var docUrl = doc.cpsUrl || doc.url || '';
+        if (docUrl) {
+          var urlDisp = docUrl.length > 55 ? docUrl.substring(0, 52) + '…' : docUrl;
+          meta.push('<span class="oid-cps-meta-item"><span class="oid-cps-meta-label">'
+            + esc(doc.label || 'Doc') + '</span>'
+            + '<a href="' + esc(docUrl) + '" target="_blank" rel="noopener noreferrer">' + esc(urlDisp) + '</a></span>');
+        }
+        if (doc.contentType) {
+          meta.push('<span class="oid-cps-meta-item"><span class="oid-cps-meta-label">Type</span>' + esc(doc.contentType) + '</span>');
+        }
+        if (doc.downloadedAt) {
+          var age = doc.fromCache
+            ? ' (cached' + (doc.cacheAgeDays != null ? ', ' + doc.cacheAgeDays + 'd ago' : '') + ')'
+            : ' (fresh)';
+          meta.push('<span class="oid-cps-meta-item"><span class="oid-cps-meta-label">Downloaded</span>'
+            + esc(doc.downloadedAt) + esc(age) + '</span>');
+        }
+        if (doc.error) {
+          meta.push('<span class="oid-cps-meta-item"><span class="oid-cps-meta-label" style="color:var(--red)">Error</span>'
+            + esc(doc.error) + '</span>');
+        }
+        if (meta.length) {
+          html += '<div class="oid-cps-meta">' + meta.join('') + '</div>';
+        }
+        if (doc.allCpsOids && doc.allCpsOids.length) {
+          html += '<div class="oid-cps-all-oids">'
+            + '<div class="oid-cps-all-label">All OIDs detected in ' + esc(doc.label || 'document') + '</div>'
+            + '<div class="oid-chips">' + doc.allCpsOids.map(oidChip).join('') + '</div>'
+            + '</div>';
+        }
+      });
     }
 
     container.innerHTML = html;
