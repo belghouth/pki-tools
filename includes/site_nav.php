@@ -8,8 +8,33 @@
  */
 $_navLabel = $navLabel ?? '';
 ?>
+<script>
+/* Restore theme before first paint to avoid flash */
+(function(){
+  try {
+    var t = localStorage.getItem('theme');
+    if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  } catch(e) {}
+})();
+</script>
 <style>
 @media (pointer: coarse) { body { overscroll-behavior-y: none; } }
+
+/* ── Light theme variable overrides (applies to all pages via CSS vars) ── */
+html[data-theme="light"] {
+  --bg:      #f4f6f9;
+  --surface: #ffffff;
+  --surface2:#edf0f5;
+  --border:  #d0d7e3;
+  --text:    #1c2333;
+  --muted:   #5a6a84;
+  --accent:  #009e82;
+  --green:   #009e82;
+  --red:     #c0392b;
+  --amber:   #b7760d;
+  --purple:  #6d4fe0;
+}
+
 /* ── Shared site nav ──────────────────────────────────────────────────────── */
 .snav {
   position: sticky; top: 0; z-index: 100;
@@ -82,6 +107,24 @@ $_navLabel = $navLabel ?? '';
 }
 .snav-link[aria-current="page"] svg { opacity: 1; }
 
+/* ── Theme toggle button ── */
+.snav-theme-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; flex-shrink: 0;
+  background: transparent;
+  border: 1px solid #1e2535;
+  border-radius: 6px; cursor: pointer;
+  color: #8a9ab8;
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+  padding: 0;
+}
+.snav-theme-btn:hover { color: #e8edf5; border-color: #3a4458; background: rgba(255,255,255,0.04); }
+/* Show sun in dark mode (click → go light), moon in light mode (click → go dark) */
+.snav-theme-btn .icon-sun  { display: none; }
+.snav-theme-btn .icon-moon { display: block; }
+html[data-theme="light"] .snav-theme-btn .icon-moon { display: none; }
+html[data-theme="light"] .snav-theme-btn .icon-sun  { display: block; }
+
 /* ── Hamburger button (mobile only) ── */
 .snav-burger {
   display: none;
@@ -132,6 +175,45 @@ $_navLabel = $navLabel ?? '';
     border-radius: 6px;
   }
 }
+
+/* ── Light theme nav overrides ── */
+html[data-theme="light"] .snav {
+  background: rgba(244,246,249,0.96);
+  border-bottom-color: #d0d7e3;
+}
+html[data-theme="light"] .snav-wordmark { color: #009e82; }
+html[data-theme="light"] .snav-label    { color: #8a9ab8; }
+html[data-theme="light"] .snav-link     { color: #4a5a74; }
+html[data-theme="light"] .snav-link:hover {
+  color: #1c2333;
+  background: rgba(0,0,0,0.04);
+  border-color: rgba(0,0,0,0.08);
+}
+html[data-theme="light"] .snav-link[aria-current="page"] {
+  color: #009e82;
+  background: rgba(0,158,130,0.08);
+  border-color: rgba(0,158,130,0.2);
+}
+html[data-theme="light"] .snav-theme-btn {
+  border-color: #d0d7e3;
+  color: #4a5a74;
+}
+html[data-theme="light"] .snav-theme-btn:hover {
+  color: #1c2333;
+  border-color: #a0b0c8;
+  background: rgba(0,0,0,0.04);
+}
+html[data-theme="light"] .snav-burger { border-color: #d0d7e3; }
+html[data-theme="light"] .snav-burger span { background: #4a5a74; }
+html[data-theme="light"] .snav-burger:hover { border-color: #a0b0c8; background: rgba(0,0,0,0.03); }
+html[data-theme="light"] .snav-burger:hover span { background: #1c2333; }
+@media (max-width: 820px) {
+  html[data-theme="light"] .snav-links {
+    background: #f4f6f9;
+    border-bottom-color: #d0d7e3;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  }
+}
 </style>
 
 <nav class="snav" id="siteNav">
@@ -146,6 +228,21 @@ $_navLabel = $navLabel ?? '';
   <?php else: ?>
   <span class="snav-label"></span>
   <?php endif; ?>
+
+  <button class="snav-theme-btn" id="snavThemeBtn" aria-label="Toggle light/dark theme" title="Toggle theme">
+    <!-- Moon: shown in dark mode — click to switch to light -->
+    <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z"/>
+    </svg>
+    <!-- Sun: shown in light mode — click to switch to dark -->
+    <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="5"/>
+      <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+      <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+    </svg>
+  </button>
 
   <button class="snav-burger" id="snavBurger" aria-label="Toggle navigation" aria-expanded="false" aria-controls="snavLinks">
     <span></span><span></span><span></span>
@@ -211,6 +308,7 @@ $_navLabel = $navLabel ?? '';
   var nav    = document.getElementById('siteNav');
   var burger = document.getElementById('snavBurger');
   var links  = document.getElementById('snavLinks');
+  var themeBtn = document.getElementById('snavThemeBtn');
 
   function open()  { nav.classList.add('snav--open');    burger.setAttribute('aria-expanded', 'true');  }
   function close() { nav.classList.remove('snav--open'); burger.setAttribute('aria-expanded', 'false'); }
@@ -225,7 +323,19 @@ $_navLabel = $navLabel ?? '';
     if (e.key === 'Escape') close();
   });
 
-  // Mark the current page link (skip anchor-only and mailto links)
+  // ── Theme toggle ──────────────────────────────────────────────────────────
+  themeBtn.addEventListener('click', function () {
+    var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+    if (isLight) {
+      document.documentElement.removeAttribute('data-theme');
+      try { localStorage.setItem('theme', 'dark'); } catch(e) {}
+    } else {
+      document.documentElement.setAttribute('data-theme', 'light');
+      try { localStorage.setItem('theme', 'light'); } catch(e) {}
+    }
+  });
+
+  // ── Mark current page link ────────────────────────────────────────────────
   var cur = location.pathname;
   links.querySelectorAll('a.snav-link').forEach(function (a) {
     var href = a.getAttribute('href');
