@@ -22,6 +22,7 @@ header("Content-Security-Policy: "
 );
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/recaptcha.php';
 
 const OWNERS_PER_PAGE = 25;
 
@@ -33,7 +34,7 @@ $search     = trim(substr($_GET['q']          ?? '', 0, 200));
 $page       = max(1, (int)($_GET['p']         ?? 1));
 $isJson     = isset($_GET['json'])   && $_GET['json']   === '1';
 $detail     = trim($_GET['detail']   ?? '');
-$verifyUrl  = trim($_GET['verify_url'] ?? '');
+$verifyUrl  = trim($_POST['verify_url'] ?? '');
 
 // ── DB ────────────────────────────────────────────────────────────────────────
 
@@ -59,42 +60,59 @@ if ($pdo) {
 
 if ($verifyUrl !== '') {
     header(HDR_JSON);
+    $rcToken = trim($_POST['g_recaptcha_token'] ?? '');
+    if (recaptcha_configured() && !recaptcha_verify($rcToken, 'verify_url')) {
+        echo json_encode(['ok' => false, 'status' => 'reCAPTCHA failed']);
+        exit;
+    }
     if (!preg_match('#^https?://#i', $verifyUrl)) {
         echo json_encode(['ok' => false, 'status' => 'Invalid URL']);
         exit;
     }
-    $ch = curl_init($verifyUrl);
-    curl_setopt_array($ch, [
-        CURLOPT_NOBODY         => true,
+    $curlOpts = [
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_MAXREDIRS      => 5,
-        CURLOPT_TIMEOUT        => 10,
+        CURLOPT_TIMEOUT        => 12,
+        CURLOPT_CONNECTTIMEOUT => 6,
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_USERAGENT      => 'pki-tools/1.0 (URL verify)',
+        CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; pki-tools/1.0)',
         CURLOPT_SSL_VERIFYPEER => false,
-    ]);
+        CURLOPT_HTTPHEADER     => ['Accept: */*'],
+    ];
+    // Phase 1: HEAD
+    $ch = curl_init($verifyUrl);
+    curl_setopt_array($ch, $curlOpts + [CURLOPT_NOBODY => true]);
     curl_exec($ch);
     $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $curlErr  = curl_error($ch);
     curl_close($ch);
+    // Phase 2: GET fallback if HEAD gave no response or 405
+    if ($curlErr === '' && ($httpCode === 0 || $httpCode === 405)) {
+        $ch2 = curl_init($verifyUrl);
+        curl_setopt_array($ch2, $curlOpts + [CURLOPT_NOBODY => false, CURLOPT_RANGE => '0-1023']);
+        curl_exec($ch2);
+        $httpCode = (int) curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+        $curlErr  = curl_error($ch2);
+        curl_close($ch2);
+    }
     if ($curlErr !== '') {
         $errLc = strtolower($curlErr);
         if (str_contains($errLc, 'ssl') || str_contains($errLc, 'tls') || str_contains($errLc, 'certificate')) {
-            $friendly = 'SSL Error';
+            $label = 'SSL Error';
         } elseif (str_contains($errLc, 'timed out') || str_contains($errLc, 'timeout')) {
-            $friendly = 'Timeout';
+            $label = 'Timeout';
         } elseif (str_contains($errLc, 'could not resolve') || str_contains($errLc, 'name resolution')) {
-            $friendly = 'DNS Error';
+            $label = 'DNS Error';
         } elseif (str_contains($errLc, 'connection refused')) {
-            $friendly = 'Connection Refused';
+            $label = 'Refused';
         } else {
-            $friendly = 'Network Error';
+            $label = 'Network Error';
         }
-        echo json_encode(['ok' => false, 'status' => $friendly]);
+        echo json_encode(['ok' => false, 'status' => $label]);
     } elseif ($httpCode >= 200 && $httpCode < 400) {
         echo json_encode(['ok' => true,  'status' => (string)$httpCode]);
     } else {
-        echo json_encode(['ok' => false, 'status' => (string)($httpCode ?: 'No Response')]);
+        echo json_encode(['ok' => false, 'status' => $httpCode > 0 ? (string)$httpCode : 'No Response']);
     }
     exit;
 }
@@ -264,6 +282,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+  <?= recaptcha_head() ?>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap" rel="stylesheet">
@@ -532,10 +551,13 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     /* CRL URL rows */
     .cm-crl-list{display:flex;flex-direction:column;gap:.35rem}
     .cm-crl-row{display:flex;align-items:center;gap:.4rem}
-    .cm-crl-input{flex:1;font-family:var(--mono);font-size:.67rem;background:#0e1219;border:1px solid var(--border);border-radius:4px;color:var(--text);padding:.28rem .5rem;overflow-x:auto;white-space:nowrap;cursor:text;min-width:0}
+    .cm-crl-input{flex:1;font-family:var(--mono);font-size:.67rem;background:#0e1219;border:1px solid var(--border);border-radius:4px;color:var(--accent);padding:.28rem .5rem;overflow-x:auto;white-space:nowrap;cursor:pointer;min-width:0;text-decoration:underline;text-underline-offset:2px;text-decoration-color:rgba(0,212,170,.35)}
+    .cm-crl-input:hover{border-color:var(--accent);color:#fff;text-decoration-color:rgba(0,212,170,.7)}
+    .cm-crl-open{background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;padding:.2rem .35rem;flex-shrink:0;line-height:1;font-size:.8rem}
+    .cm-crl-open:hover{color:var(--accent);border-color:var(--accent)}
     .cm-crl-verify{font-family:var(--mono);font-size:.62rem;padding:.2rem .55rem;border-radius:4px;border:1px solid rgba(0,212,170,.35);background:transparent;color:var(--green);cursor:pointer;white-space:nowrap;flex-shrink:0}
     .cm-crl-verify:hover{background:rgba(0,212,170,.08)}
-    .cm-crl-verify.checking{color:var(--muted);border-color:var(--border);cursor:default}
+    .cm-crl-verify.checking{color:var(--muted);border-color:var(--border);cursor:default;pointer-events:none}
     .cm-crl-verify.ok{color:var(--green);border-color:rgba(0,212,170,.5)}
     .cm-crl-verify.broken{color:var(--red);border-color:rgba(232,85,85,.4)}
 
@@ -673,7 +695,8 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
   'use strict';
 
   // ── Initial data injected by PHP ──────────────────────────────────────────
-  var initData = <?= json_encode($initialData) ?>;
+  var initData       = <?= json_encode($initialData) ?>;
+  var RCAPTCHA_KEY   = <?= json_encode(RECAPTCHA_SITE_KEY) ?>;
 
   // ── State ─────────────────────────────────────────────────────────────────
   var allOwners   = [];   // current page data
@@ -1014,12 +1037,8 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     value.split(/[;\n]+/).forEach(function(u) {
       u = u.trim();
       if (!u) { return; }
-      var id = 'url-verify-' + (++_crlVerifyId);
       if (/^https?:\/\//.test(u)) {
-        rows += '<div class="cm-crl-row">'
-              +   '<input class="cm-crl-input" type="text" readonly value="' + esc(u) + '" aria-label="' + esc(label) + '">'
-              +   '<button class="cm-crl-verify" data-url="' + esc(u) + '" id="' + id + '">Verify</button>'
-              + '</div>';
+        rows += urlInput(u, label);
       } else {
         rows += '<div class="cm-crl-row"><span class="cm-dd">' + esc(u) + '</span></div>';
       }
@@ -1100,11 +1119,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     }
     var rows = '';
     urls.forEach(function(url) {
-      var id = 'crl-verify-' + (++_crlVerifyId);
-      rows += '<div class="cm-crl-row">'
-            +   '<input class="cm-crl-input" type="text" readonly value="' + esc(url) + '" aria-label="' + esc(label) + ' URL">'
-            +   '<button class="cm-crl-verify" data-url="' + esc(url) + '" id="' + id + '">Verify</button>'
-            + '</div>';
+      rows += urlInput(url, label + ' URL');
     });
     return dt + '<dd class="cm-dd"><div class="cm-crl-list">' + rows + '</div></dd>';
   }
@@ -1113,14 +1128,24 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
   function urlFieldRow(label, value) {
     var dt = '<dt class="cm-dt">' + esc(label) + '</dt>';
     if (!value || value === '-' || !/^https?:\/\//.test(value)) {
-      return '<dt class="cm-dt">' + esc(label) + '</dt><dd class="cm-dd">'
+      return dt + '<dd class="cm-dd">'
            + (!value || value === '-' ? '<span class="cm-dd-muted">—</span>' : esc(value)) + '</dd>';
     }
+    return dt + '<dd class="cm-dd"><div class="cm-crl-list">' + urlInput(value, label) + '</div></dd>';
+  }
+
+  // ── Shared: single URL input row with open + verify buttons ──────────────
+  function urlInput(url, ariaLabel) {
     var id = 'url-verify-' + (++_crlVerifyId);
-    return dt + '<dd class="cm-dd"><div class="cm-crl-row">'
-         + '<input class="cm-crl-input" type="text" readonly value="' + esc(value) + '" aria-label="' + esc(label) + '">'
-         + '<button class="cm-crl-verify" data-url="' + esc(value) + '" id="' + id + '">Verify</button>'
-         + '</div></dd>';
+    return '<div class="cm-crl-row">'
+         +   '<input class="cm-crl-input" type="text" readonly value="' + esc(url) + '"'
+         +     ' aria-label="' + esc(ariaLabel || 'URL') + '"'
+         +     ' data-href="' + esc(url) + '" tabindex="0">'
+         +   '<button class="cm-crl-open" data-href="' + esc(url) + '" title="Open in new tab" aria-label="Open ' + esc(url) + '">'
+         +     '&#8599;'
+         +   '</button>'
+         +   '<button class="cm-crl-verify" data-url="' + esc(url) + '" id="' + id + '">Verify</button>'
+         + '</div>';
   }
 
   function trustCard(browser, status, evStatus) {
@@ -1310,31 +1335,66 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     });
   }
 
-  // ── Wire Verify buttons (CRL / URL fields) ───────────────────────────────
+  // ── Wire URL inputs/open buttons + Verify buttons ────────────────────────
   function wireVerifyButtons(container) {
+    // Click on the input itself → open URL
+    container.querySelectorAll('.cm-crl-input[data-href]').forEach(function(inp) {
+      inp.addEventListener('click', function() {
+        window.open(inp.getAttribute('data-href'), '_blank', 'noopener');
+      });
+      inp.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          window.open(inp.getAttribute('data-href'), '_blank', 'noopener');
+        }
+      });
+    });
+    // Open icon button
+    container.querySelectorAll('.cm-crl-open[data-href]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        window.open(btn.getAttribute('data-href'), '_blank', 'noopener');
+      });
+    });
+    // Verify button
     container.querySelectorAll('.cm-crl-verify').forEach(function(btn) {
       btn.addEventListener('click', function() {
         var url = btn.getAttribute('data-url');
         if (!url || btn.classList.contains('checking')) { return; }
         btn.classList.add('checking');
         btn.textContent = '…';
-        fetch('/ccadb.php?verify_url=' + encodeURIComponent(url))
-          .then(function(r) { return r.json(); })
-          .then(function(data) {
-            btn.classList.remove('checking');
-            if (data.ok) {
-              btn.classList.add('ok');
-              btn.textContent = '✓ ' + (data.status || 'OK');
-            } else {
-              btn.classList.add('broken');
-              btn.textContent = '✗ ' + (data.status || 'Error');
-            }
+        function doVerify(token) {
+          var body = 'verify_url=' + encodeURIComponent(url)
+                   + '&g_recaptcha_token=' + encodeURIComponent(token || '');
+          fetch('/ccadb.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body,
           })
-          .catch(function() {
-            btn.classList.remove('checking');
-            btn.classList.add('broken');
-            btn.textContent = '✗ Failed';
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              btn.classList.remove('checking');
+              if (data.ok) {
+                btn.classList.add('ok');
+                btn.textContent = '✓ ' + (data.status || 'OK');
+              } else {
+                btn.classList.add('broken');
+                btn.textContent = '✗ ' + (data.status || 'Error');
+              }
+            })
+            .catch(function() {
+              btn.classList.remove('checking');
+              btn.classList.add('broken');
+              btn.textContent = '✗ Failed';
+            });
+        }
+        if (typeof grecaptcha !== 'undefined' && RCAPTCHA_KEY && RCAPTCHA_KEY.indexOf('YOUR_') === -1) {
+          grecaptcha.ready(function() {
+            grecaptcha.execute(RCAPTCHA_KEY, { action: 'verify_url' })
+              .then(function(token) { doVerify(token); })
+              .catch(function() { doVerify(''); });
           });
+        } else {
+          doVerify('');
+        }
       });
     });
   }
