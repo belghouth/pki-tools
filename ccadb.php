@@ -17,7 +17,9 @@ header("Content-Security-Policy: "
     . "default-src 'self'; "
     . "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
     . "font-src https://fonts.gstatic.com; "
-    . "script-src 'self' 'unsafe-inline'; "
+    . "script-src 'self' 'unsafe-inline' https://www.google.com https://www.gstatic.com https://www.recaptcha.net; "
+    . "frame-src https://www.google.com https://www.recaptcha.net; "
+    . "connect-src 'self' https://www.google.com https://www.recaptcha.net; "
     . "object-src 'none'; base-uri 'self'; form-action 'self';"
 );
 

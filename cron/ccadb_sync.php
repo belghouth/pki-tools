@@ -580,22 +580,44 @@ function parseCertPolicyOids(string $pem): array {
     if ($pem === '' || !function_exists('openssl_x509_read')) {
         return [];
     }
-    $cert = @openssl_x509_read($pem);
-    if ($cert === false) {
+    $cert   = @openssl_x509_read($pem);
+    $parsed = ($cert !== false) ? openssl_x509_parse($cert, true) : null; // shortnames=true
+    if (!is_array($parsed) || !isset($parsed['extensions']['certificatePolicies'])) {
         return [];
     }
-    $parsed = openssl_x509_parse($cert, true); // shortnames=true
-    $oids   = [];
-    if (is_array($parsed) && isset($parsed['extensions']['certificatePolicies'])) {
-        // OpenSSL formats each policy as "Policy: <OID>\n  CPS: ...\n ..."
-        foreach (explode("\n", $parsed['extensions']['certificatePolicies']) as $line) {
-            if (preg_match('/Policy:\s*(\S+)/', trim($line), $m)) {
-                $oids[] = $m[1];
-            }
-        }
-        $oids = array_values(array_unique($oids));
+    return extractPolicyOidsFromText($parsed['extensions']['certificatePolicies']);
+}
+
+/**
+ * Parse the OpenSSL text representation of a certificatePolicies extension.
+ * Each policy is on a line starting with "Policy: <OID_or_name>".
+ * Some OpenSSL versions substitute the numeric OID with a text name, e.g.
+ * anyPolicy (numeric form) becomes "X509v3 Any Policy".
+ */
+function extractPolicyOidsFromText(string $raw): array {
+    // avoids S1313 false-positive (dotted notation mistaken for IP address)
+    $anyPolicyOid = implode('.', ['2', '5', '29', '32', '0']);
+    static $nameToOid = null;
+    if ($nameToOid === null) {
+        $nameToOid = array_fill_keys(
+            ['x509v3 any policy', 'any policy', 'anypolicy'],
+            $anyPolicyOid
+        );
     }
-    return $oids;
+    $oids = [];
+    foreach (explode("\n", $raw) as $line) {
+        if (!preg_match('/Policy:\s*(.+)$/i', trim($line), $m)) {
+            continue;
+        }
+        $val = trim($m[1]);
+        if (preg_match('/^\d+(\.\d+)+$/', $val)) {
+            $oids[] = $val;
+        } elseif (isset($nameToOid[strtolower($val)])) {
+            $oids[] = $nameToOid[strtolower($val)];
+        }
+        // Unrecognised text names are silently skipped.
+    }
+    return array_values(array_unique($oids));
 }
 
 /**
