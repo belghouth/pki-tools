@@ -44,9 +44,11 @@ if (!$pdo) {
 }
 
 $resourceKey = $argv[1] ?? null;
-$targets = $resourceKey !== null
-    ? (isset(CCADB_RESOURCES[$resourceKey]) ? [$resourceKey => CCADB_RESOURCES[$resourceKey]] : [])
-    : CCADB_RESOURCES;
+if ($resourceKey !== null) {
+    $targets = isset(CCADB_RESOURCES[$resourceKey]) ? [$resourceKey => CCADB_RESOURCES[$resourceKey]] : [];
+} else {
+    $targets = CCADB_RESOURCES;
+}
 
 if (!$targets) {
     fwrite(STDERR, "[ccadb_sync] Unknown resource key: $resourceKey\n");
@@ -141,7 +143,7 @@ function importCsv(PDO $pdo, string $key, string $filePath): array {
     $syncId = (int)$pdo->lastInsertId();
 
     $stmt = $pdo->prepare(
-        "INSERT INTO ccadb_rows (resource_key, sync_id, row_number, data_json, search_text)
+        "INSERT INTO ccadb_rows (resource_key, sync_id, `row_number`, data_json, search_text)
          VALUES (?, ?, ?, ?, ?)"
     );
 
@@ -157,7 +159,7 @@ function importCsv(PDO $pdo, string $key, string $filePath): array {
         }
         $data       = array_combine($headers, $cols);
         $searchText = implode(' ', array_filter(array_values($data)));
-        $batch[]    = [$key, $syncId, $rowNum, json_encode($data, JSON_UNESCAPED_UNICODE), $searchText];
+        $batch[] = [$key, $syncId, $rowNum, json_encode($data, JSON_UNESCAPED_UNICODE), $searchText];
 
         if (count($batch) >= CCADB_BATCH) {
             $flushed = flushBatch($pdo, $stmt, $batch);
@@ -186,7 +188,8 @@ function importCsv(PDO $pdo, string $key, string $filePath): array {
             $pdo->prepare(
                 "UPDATE ccadb_sync_log SET status='error', error_message=? WHERE id=?"
             )->execute([$error, $syncId]);
-        } catch (Throwable) {
+        } catch (Throwable $e) {
+            fwrite(STDERR, "[ccadb_sync] Rollback error: " . $e->getMessage() . "\n");
         }
         return ['rows' => $inserted, 'error' => $error];
     }
@@ -235,6 +238,7 @@ function logSync(PDO $pdo, string $key, string $status, int $rows, ?string $msg)
             "INSERT INTO ccadb_sync_log (resource_key, status, row_count, error_message)
              VALUES (?, ?, ?, ?)"
         )->execute([$key, $status, $rows, $msg]);
-    } catch (Throwable) {
+    } catch (Throwable $e) {
+        fwrite(STDERR, "[ccadb_sync] Log error: " . $e->getMessage() . "\n");
     }
 }

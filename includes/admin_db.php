@@ -295,7 +295,7 @@ function schemaIntel(PDO $pdo): void {
         id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
         resource_key  VARCHAR(40)     NOT NULL,
         sync_id       INT UNSIGNED    NOT NULL,
-        row_number    INT UNSIGNED    NOT NULL,
+        `row_number`  INT UNSIGNED    NOT NULL,
         data_json     JSON            NOT NULL,
         search_text   TEXT            NOT NULL DEFAULT '',
         INDEX idx_resource (resource_key),
