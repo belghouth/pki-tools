@@ -20,9 +20,15 @@ $_navLabel = $navLabel ?? '';
 <style>
 @media (pointer: coarse) { body { overscroll-behavior-y: none; } }
 
-/* ── Light theme: invert + contrast boost, then restore media to original ── */
+/* ── Light theme: invert + contrast, then restore media ── */
 html[data-theme="light"] {
   filter: invert(1) hue-rotate(180deg) contrast(1.1);
+  /* Override grey CSS vars to lighter pre-inversion values so they land
+     as readable darks after the filter (e.g. #aaa → inverted → #555). */
+  --muted:   #aaaaaa;
+  --border:  #b8b8b8;
+  --surface: #1c2030;
+  --surface2:#232840;
 }
 html[data-theme="light"] img,
 html[data-theme="light"] video,
@@ -30,6 +36,8 @@ html[data-theme="light"] iframe,
 html[data-theme="light"] canvas {
   filter: invert(1) hue-rotate(180deg) contrast(0.91);
 }
+/* Hardcoded nav label grey — override so it inverts to a readable dark tone */
+html[data-theme="light"] .snav-label { color: #b0b8c4; }
 
 /* ── Shared site nav ──────────────────────────────────────────────────────── */
 body { padding-top: 56px; }
