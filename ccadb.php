@@ -212,6 +212,7 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     $in   = implode(',', array_fill(0, count($ownerNames), '?'));
     $certs = $pdo->prepare(
         "SELECT ca_owner, cert_name, cert_type, sha256,
+                salesforce_id, parent_salesforce_id, parent_sha256,
                 valid_from, valid_to,
                 status_apple, status_chrome, status_microsoft, status_mozilla,
                 tls_capable, tls_ev_capable, code_sign_capable, smime_capable,
@@ -255,6 +256,13 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
             'csCap'       => (bool)$row['code_sign_capable'],
             'smimeCap'    => (bool)$row['smime_capable'],
             'hasPem'      => (bool)$row['has_pem'],
+            'sfId'        => $row['salesforce_id']           ?? '',
+            'parentSfId'  => $row['parent_salesforce_id']    ?? '',
+            'parentSha256'=> $row['parent_sha256']           ?? '',
+            'aki'         => $raw['Authority Key Identifier'] ?? '',
+            'ski'         => $raw['Subject Key Identifier']   ?? '',
+            'revocation'  => $raw['Revocation Status']        ?? '',
+            'constrained' => $raw['Technically Constrained']  ?? '',
         ];
     }
 
@@ -398,6 +406,26 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     .cert-chevron{color:var(--muted);font-size:.75rem;opacity:.4}
     tr.cert-row:hover .cert-chevron{opacity:1;color:var(--accent)}
 
+    /* ── Tree structure ── */
+    .tree-toggle{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.7rem;padding:0 .3rem 0 0;line-height:1;flex-shrink:0;transition:transform 150ms;user-select:none;vertical-align:middle}
+    .tree-toggle:hover{color:var(--accent)}
+    .tree-toggle.open{transform:rotate(90deg);color:var(--accent)}
+    .tree-toggle.leaf{opacity:0;pointer-events:none}
+    .cert-name-wrap{display:flex;align-items:center;gap:0}
+    .tree-connector{display:inline-block;font-size:.75rem;color:#2a3040;margin-right:.25rem;font-family:var(--mono);flex-shrink:0;user-select:none}
+    /* ── Status mini-badges ── */
+    .cert-status-badges{display:flex;flex-wrap:wrap;gap:.2rem;margin-top:.15rem}
+    .badge-revoked{font-family:var(--mono);font-size:.55rem;font-weight:700;letter-spacing:.06em;background:rgba(232,85,85,.15);color:var(--red);border:1px solid rgba(232,85,85,.4);border-radius:3px;padding:.05rem .3rem;text-transform:uppercase}
+    .badge-expired{font-family:var(--mono);font-size:.55rem;font-weight:700;letter-spacing:.06em;background:rgba(245,166,35,.12);color:var(--amber);border:1px solid rgba(245,166,35,.35);border-radius:3px;padding:.05rem .3rem;text-transform:uppercase}
+    .badge-constrained{font-family:var(--mono);font-size:.55rem;color:var(--muted);border:1px solid var(--border);border-radius:3px;padding:.05rem .3rem}
+    .badge-orphan{font-family:var(--mono);font-size:.55rem;color:var(--amber);border:1px solid rgba(245,166,35,.35);border-radius:3px;padding:.05rem .3rem}
+    .badge-mismatch{font-family:var(--mono);font-size:.55rem;color:#f97316;border:1px solid rgba(249,115,22,.35);border-radius:3px;padding:.05rem .3rem}
+    /* ── Revoked / expired row tint ── */
+    tr.cert-row.is-revoked{background:rgba(232,85,85,.04)}
+    tr.cert-row.is-revoked:hover{background:rgba(232,85,85,.08)}
+    tr.cert-row.is-expired{background:rgba(245,166,35,.03)}
+    tr.cert-row.is-expired:hover{background:rgba(245,166,35,.07)}
+
     /* ── Trust bits tags ── */
     .trust-tags{display:flex;flex-wrap:wrap;gap:.2rem}
     .trust-tag{
@@ -480,6 +508,15 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     .cm-owner{font-size:.78rem;color:var(--muted);margin-top:.15rem}
     .cm-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.4rem;line-height:1;padding:.2rem .4rem;border-radius:4px;flex-shrink:0;transition:color 120ms,background 120ms}
     .cm-close:hover{color:var(--text);background:rgba(255,255,255,.06)}
+
+    /* ── Revoked/expired modal header accent ── */
+    .cm-box.is-revoked{border-color:rgba(232,85,85,.5);box-shadow:0 32px 100px rgba(0,0,0,.8),0 0 0 1px rgba(232,85,85,.2)}
+    .cm-box.is-revoked .cm-hd{background:rgba(232,85,85,.06);border-bottom-color:rgba(232,85,85,.25)}
+    .cm-box.is-expired{border-color:rgba(245,166,35,.4);box-shadow:0 32px 100px rgba(0,0,0,.8),0 0 0 1px rgba(245,166,35,.15)}
+    .cm-box.is-expired .cm-hd{background:rgba(245,166,35,.05);border-bottom-color:rgba(245,166,35,.2)}
+    .cm-status-banner{font-family:var(--mono);font-size:.67rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;padding:.3rem 1.5rem;text-align:center;display:none}
+    .cm-status-banner.show-revoked{display:block;background:rgba(232,85,85,.12);color:var(--red);border-bottom:1px solid rgba(232,85,85,.25)}
+    .cm-status-banner.show-expired{display:block;background:rgba(245,166,35,.08);color:var(--amber);border-bottom:1px solid rgba(245,166,35,.2)}
 
     /* loading state */
     .cm-loading{text-align:center;padding:4rem 1rem;color:var(--muted);font-family:var(--mono);font-size:.82rem}
@@ -681,6 +718,8 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
         <button class="cm-close" id="cmClose" aria-label="Close">×</button>
       </div>
 
+      <div class="cm-status-banner" id="cmStatusBanner"></div>
+
       <div class="cm-body" id="cmBody">
         <div class="cm-loading" id="cmLoading">Loading…</div>
       </div>
@@ -699,7 +738,8 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
   var RCAPTCHA_KEY   = <?= json_encode(RECAPTCHA_SITE_KEY) ?>;
 
   // ── State ─────────────────────────────────────────────────────────────────
-  var allOwners   = [];   // current page data
+  var allOwners      = [];   // current page data
+  var collapsedNodes = new Set();
   var activeFilter= 'all';
   var searchQ     = '';
   var curPage     = 1;
@@ -825,6 +865,155 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     return true;
   }
 
+  // ── Cert status helpers ───────────────────────────────────────────────────
+  function isRevoked(cert) {
+    var lc = (cert.revocation || '').toLowerCase();
+    return lc.indexOf('revok') !== -1 && lc.indexOf('not revok') === -1;
+  }
+  function isExpired(cert) {
+    return cert.validTo && (new Date(cert.validTo)) < new Date();
+  }
+
+  // ── Build cert tree for one CA owner group ────────────────────────────────
+  function buildCertTree(certs) {
+    var sfMap = {}, sha256Map = {}, skiMap = {};
+    certs.forEach(function(c) {
+      c._parent   = null;
+      c._children = [];
+      c._orphan   = false;
+      c._mismatch = false;
+      c._baseVis  = true;
+      if (c.sfId)   { sfMap[c.sfId]       = c; }
+      if (c.sha256) { sha256Map[c.sha256] = c; }
+      if (c.ski)    { skiMap[c.ski]       = c; }
+    });
+
+    certs.forEach(function(c) {
+      var isRoot = (c.type || '').toLowerCase().indexOf('root') !== -1;
+      if (isRoot) { return; }
+
+      var p1 = c.parentSfId    ? (sfMap[c.parentSfId]       || null) : null;
+      var p2 = c.parentSha256  ? (sha256Map[c.parentSha256] || null) : null;
+      var p3 = c.aki           ? (skiMap[c.aki]             || null) : null;
+      var parent = p1 || p2 || p3;
+
+      if (!parent) {
+        c._orphan = true;
+        return;
+      }
+      if (p1 && p2 && p1 !== p2) { c._mismatch = true; }
+      c._parent = parent;
+      parent._children.push(c);
+    });
+
+    var roots   = certs.filter(function(c) { return !c._parent && !c._orphan; });
+    var orphans = certs.filter(function(c) { return c._orphan; });
+    return { roots: roots, orphans: orphans };
+  }
+
+  // ── Flatten tree DFS ──────────────────────────────────────────────────────
+  function flattenTree(roots, orphans) {
+    var flat = [];
+    function walk(node, depth, parentSha) {
+      flat.push({ cert: node, depth: depth, parentSha: parentSha || '' });
+      node._children.forEach(function(child) { walk(child, depth + 1, node.sha256); });
+    }
+    roots.forEach(function(r) { walk(r, 0, ''); });
+    orphans.forEach(function(o) { flat.push({ cert: o, depth: 0, parentSha: '', isOrphan: true }); });
+    return flat;
+  }
+
+  // ── Apply filter: mark baseVis on each flat item ──────────────────────────
+  function applyFilterToFlat(flat) {
+    if (activeFilter === 'all') {
+      flat.forEach(function(item) { item.baseVis = true; });
+      return;
+    }
+    flat.forEach(function(item) { item.baseVis = certMatchesFilter(item.cert); });
+    // Propagate up: if a descendant matches, ancestors are also visible
+    flat.forEach(function(item) {
+      if (!item.baseVis) { return; }
+      var p = item.cert._parent;
+      while (p) {
+        p._propVis = true;
+        p = p._parent;
+      }
+    });
+    flat.forEach(function(item) {
+      if (item.cert._propVis) { item.baseVis = true; }
+      item.cert._propVis = false; // reset for next call
+    });
+  }
+
+  // ── Render one tree item as a table row HTML string ───────────────────────
+  function renderTreeRow(item, oi, ci) {
+    var cert      = item.cert;
+    var depth     = item.depth;
+    var parentSha = item.parentSha || '';
+
+    var revoked  = isRevoked(cert);
+    var expired  = isExpired(cert);
+    var hasKids  = cert._children && cert._children.length > 0;
+    var isOrphan = cert._orphan || item.isOrphan;
+
+    var rowClass = 'cert-row'
+      + (item.baseVis ? ' visible' : '')
+      + (revoked ? ' is-revoked' : '')
+      + (expired && !revoked ? ' is-expired' : '');
+
+    var indent = depth * 18; // px
+    var connector = depth > 0 ? '<span class="tree-connector" aria-hidden="true">└</span>' : '';
+    var toggleBtn = hasKids
+      ? '<button class="tree-toggle open" data-sha="' + esc(cert.sha256) + '" data-oi="' + oi + '" aria-label="Collapse" type="button">›</button>'
+      : '<button class="tree-toggle leaf" aria-hidden="true" tabindex="-1" type="button">›</button>';
+
+    var statusBadges = '';
+    if (revoked) { statusBadges += '<span class="badge-revoked">Revoked</span>'; }
+    if (expired && !revoked) { statusBadges += '<span class="badge-expired">Expired</span>'; }
+    if ((cert.constrained || '').toLowerCase() === 'true') { statusBadges += '<span class="badge-constrained">Constrained</span>'; }
+    if (isOrphan) { statusBadges += '<span class="badge-orphan">⚠ Orphan</span>'; }
+    if (cert._mismatch) { statusBadges += '<span class="badge-mismatch">⚠ Mismatch</span>'; }
+    if (statusBadges) { statusBadges = '<div class="cert-status-badges">' + statusBadges + '</div>'; }
+
+    return '<tr class="' + rowClass + '"'
+      + ' data-oi="' + oi + '" data-ci="' + ci + '"'
+      + ' data-sha="' + esc(cert.sha256) + '"'
+      + ' data-parent-sha="' + esc(parentSha) + '"'
+      + ' data-depth="' + depth + '"'
+      + ' data-base-vis="' + (item.baseVis ? '1' : '0') + '">'
+      + '<td class="cert-name" style="padding-left:' + (indent + 28) + 'px">'
+      +   '<div class="cert-name-wrap">'
+      +     connector + toggleBtn
+      +     '<span>' + esc(cert.name) + '</span>'
+      +   '</div>'
+      +   statusBadges
+      + '</td>'
+      + '<td>' + typeBadge(cert.type) + '</td>'
+      + '<td>' + browserDots(cert) + '</td>'
+      + '<td>' + capTags(cert) + '</td>'
+      + '<td class="cert-valid">' + validUntil(cert.validTo) + '</td>'
+      + '<td class="cert-fp">' + shortFp(cert.sha256) + '</td>'
+      + '<td class="cert-chevron" aria-hidden="true">›</td>'
+      + '</tr>';
+  }
+
+  // ── Tree visibility update after collapse/expand ──────────────────────────
+  function updateTreeVisibility(oi) {
+    tbody.querySelectorAll('tr.cert-row[data-oi="' + oi + '"]').forEach(function(row) {
+      var baseVis = row.dataset.baseVis === '1';
+      if (!baseVis) { row.classList.remove('visible'); return; }
+      // Walk ancestor chain checking collapsedNodes
+      var sha = row.dataset.parentSha;
+      var blocked = false;
+      while (sha && !blocked) {
+        if (collapsedNodes.has(sha)) { blocked = true; break; }
+        var parentRow = tbody.querySelector('tr.cert-row[data-sha="' + sha + '"][data-oi="' + oi + '"]');
+        sha = parentRow ? parentRow.dataset.parentSha : null;
+      }
+      row.classList.toggle('visible', !blocked);
+    });
+  }
+
   // ── Render table ──────────────────────────────────────────────────────────
   function renderTable(data, expandAll) {
     allOwners   = data.owners   || [];
@@ -843,29 +1032,26 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
 
     var html = '';
     var totalCerts = 0;
+    collapsedNodes.clear();  // reset on new data
     allOwners.forEach(function(owner, oi) {
-      var visible = allOwners.length <= 3 || expandAll;
-      var filtered = owner.certs.filter(certMatchesFilter);
-      totalCerts += filtered.length;
+      var ownerVisible = allOwners.length <= 3 || expandAll;
+      var tree = buildCertTree(owner.certs);
+      var flat = flattenTree(tree.roots, tree.orphans);
+      applyFilterToFlat(flat);
+      var matchCount = flat.filter(function(item) { return item.baseVis; }).length;
+      totalCerts += matchCount;
 
-      html += '<tr class="owner-row' + (visible ? ' expanded' : '') + '" data-oi="' + oi + '">'
+      html += '<tr class="owner-row' + (ownerVisible ? ' expanded' : '') + '" data-oi="' + oi + '">'
         + '<td colspan="7">'
         + '<span class="owner-toggle" aria-hidden="true">›</span>'
         + '<span class="owner-name">' + esc(owner.name) + '</span>'
         + (owner.country ? '<span class="owner-meta">' + esc(owner.country) + '</span>' : '')
-        + '<span class="owner-count">' + filtered.length + ' cert' + (filtered.length !== 1 ? 's' : '') + '</span>'
+        + '<span class="owner-count">' + matchCount + ' cert' + (matchCount !== 1 ? 's' : '') + '</span>'
         + '</td></tr>';
 
-      filtered.forEach(function(cert, ci) {
-        html += '<tr class="cert-row' + (visible ? ' visible' : '') + '" data-oi="' + oi + '" data-ci="' + ci + '">'
-          + '<td class="cert-name">' + esc(cert.name) + '</td>'
-          + '<td>' + typeBadge(cert.type) + '</td>'
-          + '<td>' + browserDots(cert) + '</td>'
-          + '<td>' + capTags(cert) + '</td>'
-          + '<td class="cert-valid">' + validUntil(cert.validTo) + '</td>'
-          + '<td class="cert-fp">' + shortFp(cert.sha256) + '</td>'
-          + '<td class="cert-chevron" aria-hidden="true">›</td>'
-          + '</tr>';
+      flat.forEach(function(item, ci) {
+        if (!ownerVisible) { item.baseVis = false; }
+        html += renderTreeRow(item, oi, ci);
       });
     });
 
@@ -951,19 +1137,41 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     if (ownerRow) {
       var oi = ownerRow.dataset.oi;
       var expanded = ownerRow.classList.toggle('expanded');
-      tbody.querySelectorAll('tr.cert-row[data-oi="' + oi + '"]').forEach(function(r) {
-        r.classList.toggle('visible', expanded);
-      });
+      if (!expanded) {
+        tbody.querySelectorAll('tr.cert-row[data-oi="' + oi + '"]').forEach(function(r) {
+          r.classList.remove('visible');
+        });
+      } else {
+        updateTreeVisibility(oi);
+      }
       return;
     }
+
+    // Tree node toggle
+    var toggleBtn = e.target.closest('.tree-toggle');
+    if (toggleBtn && !toggleBtn.classList.contains('leaf')) {
+      e.stopPropagation();
+      var sha = toggleBtn.getAttribute('data-sha');
+      if (collapsedNodes.has(sha)) {
+        collapsedNodes.delete(sha);
+        toggleBtn.classList.add('open');
+        toggleBtn.setAttribute('aria-label', 'Collapse');
+      } else {
+        collapsedNodes.add(sha);
+        toggleBtn.classList.remove('open');
+        toggleBtn.setAttribute('aria-label', 'Expand');
+      }
+      updateTreeVisibility(toggleBtn.closest('tr').dataset.oi);
+      return;
+    }
+
     var certRow = e.target.closest('tr.cert-row');
     if (certRow) {
+      var sha2 = certRow.dataset.sha;
       var oi2 = parseInt(certRow.dataset.oi, 10);
-      var ci  = parseInt(certRow.dataset.ci, 10);
+      if (isNaN(oi2) || !sha2 || !allOwners[oi2]) { return; }
       var owner = allOwners[oi2];
-      if (!owner) { return; }
-      var filtered = owner.certs.filter(certMatchesFilter);
-      var cert = filtered[ci];
+      var cert  = owner.certs.find(function(c) { return c.sha256 === sha2; });
       if (cert) { openModal(cert, owner.name); }
     }
   });
@@ -972,7 +1180,12 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     var certRow = e.target.closest('tr.cert-row');
     if (!certRow) { return; }
     e.preventDefault();
-    certRow.click();
+    var sha = certRow.dataset.sha;
+    var oi  = parseInt(certRow.dataset.oi, 10);
+    if (isNaN(oi) || !sha || !allOwners[oi]) { return; }
+    var owner = allOwners[oi];
+    var cert  = owner.certs.find(function(c) { return c.sha256 === sha; });
+    if (cert) { openModal(cert, owner.name); }
   });
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -986,6 +1199,21 @@ function queryGrouped(PDO $pdo, string $search, int $page): array {
     cmOwner.textContent   = 'CA Owner: ' + ownerName;
     cmBody.innerHTML      = '<div class="cm-loading">Loading…</div>';
     modal.showModal();
+
+    var cmBox = modal.querySelector('.cm-box');
+    var banner = document.getElementById('cmStatusBanner');
+    cmBox.classList.remove('is-revoked', 'is-expired');
+    banner.className = 'cm-status-banner';
+    banner.textContent = '';
+    if (isRevoked(cert)) {
+      cmBox.classList.add('is-revoked');
+      banner.classList.add('show-revoked');
+      banner.textContent = '⚠ This certificate has been revoked';
+    } else if (isExpired(cert)) {
+      cmBox.classList.add('is-expired');
+      banner.classList.add('show-expired');
+      banner.textContent = '⚠ This certificate has expired';
+    }
 
     fetch('/ccadb.php?detail=' + encodeURIComponent(cert.sha256))
       .then(function(r) { return r.json(); })
