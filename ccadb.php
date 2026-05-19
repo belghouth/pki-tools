@@ -48,57 +48,61 @@ $page      = max(1, (int)($_GET['p'] ?? 1));
 
 // ── DB query ──────────────────────────────────────────────────────────────────
 
-$pdo   = admin_pdo();
-$rows  = [];
-$total = 0;
-$syncInfo  = null;
+$pdo      = admin_pdo();
+$rows     = [];
+$total    = 0;
+$syncInfo = null;
+$dbError  = null;
 
 if ($pdo) {
-    $offset = ($page - 1) * CCADB_PER_PAGE;
+    try {
+        $offset = ($page - 1) * CCADB_PER_PAGE;
 
-    if ($search !== '') {
-        $cs = $pdo->prepare(
-            "SELECT COUNT(*) FROM ccadb_rows
-             WHERE resource_key = ? AND MATCH(search_text) AGAINST(? IN BOOLEAN MODE)"
-        );
-        $cs->execute([$tab, $search]);
-        $total = (int)$cs->fetchColumn();
+        if ($search !== '') {
+            $cs = $pdo->prepare(
+                "SELECT COUNT(*) FROM ccadb_rows
+                 WHERE resource_key = ? AND MATCH(search_text) AGAINST(? IN BOOLEAN MODE)"
+            );
+            $cs->execute([$tab, $search]);
+            $total = (int)$cs->fetchColumn();
 
-        $rs = $pdo->prepare(
-            "SELECT data_json FROM ccadb_rows
-             WHERE resource_key = ? AND MATCH(search_text) AGAINST(? IN BOOLEAN MODE)
-             ORDER BY id LIMIT " . CCADB_PER_PAGE . " OFFSET $offset"
-        );
-        $rs->execute([$tab, $search]);
-    } else {
-        $cs = $pdo->prepare(
-            "SELECT COUNT(*) FROM ccadb_rows WHERE resource_key = ?"
-        );
-        $cs->execute([$tab]);
-        $total = (int)$cs->fetchColumn();
+            $rs = $pdo->prepare(
+                "SELECT data_json FROM ccadb_rows
+                 WHERE resource_key = ? AND MATCH(search_text) AGAINST(? IN BOOLEAN MODE)
+                 ORDER BY id LIMIT " . CCADB_PER_PAGE . " OFFSET $offset"
+            );
+            $rs->execute([$tab, $search]);
+        } else {
+            $cs = $pdo->prepare(
+                "SELECT COUNT(*) FROM ccadb_rows WHERE resource_key = ?"
+            );
+            $cs->execute([$tab]);
+            $total = (int)$cs->fetchColumn();
 
-        $rs = $pdo->prepare(
-            "SELECT data_json FROM ccadb_rows WHERE resource_key = ?
-             ORDER BY `row_number` LIMIT " . CCADB_PER_PAGE . " OFFSET $offset"
-        );
-        $rs->execute([$tab]);
-    }
-
-    foreach ($rs->fetchAll(PDO::FETCH_COLUMN) as $json) {
-        $decoded = json_decode($json, true);
-        if (is_array($decoded)) {
-            $rows[] = $decoded;
+            $rs = $pdo->prepare(
+                "SELECT data_json FROM ccadb_rows WHERE resource_key = ?
+                 ORDER BY `row_number` LIMIT " . CCADB_PER_PAGE . " OFFSET $offset"
+            );
+            $rs->execute([$tab]);
         }
-    }
 
-    // Last successful sync info
-    $si = $pdo->prepare(
-        "SELECT synced_at, row_count FROM ccadb_sync_log
-         WHERE resource_key = ? AND status = 'ok'
-         ORDER BY synced_at DESC LIMIT 1"
-    );
-    $si->execute([$tab]);
-    $syncInfo = $si->fetch() ?: null;
+        foreach ($rs->fetchAll(PDO::FETCH_COLUMN) as $json) {
+            $decoded = json_decode($json, true);
+            if (is_array($decoded)) {
+                $rows[] = $decoded;
+            }
+        }
+
+        $si = $pdo->prepare(
+            "SELECT synced_at, row_count FROM ccadb_sync_log
+             WHERE resource_key = ? AND status = 'ok'
+             ORDER BY synced_at DESC LIMIT 1"
+        );
+        $si->execute([$tab]);
+        $syncInfo = $si->fetch() ?: null;
+    } catch (Throwable $e) {
+        $dbError = $e->getMessage();
+    }
 }
 
 $pages     = $total > 0 ? (int)ceil($total / CCADB_PER_PAGE) : 1;
@@ -316,6 +320,8 @@ $navLabel = 'CCADB Browser';
   <!-- ── Table ── -->
   <?php if (!$pdo): ?>
   <div class="tbl-empty">Database unavailable.</div>
+  <?php elseif ($dbError !== null): ?>
+  <div class="tbl-empty">Query error — try again shortly.</div>
   <?php elseif ($syncInfo === null && $total === 0): ?>
   <div class="tbl-empty">No data yet — run <code>cron/ccadb_sync.php</code> to populate.</div>
   <?php elseif (empty($rows)): ?>
