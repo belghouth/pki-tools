@@ -922,6 +922,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
             </div>
           </div>
 
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--green"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">🗄️</div>
+              <div class="tool-card-name">CCADB Browser</div>
+              <div class="tool-card-desc">Browse cached CCADB public data: CAA Identifiers, Problem Reporting Mechanisms, and All Certificate Records. Searchable, paginated, and updated weekly from the CCADB public reports.</div>
+              <div class="tool-card-tags">
+                <span class="tag">CCADB</span>
+                <span class="tag">CAA</span>
+                <span class="tag">CA Disclosure</span>
+                <span class="tag">Root Programs</span>
+              </div>
+              <a href="/ccadb.php" class="tool-card-link">Open Tool →</a>
+            </div>
+          </div>
+
         </div>
       </div>
 
