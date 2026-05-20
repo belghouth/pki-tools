@@ -217,7 +217,12 @@ function acme_gen_csr(array $domains): array
         if ($cn !== '') $cnf[] = 'CN=' . $cn;
         $cnf = array_merge($cnf, ['[san]', 'subjectAltName = ' . $sans]);
         file_put_contents($tmpCnf, implode("\n", $cnf));
-        $r = acme_run_cmd([OPENSSL_BIN, 'req', '-new', '-key', $tmpKey, '-out', $tmpCsr, '-config', $tmpCnf]);
+        $cmd = [OPENSSL_BIN, 'req', '-new', '-key', $tmpKey, '-out', $tmpCsr, '-config', $tmpCnf];
+        if ($cn === '') {
+            $cmd[] = '-subj';
+            $cmd[] = '/';
+        }
+        $r = acme_run_cmd($cmd);
         if (!$r['ok']) {
             return ['error' => 'CSR generation failed'];
         }
