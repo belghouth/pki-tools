@@ -642,10 +642,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
         <span class="hero-badge">zlint</span>
         <span class="hero-badge">pkilint</span>
         <span class="hero-badge">x509lint</span>
+        <span class="hero-badge">CCADB</span>
         <span class="hero-badge">ACME</span>
-        <span class="hero-badge">CT</span>
-        <span class="hero-badge">RFC 5280</span>
+        <span class="hero-badge">CT Logs</span>
+        <span class="hero-badge">RFC 3161 TSA</span>
+        <span class="hero-badge">eIDAS / AdES</span>
         <span class="hero-badge">CABF BRs</span>
+        <span class="hero-badge">Root Programs</span>
       </div>
       <div class="hero-actions">
         <a href="#tools" class="btn btn--primary">Explore Tools</a>
