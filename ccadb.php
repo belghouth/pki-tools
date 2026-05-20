@@ -11,16 +11,20 @@
  */
 
 header("X-Content-Type-Options: nosniff");
-header("X-Frame-Options: SAMEORIGIN");
 header("Referrer-Policy: strict-origin-when-cross-origin");
 header("Content-Security-Policy: "
     . "default-src 'self'; "
     . "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-    . "font-src https://fonts.gstatic.com; "
+    . "font-src 'self' https://fonts.gstatic.com; "
     . "script-src 'self' 'unsafe-inline' https://www.google.com https://www.gstatic.com https://www.recaptcha.net; "
     . "frame-src https://www.google.com https://www.recaptcha.net; "
-    . "connect-src 'self' https://www.google.com https://www.recaptcha.net; "
-    . "object-src 'none'; base-uri 'self'; form-action 'self';"
+    . "connect-src 'self' https://www.google.com https://www.gstatic.com https://www.recaptcha.net; "
+    . "img-src 'self' data:; "
+    . "object-src 'none'; "
+    . "base-uri 'self'; "
+    . "form-action 'self'; "
+    . "frame-ancestors 'self'; "
+    . "upgrade-insecure-requests;"
 );
 
 require_once __DIR__ . '/config.php';
@@ -55,14 +59,16 @@ if ($verifyUrl !== '') {
         exit;
     }
     $vcOpts = [
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_MAXREDIRS      => 5,
+        CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_MAXREDIRS      => 0,
         CURLOPT_TIMEOUT        => 12,
         CURLOPT_CONNECTTIMEOUT => 6,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; pki-tools/1.0)',
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
+        CURLOPT_PROTOCOLS      => CURLPROTO_HTTPS,
+        CURLOPT_REDIR_PROTOCOLS=> CURLPROTO_HTTPS,
         CURLOPT_HTTPHEADER     => ['Accept: */*'],
     ];
     // Phase 1: HEAD

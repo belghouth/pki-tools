@@ -523,7 +523,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       </div>
     </div>
     <div class="ap-id-meta">
-      <div><?= $result['ms'] ?> ms &nbsp;·&nbsp; <?= $result['n_mods'] ?> modules</div>
+      <div>
+        <?= htmlspecialchars((string)$result['ms'], ENT_QUOTES, 'UTF-8') ?> ms
+        &nbsp;·&nbsp;
+        <?= htmlspecialchars((string)$result['n_mods'], ENT_QUOTES, 'UTF-8') ?> modules
+      </div>
       <?php if ($result['fname']): ?>
       <div><?= htmlspecialchars($result['fname']) ?></div>
       <?php endif; ?>
