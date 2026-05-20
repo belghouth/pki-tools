@@ -8,6 +8,9 @@ const ACME_STATE_TTL = 86400;
 const ACME_RATE_MAX_PER_HOUR = 30;
 
 $path = trim((string)($_GET['_acme'] ?? ''), '/');
+if ($path === '' && preg_match('#^/acme(?:/(.*))?$#', parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '', $m)) {
+    $path = trim((string)($m[1] ?? 'directory'), '/');
+}
 acme_dispatch($path);
 
 function acme_dispatch(string $path): never
