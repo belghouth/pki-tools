@@ -155,9 +155,21 @@ function acme_new_order(array $account, array $payload): never
     $caa = acme_check_caa($domains);
     if ($caa !== null) acme_problem('caa', $caa, 400);
 
-    $authzUrls = [];
+    $authzGroups = [];
     foreach ($domains as $domain) {
-        $authz = acme_make_authz($account, $domain);
+        $base = str_starts_with($domain, '*.') ? substr($domain, 2) : $domain;
+        if (!isset($authzGroups[$base])) {
+            $authzGroups[$base] = ['domains' => [], 'wildcard' => false];
+        }
+        $authzGroups[$base]['domains'][] = $domain;
+        if (str_starts_with($domain, '*.')) {
+            $authzGroups[$base]['wildcard'] = true;
+        }
+    }
+
+    $authzUrls = [];
+    foreach ($authzGroups as $base => $group) {
+        $authz = acme_make_authz($account, $base, $group['domains'], $group['wildcard']);
         acme_save('authz', $authz['id'], $authz);
         $authzUrls[] = SITE_BASE_URL . '/acme/authz/' . $authz['id'];
     }
@@ -177,11 +189,14 @@ function acme_new_order(array $account, array $payload): never
     acme_order_response($order, 201);
 }
 
-function acme_make_authz(array $account, string $domain): array
+function acme_make_authz(array $account, string $domain, array $coveredDomains = [], bool $wildcard = false): array
 {
     $id = acme_id();
-    $wildcard = str_starts_with($domain, '*.');
-    $base = $wildcard ? substr($domain, 2) : $domain;
+    $base = str_starts_with($domain, '*.') ? substr($domain, 2) : $domain;
+    if ($coveredDomains === []) {
+        $coveredDomains = [$domain];
+        $wildcard = str_starts_with($domain, '*.');
+    }
     $methods = $wildcard ? ['dns-01'] : ['http-01', 'dns-01'];
     $challenges = [];
     foreach ($methods as $type) {
@@ -197,7 +212,8 @@ function acme_make_authz(array $account, string $domain): array
     return [
         'id' => $id,
         'account' => $account['id'],
-        'identifier' => ['type' => 'dns', 'value' => $domain],
+        'identifier' => ['type' => 'dns', 'value' => $base],
+        'covered_identifiers' => array_values($coveredDomains),
         'validation_domain' => $base,
         'status' => 'pending',
         'expires' => gmdate('c', time() + ACME_STATE_TTL),
@@ -219,7 +235,7 @@ function acme_validate_challenge(array $account, string $authzId, string $challe
     if (!$authz || $authz['account'] !== $account['id']) acme_problem('malformed', 'Unknown authorization', 404);
     foreach ($authz['challenges'] as $i => $challenge) {
         if ($challenge['id'] !== $challengeId) continue;
-        $caa = acme_check_caa([$authz['identifier']['value'] ?? '']);
+        $caa = acme_check_caa($authz['covered_identifiers'] ?? [$authz['identifier']['value'] ?? '']);
         if ($caa !== null) {
             acme_problem('caa', $caa, 400);
         }

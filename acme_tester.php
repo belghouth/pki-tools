@@ -519,6 +519,7 @@ function acme_action_order(): array
         }
         $authz   = $ra['json'];
         $domain  = $authz['identifier']['value'] ?? '?';
+        $covered = $authz['covered_identifiers'] ?? [$domain];
         $challs  = $authz['challenges'] ?? [];
 
         $selected  = null;
@@ -545,6 +546,7 @@ function acme_action_order(): array
 
         $authz_list[] = [
             'domain'             => $domain,
+            'covered_domains'    => $covered,
             'authz_url'          => $authz_url,
             'status'             => $authz['status'] ?? '?',
             'wildcard'           => $authz['wildcard'] ?? false,
@@ -1520,10 +1522,13 @@ function getRecaptchaToken(action) {
     if (method === 'dns-01') {
       var grouped = {};
       authz.forEach(function (a) {
-        var base = dnsValidationDomain(a.domain || '');
+        var domains = a.covered_domains || [a.domain || ''];
+        var base = dnsValidationDomain(a.domain || domains[0] || '');
         var name = '_acme-challenge.' + base;
         if (!grouped[name]) grouped[name] = { name: name, domains: [], values: [], deprecated: [] };
-        grouped[name].domains.push(a.domain || base);
+        domains.forEach(function (domain) {
+          if (domain && grouped[name].domains.indexOf(domain) === -1) grouped[name].domains.push(domain);
+        });
         if (a.dns_val && grouped[name].values.indexOf(a.dns_val) === -1) grouped[name].values.push(a.dns_val);
         (a.server_deprecated || []).forEach(function (dep) {
           if (grouped[name].deprecated.indexOf(dep) === -1) grouped[name].deprecated.push(dep);
