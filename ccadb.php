@@ -1677,7 +1677,27 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
       this.classList.add('active');
       activeFilter = this.dataset.filter;
       sessionStorage.setItem('ccadb_filter', activeFilter);
+
+      // Snapshot expanded owner rows and collapsed tree nodes before rebuild
+      var expandedOis = [];
+      tbody.querySelectorAll('tr.owner-row.expanded').forEach(function(r) {
+        expandedOis.push(r.dataset.oi);
+      });
+      var savedCollapsed = new Set(collapsedNodes);
+
       renderTable({ owners: allOwners, totalOwners: totalOwners, page: curPage, pages: totalPages }, false);
+
+      // Restore tree-node collapsed state and fix toggle button visuals
+      savedCollapsed.forEach(function(sha) {
+        collapsedNodes.add(sha);
+        var btn = tbody.querySelector('.tree-toggle[data-sha="' + sha + '"]');
+        if (btn) { btn.classList.remove('open'); btn.setAttribute('aria-label', 'Expand'); }
+      });
+      // Restore owner row expanded state
+      expandedOis.forEach(function(oi) {
+        var row = tbody.querySelector('tr.owner-row[data-oi="' + oi + '"]');
+        if (row) { row.classList.add('expanded'); updateTreeVisibility(oi); }
+      });
     });
   });
 
