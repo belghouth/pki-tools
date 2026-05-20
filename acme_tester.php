@@ -1833,8 +1833,8 @@ function getRecaptchaToken(action) {
 
   document.getElementById('btnLint').addEventListener('click', function () {
     if (!pemOutput.value) return;
-    sessionStorage.setItem('pki_prefill_cert', pemOutput.value);
-    if (ISSUING_CA_PEM) sessionStorage.setItem('pki_prefill_issuer', ISSUING_CA_PEM);
+    sessionStorage.setItem('pki_prefill_cert', firstPemCertificate(pemOutput.value));
+    sessionStorage.removeItem('pki_prefill_issuer');
     window.open('/linters.php', '_blank');
   });
 
@@ -1843,7 +1843,7 @@ function getRecaptchaToken(action) {
     sessionStorage.removeItem('mkt_eseal_cms');
     sessionStorage.removeItem('mkt_eseal_xades');
     sessionStorage.removeItem('meerkat_pem');
-    sessionStorage.setItem('pki_prefill_cert', pemOutput.value);
+    sessionStorage.setItem('pki_prefill_cert', firstPemCertificate(pemOutput.value));
     window.open('/artifact_parser.php', '_blank');
   });
 
@@ -1852,6 +1852,11 @@ function getRecaptchaToken(action) {
     var fd = new FormData();
     fd.append('action', action);
     return fd;
+  }
+
+  function firstPemCertificate(pem) {
+    var m = String(pem || '').match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
+    return m ? m[0] : String(pem || '').trim();
   }
 
   async function post(fd) {
