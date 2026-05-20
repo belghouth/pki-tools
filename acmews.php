@@ -76,7 +76,6 @@ $navLabel = 'ACME Web Service';
         <li>HTTP-01 at <code>/.well-known/acme-challenge/&lt;token&gt;</code> and DNS-01 at <code>_acme-challenge</code>.</li>
         <li>RSA and P-256 account keys, RSA and ECDSA subscriber CSRs, one matching CA tree per issued certificate.</li>
         <li>CAA checks, reserved-name rejection, rate limiting, and embedded SCTs from the local CT test log.</li>
-        <li>Accounts, orders, authorizations, nonces, and issued certificate chains are persisted under <code><?= htmlspecialchars(SITE_DATA_DIR . '/acme-state') ?></code>.</li>
       </ul>
     </div>
     <div id="renewal">
