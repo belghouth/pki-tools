@@ -1517,6 +1517,43 @@ function getRecaptchaToken(action) {
       return;
     }
 
+    if (method === 'dns-01') {
+      var grouped = {};
+      authz.forEach(function (a) {
+        var base = dnsValidationDomain(a.domain || '');
+        var name = '_acme-challenge.' + base;
+        if (!grouped[name]) grouped[name] = { name: name, domains: [], values: [], deprecated: [] };
+        grouped[name].domains.push(a.domain || base);
+        if (a.dns_val && grouped[name].values.indexOf(a.dns_val) === -1) grouped[name].values.push(a.dns_val);
+        (a.server_deprecated || []).forEach(function (dep) {
+          if (grouped[name].deprecated.indexOf(dep) === -1) grouped[name].deprecated.push(dep);
+        });
+      });
+
+      Object.keys(grouped).forEach(function (name) {
+        var g = grouped[name];
+        html += '<div class="chall-item">';
+        html += '<div class="chall-domain">' + esc(g.domains.join(', ')) + '</div>';
+        html += tknBlock('DNS record name', esc(g.name), g.name);
+        html += '<div class="token-block"><div class="token-label">Type</div><div class="token-row"><span class="token-value">TXT</span></div></div>';
+        g.values.forEach(function (val, idx) {
+          html += tknBlock(g.values.length > 1 ? 'Value ' + (idx + 1) + ' (SHA-256 of key authorization, base64url)' : 'Value (SHA-256 of key authorization, base64url)', esc(val), val);
+        });
+        if (g.deprecated.length) {
+          html += '<div style="font-size:0.73rem;color:var(--danger);margin-top:0.4rem">'
+            + '⛔ Server also advertises forbidden: ' + esc(g.deprecated.join(', '))
+            + '</div>';
+        }
+        html += '</div>';
+      });
+      challItems.innerHTML = html;
+      btnVerify.textContent = 'Verify & Continue';
+      challError.hidden = true;
+      challCard.hidden  = false;
+      challCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+
     authz.forEach(function (a) {
       var domain = a.domain;
       var chall  = a.challenge || {};
@@ -1528,12 +1565,6 @@ function getRecaptchaToken(action) {
         var url = 'http://' + domain + '/.well-known/acme-challenge/' + token;
         html += tknBlock('URL', esc(url), url);
         html += tknBlock('File content (key authorization)', esc(a.key_auth), a.key_auth);
-
-      } else if (method === 'dns-01') {
-        var name = '_acme-challenge.' + domain;
-        html += tknBlock('DNS record name', esc(name), name);
-        html += '<div class="token-block"><div class="token-label">Type</div><div class="token-row"><span class="token-value">TXT</span></div></div>';
-        html += tknBlock('Value (SHA-256 of key authorization, base64url)', esc(a.dns_val), a.dns_val);
 
       } else if (method === 'tls-alpn-01') {
         html += tknBlock('Key authorization (token.thumbprint)', esc(a.key_auth), a.key_auth);
@@ -1568,6 +1599,11 @@ function getRecaptchaToken(action) {
       + '<div class="token-row"><span class="token-value">' + display + '</span>'
       + '<button class="copy-btn" onclick="acmeCopy(this,' + jv + ')">Copy</button>'
       + '</div></div>';
+  }
+
+  function dnsValidationDomain(domain) {
+    domain = String(domain || '').trim().toLowerCase();
+    return domain.indexOf('*.') === 0 ? domain.slice(2) : domain;
   }
 
   // ── Verify ───────────────────────────────────────────────────────────────────
