@@ -1203,7 +1203,8 @@ if ($tab === 'soc' && $pdo) {
   <a href="?tab=msgs" class="<?= $tab === 'msgs' ? 'active' : '' ?>"<?= $tab !== 'msgs' && $msgs_unread ? ' style="color:var(--accent)"' : '' ?>>Messages <span id="msgs-nav-badge" style="font-size:.6rem;opacity:.8<?= !$msgs_unread ? ';display:none' : '' ?>">(<?= $msgs_unread ?>)</span></a>
   <a href="?tab=posts" class="<?= $tab === 'posts' ? 'active' : '' ?>">POST Payloads</a>
   <form method="POST" style="margin-left:auto;display:flex;align-items:center;gap:.5rem;padding:0 .75rem">
-    <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+    <input type="hidden" name="_csrf"
+       value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
     <input type="hidden" name="action" value="toggle_autoblock">
     <span style="font-size:.68rem;font-family:var(--mono);color:var(--muted);letter-spacing:.04em;white-space:nowrap">Autoblock</span>
     <button type="submit" role="switch" aria-checked="<?= $autoblock_on ? 'true' : 'false' ?>"
@@ -1302,7 +1303,8 @@ if ($tab === 'soc' && $pdo) {
             <td class="muted"><?= rel_time($row['last']) ?></td>
             <td>
               <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($row['ip'])) ?>?')">
-                <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+                <input type="hidden" name="_csrf"
+                  value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
                 <input type="hidden" name="action" value="block_ip">
                 <input type="hidden" name="ip" value="<?= htmlspecialchars($row['ip']) ?>">
                 <button type="submit" class="btn-act danger" style="font-size:.6rem;padding:.15rem .45rem">Block</button>
@@ -1328,14 +1330,16 @@ if ($tab === 'soc' && $pdo) {
         <?php if ($fip): ?>
         <?php if (isset($blocked_set[$fip])): ?>
         <form method="POST" style="display:inline">
-          <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+          <input type="hidden" name="_csrf"
+       value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
           <input type="hidden" name="action" value="unblock_ip">
           <input type="hidden" name="ip" value="<?= htmlspecialchars($fip) ?>">
           <button type="submit" class="btn-sm" style="border-color:rgba(34,197,94,.3);color:#86efac;font-size:.65rem;padding:.25rem .7rem">↩ Unblock <?= htmlspecialchars($fip) ?></button>
         </form>
         <?php else: ?>
         <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($fip)) ?>?')">
-          <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+          <input type="hidden" name="_csrf"
+       value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
           <input type="hidden" name="action" value="block_ip">
           <input type="hidden" name="ip" value="<?= htmlspecialchars($fip) ?>">
           <button type="submit" class="btn-sm" style="border-color:rgba(239,68,68,.3);color:#fca5a5;font-size:.65rem;padding:.25rem .7rem">⊘ Block <?= htmlspecialchars($fip) ?></button>
@@ -1468,7 +1472,8 @@ if ($tab === 'soc' && $pdo) {
         <span class="card-meta"><?= count($err_rows) ?> unacknowledged</span>
         <?php if ($err_rows): ?>
         <form method="POST" style="display:inline" onsubmit="return confirm('Acknowledge all errors?')">
-          <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+          <input type="hidden" name="_csrf"
+       value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
           <input type="hidden" name="action" value="ack_all_errors">
           <button type="submit" class="btn-sm" style="font-size:.65rem;padding:.28rem .65rem">✓ Ack All</button>
         </form>
@@ -1490,7 +1495,8 @@ if ($tab === 'soc' && $pdo) {
           <td><span class="err-file" title="<?= htmlspecialchars($e['error_file']) ?>"><?= htmlspecialchars(basename($e['error_file'])) ?> : <?= (int)$e['error_line'] ?></span></td>
           <td>
             <form method="POST" style="display:inline">
-              <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+              <input type="hidden" name="_csrf"
+       value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
               <input type="hidden" name="action" value="ack_error">
               <input type="hidden" name="id" value="<?= (int)$e['id'] ?>">
               <button type="submit" class="btn-act" style="font-size:.62rem;padding:.15rem .45rem;border-color:rgba(34,197,94,.25);color:var(--ok)" title="Acknowledge — hide from list">✓</button>
@@ -1620,7 +1626,8 @@ if ($tab === 'soc' && $pdo) {
             <td class="muted"><?= rel_time($row['last']) ?></td>
             <td>
               <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($row['ip'])) ?>?')">
-                <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+                <input type="hidden" name="_csrf"
+       value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
                 <input type="hidden" name="action" value="block_ip">
                 <input type="hidden" name="ip" value="<?= htmlspecialchars($row['ip']) ?>">
                 <button type="submit" class="btn-act danger" style="font-size:.6rem;padding:.15rem .45rem">Block</button>
@@ -1646,14 +1653,16 @@ if ($tab === 'soc' && $pdo) {
         <?php if ($fip): ?>
         <?php if (isset($blocked_set[$fip])): ?>
         <form method="POST" style="display:inline">
-          <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+          <input type="hidden" name="_csrf"
+       value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
           <input type="hidden" name="action" value="unblock_ip">
           <input type="hidden" name="ip" value="<?= htmlspecialchars($fip) ?>">
           <button type="submit" class="btn-sm" style="border-color:rgba(34,197,94,.3);color:#86efac;font-size:.65rem;padding:.25rem .7rem">↩ Unblock <?= htmlspecialchars($fip) ?></button>
         </form>
         <?php else: ?>
         <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($fip)) ?>?')">
-          <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+          <input type="hidden" name="_csrf"
+       value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
           <input type="hidden" name="action" value="block_ip">
           <input type="hidden" name="ip" value="<?= htmlspecialchars($fip) ?>">
           <button type="submit" class="btn-sm" style="border-color:rgba(239,68,68,.3);color:#fca5a5;font-size:.65rem;padding:.25rem .7rem">⊘ Block <?= htmlspecialchars($fip) ?></button>
@@ -1859,14 +1868,16 @@ if ($tab === 'soc' && $pdo) {
             <?php if ($u['email'] !== $email): ?>
             <form method="POST" style="display:inline"
               onsubmit="return confirm('<?= $u['is_disabled'] ? 'Enable' : 'Disable' ?> this user?')">
-              <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+              <input type="hidden" name="_csrf"
+       value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
               <input type="hidden" name="action" value="toggle_user">
               <input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
               <button type="submit" class="btn-act <?= $u['is_disabled'] ? '' : 'warn-act' ?>"><?= $u['is_disabled'] ? 'Enable' : 'Disable' ?></button>
             </form>
             <form method="POST" style="display:inline"
               onsubmit="return confirm('Delete this user? This cannot be undone.')">
-              <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+              <input type="hidden" name="_csrf"
+       value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
               <input type="hidden" name="action" value="delete_user">
               <input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
               <button type="submit" class="btn-act danger">Delete</button>
@@ -1894,7 +1905,8 @@ if ($tab === 'soc' && $pdo) {
         <button class="modal-close" onclick="document.getElementById('modal-add').hidden=true">×</button>
       </div>
       <form method="POST">
-        <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+        <input type="hidden" name="_csrf"
+       value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
         <input type="hidden" name="action" value="add_user">
         <div class="modal-body">
           <div class="form-row">
@@ -1926,7 +1938,8 @@ if ($tab === 'soc' && $pdo) {
         <button class="modal-close" onclick="document.getElementById('modal-edit').hidden=true">×</button>
       </div>
       <form method="POST">
-        <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+        <input type="hidden" name="_csrf"
+       value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
         <input type="hidden" name="action" value="update_user">
         <input type="hidden" name="id" id="edit-id">
         <div class="modal-body">
@@ -1977,7 +1990,8 @@ if ($tab === 'soc' && $pdo) {
       </div>
     </form>
     <form method="POST" style="display:flex;align-items:flex-end;gap:.5rem;flex-wrap:wrap">
-      <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+      <input type="hidden" name="_csrf"
+       value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
       <input type="hidden" name="action" value="block_ip">
       <div class="flt">
         <label>IP Address</label>
@@ -2043,7 +2057,8 @@ if ($tab === 'soc' && $pdo) {
           <td><span class="muted" style="font-family:var(--mono);font-size:.68rem;max-width:180px;display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="<?= htmlspecialchars($b['reason'] ?? '') ?>"><?= $b['reason'] ? htmlspecialchars($b['reason']) : '—' ?></span></td>
           <td>
             <form method="POST" style="display:inline" onsubmit="return confirm('Unblock <?= htmlspecialchars(addslashes($b['ip'])) ?>?')">
-              <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+              <input type="hidden" name="_csrf"
+       value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
               <input type="hidden" name="action" value="unblock_ip">
               <input type="hidden" name="ip" value="<?= htmlspecialchars($b['ip']) ?>">
               <button type="submit" class="btn-act">Unblock</button>
@@ -2853,7 +2868,8 @@ if ($tab === 'soc' && $pdo) {
           <?= watchBtn($wr['ip'], $watch_set, 'watch') ?>
           <?php if (!isset($blocked_set[$wr['ip']])): ?>
           <form method="POST" style="display:inline" onsubmit="return confirm('Block <?= htmlspecialchars(addslashes($wr['ip'])) ?>?')">
-            <input type="hidden" name="_csrf" value="<?= _admin_csrf_token() ?>">
+            <input type="hidden" name="_csrf"
+       value="<?= htmlspecialchars(_admin_csrf_token(), ENT_QUOTES, 'UTF-8') ?>">
             <input type="hidden" name="action" value="block_ip">
             <input type="hidden" name="ip" value="<?= htmlspecialchars($wr['ip']) ?>">
             <input type="hidden" name="redirect_tab" value="watch">
