@@ -61,13 +61,17 @@ class CsrModule extends ArtifactModule {
             return $exts;
         }
         preg_match_all(
-            '/X509v3\s+(.+?)(?:\s*critical)?\s*:\s*\n((?:\s+.+\n?)*)/m',
+            '/X509v3\s+([^:\n]+):\s*(critical)?\s*\n((?:\s+.+\n?)*)/m',
             $m[1],
             $matches,
             PREG_SET_ORDER
         );
         foreach ($matches as $match) {
-            $exts[trim($match[1])] = trim($match[2]);
+            $name = trim($match[1]);
+            if (strtolower(trim($match[2] ?? '')) === 'critical') {
+                $name .= '_critical';
+            }
+            $exts[$name] = trim($match[3]);
         }
         return $exts;
     }
@@ -94,8 +98,13 @@ class CsrModule extends ArtifactModule {
         // Requested extensions
         $ext_html = '';
         foreach ($parsed['extensions'] as $name => $val) {
+            $is_critical = str_ends_with($name, '_critical');
+            $clean_name = $is_critical ? substr($name, 0, -9) : $name;
+            $crit_badge = $is_critical
+                ? ' <span class="xp-badge xp-badge-danger xp-critical-badge">CRITICAL</span>'
+                : ' <span class="xp-badge xp-badge-neutral">non-critical</span>';
             $ext_html .= '<div class="xp-ext-block" style="border-left-color:#4a5568">'
-                       . '<div class="xp-ext-header"><span class="xp-ext-name">' . xpe($name) . '</span></div>'
+                       . '<div class="xp-ext-header"><span class="xp-ext-name">' . xpe($clean_name) . '</span>' . $crit_badge . '</div>'
                        . '<div class="xp-ext-body"><div class="xp-raw-value">'
                        . '<code class="xp-code">' . xpe($val) . '</code>'
                        . '</div></div></div>';

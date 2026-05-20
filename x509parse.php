@@ -200,6 +200,54 @@ function xp_tag(string $text): string {
     return '<span class="xp-tag">' . xpe($text) . '</span>';
 }
 
+function x509_ext_norm(string $name): string {
+    $name = preg_replace('/^X509v3\s+/i', '', $name);
+    return strtolower(preg_replace('/[^a-z0-9]+/i', '', (string)$name));
+}
+
+function x509_ext_openssl_label(string $name): string {
+    static $labels = [
+        'subjectKeyIdentifier'    => 'Subject Key Identifier',
+        'authorityKeyIdentifier'  => 'Authority Key Identifier',
+        'basicConstraints'        => 'Basic Constraints',
+        'keyUsage'                => 'Key Usage',
+        'extendedKeyUsage'        => 'Extended Key Usage',
+        'subjectAltName'          => 'Subject Alternative Name',
+        'issuerAltName'           => 'Issuer Alternative Name',
+        'certificatePolicies'     => 'Certificate Policies',
+        'crlDistributionPoints'   => 'CRL Distribution Points',
+        'authorityInfoAccess'     => 'Authority Information Access',
+        'nameConstraints'         => 'Name Constraints',
+        'policyConstraints'       => 'Policy Constraints',
+        'inhibitAnyPolicy'        => 'Inhibit Any Policy',
+        'tlsfeature'              => 'TLS Feature',
+        '1.3.6.1.4.1.11129.2.4.2' => 'CT Precertificate SCTs',
+        '1.3.6.1.4.1.11129.2.4.3' => 'CT Precertificate Poison',
+    ];
+    return $labels[$name] ?? x509_oid_name($name);
+}
+
+function x509_extension_critical_map(string $pem): array {
+    $tmp = tempnam(sys_get_temp_dir(), 'x509p_');
+    if ($tmp === false) return [];
+    file_put_contents($tmp, $pem);
+    $bin = defined('OPENSSL_BIN') ? OPENSSL_BIN : 'openssl';
+    $cmd = escapeshellarg($bin) . ' x509 -in ' . escapeshellarg($tmp) . ' -noout -text 2>/dev/null';
+    $text = (string) shell_exec($cmd);
+    @unlink($tmp);
+    if ($text === '') return [];
+
+    $critical = [];
+    if (preg_match_all('/^\s*(?:X509v3\s+)?([^:\n]+):\s*(critical)?\s*$/mi', $text, $matches, PREG_SET_ORDER)) {
+        foreach ($matches as $m) {
+            $label = trim($m[1]);
+            if ($label === '') continue;
+            $critical[x509_ext_norm($label)] = strtolower(trim($m[2] ?? '')) === 'critical';
+        }
+    }
+    return $critical;
+}
+
 // ── Main renderer ─────────────────────────────────────────────────────────────
 
 function x509parse_render(string $pem): string {
@@ -212,6 +260,7 @@ function x509parse_render(string $pem): string {
     if (!$d) {
         return '<div class="xp-error">openssl_x509_parse returned no data.</div>';
     }
+    $critical_map = x509_extension_critical_map($pem);
 
     $pub = openssl_pkey_get_public($cert);
     $pub_details = $pub ? openssl_pkey_get_details($pub) : null;
@@ -564,10 +613,21 @@ function x509parse_render(string $pem): string {
     ];
 
     foreach ($exts as $name => $value) {
-        $is_critical = str_ends_with($name, '_critical') || str_contains((string)$value, 'critical');
         $clean_name  = str_ends_with($name, '_critical') ? substr($name, 0, -9) : $name;
         $oid_label   = x509_oid_name($clean_name);
         $color       = $known_ext_colours[$clean_name] ?? '#4a5568';
+        $critical_keys = array_unique([
+            x509_ext_norm($clean_name),
+            x509_ext_norm($oid_label),
+            x509_ext_norm(x509_ext_openssl_label($clean_name)),
+        ]);
+        $is_critical = str_ends_with($name, '_critical') || str_contains((string)$value, 'critical');
+        foreach ($critical_keys as $critical_key) {
+            if (array_key_exists($critical_key, $critical_map)) {
+                $is_critical = $critical_map[$critical_key];
+                break;
+            }
+        }
 
         $inner = '';
         if (isset($ext_handlers[$clean_name])) {
@@ -817,4 +877,3 @@ CSS;
 
     return $html;
 }
-
