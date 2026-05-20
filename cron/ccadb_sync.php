@@ -350,6 +350,12 @@ function syncPem(PDO $pdo, bool $force): bool {
     $totalUpdated = 0;
     $lastErr      = null;
     foreach ([PEM_URL_2010 => '2010s', PEM_URL_2020 => '2020s'] as $url => $label) {
+        $decadeKey = 'pem_' . $label;
+        // 2010-decade certs are stable once imported — skip re-download on subsequent syncs
+        if (!$force && $url === PEM_URL_2010 && hasEverSynced($pdo, $decadeKey)) {
+            echo '[' . gmdate(DT_FMT) . " UTC] PEM $label: already initialized — skipping\n";
+            continue;
+        }
         echo '[' . gmdate(DT_FMT) . " UTC] Downloading PEM CSV ($label)…\n";
         $tmp = downloadToTemp($key . '_' . $label, $url);
         if ($tmp === null) {
@@ -364,6 +370,7 @@ function syncPem(PDO $pdo, bool $force): bool {
         } else {
             $totalUpdated += $result['updated'];
             echo '[' . gmdate(DT_FMT) . " UTC] PEM $label: {$result['updated']} certs updated\n";
+            logSync($pdo, $decadeKey, 'ok', $result['updated'], null);
         }
     }
     $ok = ($lastErr === null);
@@ -498,6 +505,18 @@ function recentSync(PDO $pdo, string $key): bool {
             "SELECT 1 FROM ccadb_v5_sync_log
              WHERE resource_key = ? AND status = 'ok' AND synced_at >= NOW() - INTERVAL 1 DAY
              LIMIT 1"
+        );
+        $st->execute([$key]);
+        return (bool)$st->fetchColumn();
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function hasEverSynced(PDO $pdo, string $key): bool {
+    try {
+        $st = $pdo->prepare(
+            "SELECT 1 FROM ccadb_v5_sync_log WHERE resource_key = ? AND status = 'ok' LIMIT 1"
         );
         $st->execute([$key]);
         return (bool)$st->fetchColumn();

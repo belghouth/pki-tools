@@ -1196,6 +1196,11 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     <button class="chip" data-filter="tls">TLS capable</button>
     <button class="chip" data-filter="smime">S/MIME capable</button>
     <button class="chip" data-filter="cs">Code signing</button>
+    <button class="chip" data-filter="valid">Valid</button>
+    <button class="chip" data-filter="expired">Expired</button>
+    <button class="chip" data-filter="revoked">Revoked</button>
+    <button class="chip" data-filter="trusted">Trusted</button>
+    <button class="chip" data-filter="untrusted">Untrusted</button>
   </fieldset>
 
   <!-- ── Table ── -->
@@ -1214,12 +1219,11 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
           <th title="Apple · Chrome · Microsoft · Mozilla">Trust</th>
           <th>Capabilities</th>
           <th>Valid Until</th>
-          <th>SHA-256</th>
           <th><span class="sr-only">Actions</span></th>
         </tr>
       </thead>
       <tbody id="cTbody">
-        <tr><td colspan="7" class="tbl-loading">Loading…</td></tr>
+        <tr><td colspan="6" class="tbl-loading">Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -1265,7 +1269,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
   // ── State ─────────────────────────────────────────────────────────────────
   var allOwners      = [];   // current page data
   var collapsedNodes = new Set();
-  var activeFilter= 'all';
+  var activeFilter = sessionStorage.getItem('ccadb_filter') || 'all';
   var searchQ     = '';
   var curPage     = 1;
   var totalPages  = 1;
@@ -1341,11 +1345,15 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
   }
 
   // ── Type badge ────────────────────────────────────────────────────────────
-  function typeBadge(type) {
-    var t = (type || '').toLowerCase();
+  function typeBadge(cert) {
+    var type = cert.type || '';
+    var t = type.toLowerCase();
     if (t.indexOf('root') !== -1) { return '<span class="cert-type-badge badge-root">Root</span>'; }
-    if (t.indexOf('inter') !== -1) { return '<span class="cert-type-badge badge-inter">Intermediate</span>'; }
     if (t.indexOf('cross') !== -1) { return '<span class="cert-type-badge badge-cross">Cross</span>'; }
+    if (t.indexOf('inter') !== -1) {
+      var label = (cert._children && cert._children.length === 0) ? 'Issuing' : 'Intermediate';
+      return '<span class="cert-type-badge badge-inter">' + label + '</span>';
+    }
     return '<span class="cert-type-badge badge-inter">' + esc(type) + '</span>';
   }
 
@@ -1373,20 +1381,19 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     return '<span class="vto' + (exp ? ' expired' : '') + '">' + esc(to) + '</span>';
   }
 
-  // ── Fingerprint ───────────────────────────────────────────────────────────
-  function shortFp(sha256) {
-    if (!sha256) { return '<span style="color:var(--muted)">—</span>'; }
-    return '<abbr title="' + esc(sha256) + '">' + sha256.replace(/:/g,'').toUpperCase().substring(0,16) + '…</abbr>';
-  }
-
   // ── Filter predicate ─────────────────────────────────────────────────────
   function certMatchesFilter(cert) {
-    if (activeFilter === 'all') { return true; }
-    if (activeFilter === 'root') { return (cert.type || '').toLowerCase().indexOf('root') !== -1; }
+    if (activeFilter === 'all')        { return true; }
+    if (activeFilter === 'root')       { return (cert.type || '').toLowerCase().indexOf('root') !== -1; }
     if (activeFilter === 'intermediate') { return (cert.type || '').toLowerCase().indexOf('inter') !== -1; }
-    if (activeFilter === 'tls')   { return cert.tlsCap; }
-    if (activeFilter === 'smime') { return cert.smimeCap; }
-    if (activeFilter === 'cs')    { return cert.csCap; }
+    if (activeFilter === 'tls')        { return cert.tlsCap; }
+    if (activeFilter === 'smime')      { return cert.smimeCap; }
+    if (activeFilter === 'cs')         { return cert.csCap; }
+    if (activeFilter === 'valid')      { return !isRevoked(cert) && !isExpired(cert); }
+    if (activeFilter === 'expired')    { return isExpired(cert); }
+    if (activeFilter === 'revoked')    { return isRevoked(cert); }
+    if (activeFilter === 'trusted')    { return isTrustedInAny(cert); }
+    if (activeFilter === 'untrusted')  { return !isTrustedInAny(cert); }
     return true;
   }
 
@@ -1397,6 +1404,12 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
   }
   function isExpired(cert) {
     return cert.validTo && (new Date(cert.validTo)) < new Date();
+  }
+  function isTrustedInAny(cert) {
+    return [cert.statusApple, cert.statusChrome, cert.statusMs, cert.statusMoz].some(function(s) {
+      var sc = statusClass(s);
+      return sc === 'included' || sc === 'ev';
+    });
   }
 
   // ── Build cert tree for one CA owner group ────────────────────────────────
@@ -1513,11 +1526,10 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
       +     statusBadges
       +   '</div>'
       + '</td>'
-      + '<td>' + typeBadge(cert.type) + '</td>'
+      + '<td>' + typeBadge(cert) + '</td>'
       + '<td style="white-space:nowrap">' + browserDots(cert) + '</td>'
       + '<td>' + capTags(cert) + '</td>'
       + '<td class="cert-valid">' + validUntil(cert.validTo) + '</td>'
-      + '<td class="cert-fp">' + shortFp(cert.sha256) + '</td>'
       + '<td class="cert-chevron" aria-hidden="true">›</td>'
       + '</tr>';
   }
@@ -1547,7 +1559,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     totalPages  = data.pages    || 1;
 
     if (!allOwners.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="tbl-empty">'
+      tbody.innerHTML = '<tr><td colspan="6" class="tbl-empty">'
         + (searchQ ? 'No results for &ldquo;' + esc(searchQ) + '&rdquo;.' : 'No data — run the sync cron to populate.')
         + '</td></tr>';
       metaEl.textContent = '';
@@ -1567,7 +1579,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
       totalCerts += matchCount;
 
       html += '<tr class="owner-row' + (ownerVisible ? ' expanded' : '') + '" data-oi="' + oi + '">'
-        + '<td colspan="7">'
+        + '<td colspan="6">'
         + '<span class="owner-toggle" aria-hidden="true">›</span>'
         + '<span class="owner-name">' + esc(owner.name) + '</span>'
         + (owner.country ? '<span class="owner-meta">' + esc(owner.country) + '</span>' : '')
@@ -1579,7 +1591,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
       });
     });
 
-    tbody.innerHTML = html || '<tr><td colspan="7" class="tbl-empty">No certs match the current filter.</td></tr>';
+    tbody.innerHTML = html || '<tr><td colspan="6" class="tbl-empty">No certs match the current filter.</td></tr>';
 
     var ownerWord = totalOwners === 1 ? 'CA' : 'CAs';
     metaEl.textContent = totalOwners.toLocaleString() + ' ' + ownerWord
@@ -1617,7 +1629,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
       .then(function(r) { return r.json(); })
       .then(function(data) { renderTable(data, expandAll); })
       .catch(function() {
-        tbody.innerHTML = '<tr><td colspan="7" class="tbl-empty">Request failed — please try again.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="tbl-empty">Request failed — please try again.</td></tr>';
       })
       .finally(function() { spinner.classList.remove('active'); });
   }
@@ -1647,10 +1659,16 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
 
   // ── Filter chips ──────────────────────────────────────────────────────────
   document.querySelectorAll('.chip').forEach(function(btn) {
+    // Restore saved filter highlight on page load
+    if (btn.dataset.filter === activeFilter) {
+      document.querySelectorAll('.chip').forEach(function(c) { c.classList.remove('active'); });
+      btn.classList.add('active');
+    }
     btn.addEventListener('click', function() {
       document.querySelectorAll('.chip').forEach(function(c) { c.classList.remove('active'); });
       this.classList.add('active');
       activeFilter = this.dataset.filter;
+      sessionStorage.setItem('ccadb_filter', activeFilter);
       renderTable({ owners: allOwners, totalOwners: totalOwners, page: curPage, pages: totalPages }, false);
     });
   });
@@ -2136,6 +2154,15 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     var html = '';
 
     // ① Browser trust
+    var trustBitsHtml = '';
+    var tbRoot    = f(fields,'Trust Bits for Root Cert');
+    var tbDerived = f(fields,'Derived Trust Bits');
+    if (tbRoot || tbDerived) {
+      trustBitsHtml = '<dl class="cm-dl" style="margin-top:.65rem">'
+        + (tbRoot    ? tagListRow('Trust Bits (root)',  tbRoot)    : '')
+        + (tbDerived ? tagListRow('Derived Trust Bits', tbDerived) : '')
+        + '</dl>';
+    }
     html += '<div class="cm-sect">'
       + '<div class="cm-sect-title">Browser Trust</div>'
       + '<div class="cm-trust-grid">'
@@ -2143,7 +2170,9 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
       + trustCard('Chrome',    f(fields,'Chrome Status'),    '')
       + trustCard('Microsoft', f(fields,'Microsoft Status'), f(fields,'Microsoft EV Root Certificate Inclusion Status'))
       + trustCard('Mozilla',   f(fields,'Mozilla Status'),   f(fields,'Mozilla EV Root Certificate Inclusion Status'))
-      + '</div></div>';
+      + '</div>'
+      + trustBitsHtml
+      + '</div>';
 
     // ② Certificate details
     html += '<div class="cm-sect">'
@@ -2161,14 +2190,12 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
       + dlRow('Salesforce ID',    f(fields,'Salesforce Record ID'))
       + '</dl></div>';
 
-    // ③ Trust bits & capabilities
+    // ③ Capabilities
     html += '<div class="cm-sect">'
-      + '<div class="cm-sect-title">Trust Bits &amp; Capabilities</div>'
+      + '<div class="cm-sect-title">Capabilities</div>'
       + '<dl class="cm-dl">'
-      + tagListRow('Trust Bits (root)',  f(fields,'Trust Bits for Root Cert'))
-      + tagListRow('Derived Trust Bits', f(fields,'Derived Trust Bits'))
-      + dlRow('EV OIDs',            f(fields,'EV OIDs for Root Cert'))
-      + sorRow('Status of Root',     f(fields,'Status of Root Cert'))
+      + dlRow('EV OIDs',        f(fields,'EV OIDs for Root Cert'))
+      + sorRow('Status of Root', f(fields,'Status of Root Cert'))
       + '</dl>'
       + '<div style="margin-top:.5rem">' + capRow(fields) + '</div>'
       + '</div>';
