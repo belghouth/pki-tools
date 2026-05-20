@@ -241,12 +241,9 @@ function acme_validate_challenge(array $account, string $authzId, string $challe
         }
         $keyAuth = $challenge['token'] . '.' . $account['thumbprint'];
 
-        // TEMPORARY TEST BYPASS: restore the real verification below after
-        // confirming the ACME precertificate lint gate behaves as expected.
-        // $result = $challenge['type'] === 'http-01'
-        //     ? acme_verify_http01($authz['validation_domain'], $challenge['token'], $keyAuth)
-        //     : acme_verify_dns01($authz['validation_domain'], $keyAuth);
-        $result = ['ok' => true];
+        $result = $challenge['type'] === 'http-01'
+            ? acme_verify_http01($authz['validation_domain'], $challenge['token'], $keyAuth)
+            : acme_verify_dns01($authz['validation_domain'], $keyAuth);
         $authz['challenges'][$i]['status'] = $result['ok'] ? 'valid' : 'invalid';
         if (!$result['ok']) {
             $authz['challenges'][$i]['error'] = acme_problem_obj('unauthorized', $result['error']);
@@ -577,6 +574,9 @@ function acme_state_root(): string
 {
     $primary = SITE_DATA_DIR . '/acme-state';
     if (@is_dir($primary) || @mkdir($primary, 0770, true)) return $primary;
+    if (!empty($_SERVER['SERVER_NAME']) || PHP_SAPI !== 'cli') {
+        acme_problem('serverInternal', 'ACME persistent state directory is not writable: ' . $primary, 500);
+    }
     $fallback = sys_get_temp_dir() . '/meerkat-acme-state';
     if (!is_dir($fallback)) mkdir($fallback, 0770, true);
     return $fallback;
