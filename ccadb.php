@@ -848,6 +848,7 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     }
     .badge-root{color:var(--accent);background:rgba(0,212,170,.1);border:1px solid rgba(0,212,170,.25)}
     .badge-inter{color:var(--purple);background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.25)}
+    .badge-issuing{color:#60a5fa;background:rgba(96,165,250,.1);border:1px solid rgba(96,165,250,.25)}
     .badge-cross{color:var(--amber);background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.25)}
     .cert-fp{font-family:var(--mono);font-size:.67rem;color:#6b7a90;white-space:nowrap}
     .cert-fp abbr{text-decoration:none;cursor:default}
@@ -1351,8 +1352,10 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
     if (t.indexOf('root') !== -1) { return '<span class="cert-type-badge badge-root">Root</span>'; }
     if (t.indexOf('cross') !== -1) { return '<span class="cert-type-badge badge-cross">Cross</span>'; }
     if (t.indexOf('inter') !== -1) {
-      var label = (cert._children && cert._children.length === 0) ? 'Issuing' : 'Intermediate';
-      return '<span class="cert-type-badge badge-inter">' + label + '</span>';
+      if (cert._children && cert._children.length === 0) {
+        return '<span class="cert-type-badge badge-issuing">Issuing</span>';
+      }
+      return '<span class="cert-type-badge badge-inter">Intermediate</span>';
     }
     return '<span class="cert-type-badge badge-inter">' + esc(type) + '</span>';
   }
