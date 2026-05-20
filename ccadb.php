@@ -1624,14 +1624,19 @@ function upsertCpsCache(PDO $pdo, string $sha256, string $url,
   }
 
   // ── Fetch grouped data ────────────────────────────────────────────────────
+  var _fetchCtrl = null;
+
   function fetchPage(q, page, expandAll) {
+    if (_fetchCtrl) { _fetchCtrl.abort(); }
+    _fetchCtrl = new AbortController();
     searchQ = q;
     spinner.classList.add('active');
     var url = '/ccadb.php?json=1&q=' + encodeURIComponent(q) + '&p=' + page;
-    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' }, signal: _fetchCtrl.signal })
       .then(function(r) { return r.json(); })
       .then(function(data) { renderTable(data, expandAll); })
-      .catch(function() {
+      .catch(function(err) {
+        if (err.name === 'AbortError') { return; }
         tbody.innerHTML = '<tr><td colspan="6" class="tbl-empty">Request failed — please try again.</td></tr>';
       })
       .finally(function() { spinner.classList.remove('active'); });
