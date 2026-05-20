@@ -212,13 +212,11 @@ function acme_gen_csr(array $domains): array
         foreach ($domains as $d) {
             if (!str_starts_with($d, '*.')) { $cn = $d; break; }
         }
-        if ($cn === '') $cn = substr($domains[0], 2);
         $sans = implode(',', array_map(fn($d) => 'DNS:' . $d, $domains));
-        file_put_contents($tmpCnf, implode("\n", [
-            '[req]', 'distinguished_name = dn', 'req_extensions = san', 'prompt = no',
-            '[dn]',  'CN=' . $cn,
-            '[san]', 'subjectAltName = ' . $sans,
-        ]));
+        $cnf = ['[req]', 'distinguished_name = dn', 'req_extensions = san', 'prompt = no', '[dn]'];
+        if ($cn !== '') $cnf[] = 'CN=' . $cn;
+        $cnf = array_merge($cnf, ['[san]', 'subjectAltName = ' . $sans]);
+        file_put_contents($tmpCnf, implode("\n", $cnf));
         $r = acme_run_cmd([OPENSSL_BIN, 'req', '-new', '-key', $tmpKey, '-out', $tmpCsr, '-config', $tmpCnf]);
         if (!$r['ok']) {
             return ['error' => 'CSR generation failed'];
@@ -1178,7 +1176,7 @@ $navLabel = 'ACME Tester';
 
     <div class="field">
       <label>ACME Directory URL</label>
-      <input type="url" id="endpoint" placeholder="https://acme-v02.api.letsencrypt.org/directory" spellcheck="false" autocomplete="off">
+      <input type="url" id="endpoint" placeholder="<?= htmlspecialchars(SITE_BASE_URL . '/acme/directory', ENT_QUOTES) ?>" spellcheck="false" autocomplete="off">
     </div>
 
     <div class="field-row">

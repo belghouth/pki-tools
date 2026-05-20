@@ -363,7 +363,7 @@ function acme_issue_csr(string $csrDer, array $domains): array
         $isEc = str_contains($text['out'], 'id-ecPublicKey');
         $cn = '';
         foreach ($domains as $d) if (!str_starts_with($d, '*.')) { $cn = $d; break; }
-        if ($cn === '') $cn = substr($domains[0], 2);
+        $subject = $cn === '' ? '/' : '/CN=' . $cn;
 
         $ca = $isEc
             ? [ECC_ISSUING_DB_CNF, ECC_ISSUING_CRT, ECC_ISSUING_LOCK, ECC_ISSUING_DB_SRL, ECC_AIA_URL, ECC_CDP_URL]
@@ -391,7 +391,7 @@ function acme_issue_csr(string $csrDer, array $domains): array
                 '1.3.6.1.4.1.11129.2.4.3 = critical, DER:05:00',
             ])));
             file_put_contents($srl, strtoupper(bin2hex(random_bytes(16))) . "\n");
-            $pre = acme_run([OPENSSL_BIN, 'ca', '-config', $cnf, '-in', $csrPem, '-out', $preCertFile, '-subj', '/CN=' . $cn, '-extfile', $preExtFile, '-extensions', 'v3_ee', '-days', (string)CERT_DAYS, '-notext', '-batch']);
+            $pre = acme_run([OPENSSL_BIN, 'ca', '-config', $cnf, '-in', $csrPem, '-out', $preCertFile, '-subj', $subject, '-extfile', $preExtFile, '-extensions', 'v3_ee', '-days', (string)CERT_DAYS, '-notext', '-batch']);
             if (!$pre['ok']) return ['error' => 'Precertificate issuance failed: ' . trim($pre['err'] ?: $pre['out'])];
 
             $pkimetalErr = acme_pkimetal_error_check(
@@ -411,7 +411,7 @@ function acme_issue_csr(string $csrDer, array $domains): array
             $baseExt[] = '1.3.6.1.4.1.11129.2.4.2 = ' . acme_ct_build_sct_ext($scts);
             file_put_contents($extFile, implode("\n", $baseExt));
             file_put_contents($srl, strtoupper(bin2hex(random_bytes(16))) . "\n");
-            $final = acme_run([OPENSSL_BIN, 'ca', '-config', $cnf, '-in', $csrPem, '-out', $certFile, '-subj', '/CN=' . $cn, '-extfile', $extFile, '-extensions', 'v3_ee', '-days', (string)CERT_DAYS, '-notext', '-batch']);
+            $final = acme_run([OPENSSL_BIN, 'ca', '-config', $cnf, '-in', $csrPem, '-out', $certFile, '-subj', $subject, '-extfile', $extFile, '-extensions', 'v3_ee', '-days', (string)CERT_DAYS, '-notext', '-batch']);
             if (!$final['ok']) return ['error' => 'Signing failed: ' . trim($final['err'] ?: $final['out'])];
         } finally {
             flock($lock, LOCK_UN);
