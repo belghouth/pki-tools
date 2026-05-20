@@ -1875,7 +1875,12 @@ function getRecaptchaToken(action) {
   document.getElementById('btnLint').addEventListener('click', function () {
     if (!pemOutput.value) return;
     sessionStorage.setItem('pki_prefill_cert', firstPemCertificate(pemOutput.value));
-    sessionStorage.removeItem('pki_prefill_issuer');
+    var issuerPem = nthPemCertificate(pemOutput.value, 1);
+    if (issuerPem) {
+      sessionStorage.setItem('pki_prefill_issuer', issuerPem);
+    } else {
+      sessionStorage.removeItem('pki_prefill_issuer');
+    }
     window.open('/linters.php', '_blank');
   });
 
@@ -1896,8 +1901,12 @@ function getRecaptchaToken(action) {
   }
 
   function firstPemCertificate(pem) {
-    var m = String(pem || '').match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/);
-    return m ? m[0] : String(pem || '').trim();
+    return nthPemCertificate(pem, 0) || String(pem || '').trim();
+  }
+
+  function nthPemCertificate(pem, index) {
+    var matches = String(pem || '').match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+    return matches[index] || '';
   }
 
   async function post(fd) {
