@@ -274,7 +274,11 @@ function acme_order_response(array $order, int $status = 200): never
     foreach (['certificate', 'not_before', 'not_after', 'error'] as $k) {
         if (isset($order[$k])) $body[$k] = $order[$k];
     }
-    acme_json($body, $status, ['Location' => SITE_BASE_URL . '/acme/order/' . $order['id']]);
+    $headers = [];
+    if ($status === 201) {
+        $headers['Location'] = SITE_BASE_URL . '/acme/order/' . $order['id'];
+    }
+    acme_json($body, $status, $headers);
 }
 
 function acme_download_cert(string $orderId): never
