@@ -219,6 +219,10 @@ function acme_validate_challenge(array $account, string $authzId, string $challe
     if (!$authz || $authz['account'] !== $account['id']) acme_problem('malformed', 'Unknown authorization', 404);
     foreach ($authz['challenges'] as $i => $challenge) {
         if ($challenge['id'] !== $challengeId) continue;
+        $caa = acme_check_caa([$authz['identifier']['value'] ?? '']);
+        if ($caa !== null) {
+            acme_problem('caa', $caa, 400);
+        }
         $keyAuth = $challenge['token'] . '.' . $account['thumbprint'];
 
         // TEMPORARY TEST BYPASS: restore the real verification below after
@@ -655,22 +659,63 @@ function acme_reserved_name(string $name): bool
 
 function acme_check_caa(array $domains): ?string
 {
+    $checked = [];
     foreach ($domains as $domain) {
-        $wild = str_starts_with($domain, '*.');
-        $d = $wild ? substr($domain, 2) : $domain;
-        $parts = explode('.', $d);
-        for ($i = 0; $i <= count($parts) - 2; $i++) {
-            $candidate = implode('.', array_slice($parts, $i));
-            $recs = @dns_get_record($candidate, defined('DNS_CAA') ? DNS_CAA : 256);
-            if (!is_array($recs) || $recs === []) continue;
-            $allowed = [];
-            foreach ($recs as $r) {
-                $tag = strtolower($r['tag'] ?? '');
-                if ($tag === ($wild ? 'issuewild' : 'issue') || (!$wild && $tag === 'issue')) $allowed[] = trim($r['value'] ?? '');
+        $isWild = str_starts_with($domain, '*.');
+        $base = $isWild ? substr($domain, 2) : $domain;
+        if ($base === '') continue;
+
+        $key = $base . ($isWild ? ':w' : ':r');
+        if (in_array($key, $checked, true)) continue;
+        $checked[] = $key;
+
+        $err = acme_caa_check_domain($base, $isWild, CAA_ISSUER);
+        if ($err !== null) return $err;
+    }
+    return null;
+}
+
+function acme_caa_check_domain(string $domain, bool $isWild, string $issuer): ?string
+{
+    $parts = explode('.', $domain);
+    $n = count($parts);
+
+    for ($i = 0; $i <= $n - 2; $i++) {
+        $candidate = implode('.', array_slice($parts, $i));
+        $recs = @dns_get_record($candidate, defined('DNS_CAA') ? DNS_CAA : 256);
+
+        if ($recs === false || !is_array($recs)) return null;
+        if (empty($recs)) continue;
+
+        $issue = [];
+        $issuewild = [];
+        foreach ($recs as $r) {
+            $tag = strtolower($r['tag'] ?? '');
+            $val = trim($r['value'] ?? '');
+            if ($tag === 'issue') $issue[] = $val;
+            if ($tag === 'issuewild') $issuewild[] = $val;
+        }
+
+        if ($isWild && !empty($issuewild)) {
+            if (!in_array($issuer, $issuewild, true)) {
+                return "CAA policy on {$candidate} blocks wildcard issuance.\n"
+                     . "Add this DNS record to authorise this CA:\n"
+                     . "  {$candidate} IN CAA 0 issuewild \"{$issuer}\"";
             }
-            if ($allowed !== [] && !in_array(CAA_ISSUER, $allowed, true)) return 'CAA policy on ' . $candidate . ' blocks issuance';
             return null;
         }
+
+        if (!empty($issue)) {
+            if (!in_array($issuer, $issue, true)) {
+                $tag = $isWild ? 'issuewild' : 'issue';
+                return "CAA policy on {$candidate} blocks certificate issuance.\n"
+                     . "Add this DNS record to authorise this CA:\n"
+                     . "  {$candidate} IN CAA 0 {$tag} \"{$issuer}\"";
+            }
+            return null;
+        }
+
+        return null;
     }
     return null;
 }
