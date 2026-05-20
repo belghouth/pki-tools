@@ -773,7 +773,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'conta
             </div>
           </div>
 
-          <?= ghostCard([80, 100, 85, 60]) ?>
+          <div class="tool-card">
+            <div class="tool-card-bar tool-card-bar--teal"></div>
+            <div class="tool-card-body">
+              <div class="tool-card-icon">⚙️</div>
+              <div class="tool-card-name">Meerkat ACME Web Service</div>
+              <div class="tool-card-desc">Issue 90-day DV TLS test certificates with standard RFC 8555 clients. Supports account creation, terms acceptance, http-01 and dns-01 validation, RSA and ECC certificate trees, embedded CT SCTs, renewal as fresh issuance, and revocation.</div>
+              <div class="tool-card-tags">
+                <span class="tag">ACME</span>
+                <span class="tag">RFC 8555</span>
+                <span class="tag">DV TLS</span>
+                <span class="tag">CT</span>
+              </div>
+              <a href="/acmews.php" class="tool-card-link">View Endpoint →</a>
+            </div>
+          </div>
 
         </div>
       </div>

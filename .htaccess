@@ -4,3 +4,7 @@ Options -Indexes
 # Maps /ct/v1/<endpoint> → ct_log.php?_ep=<endpoint>
 RewriteEngine On
 RewriteRule ^ct/v1/([a-z][a-z\-]*)$ /ct_log.php?_ep=$1 [QSA,L]
+
+# Route ACME API paths to acme.php
+# Maps /acme/<resource>[/...] → acme.php?_acme=<resource>[/...]
+RewriteRule ^acme/(.*)$ /acme.php?_acme=$1 [QSA,L]
