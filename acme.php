@@ -593,7 +593,14 @@ function acme_json(mixed $body, int $status = 200, array $headers = []): never
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
     header('Replay-Nonce: ' . ($headers['Replay-Nonce'] ?? acme_nonce()));
-    foreach ($headers as $k => $v) if ($k !== 'Replay-Nonce') header($k . ': ' . $v);
+    foreach ($headers as $k => $v) {
+        if ($k === 'Replay-Nonce') continue;
+        if (strtolower($k) === 'location') {
+            header($k . ': ' . $v, false, $status);
+            continue;
+        }
+        header($k . ': ' . $v);
+    }
     echo json_encode($body, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     exit;
 }
