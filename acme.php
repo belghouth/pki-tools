@@ -375,6 +375,7 @@ function acme_issue_csr(string $csrDer, array $domains): array
         if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) return ['error' => 'CA is busy'];
         try {
             $sanStr = implode(', ', array_map(fn($s) => 'DNS:' . $s, $domains));
+            $sanExt = 'subjectAltName         = ' . ($cn === '' ? 'critical, ' : '') . $sanStr;
             $baseExt = [
                 '[ v3_ee ]',
                 'basicConstraints       = critical, CA:FALSE',
@@ -385,7 +386,7 @@ function acme_issue_csr(string $csrDer, array $domains): array
                 'certificatePolicies    = 2.23.140.1.2.1',
                 'authorityInfoAccess    = caIssuers;URI:' . $aia,
                 'crlDistributionPoints  = URI:' . $cdp,
-                'subjectAltName         = ' . $sanStr,
+                $sanExt,
             ];
             file_put_contents($preExtFile, implode("\n", array_merge($baseExt, [
                 '1.3.6.1.4.1.11129.2.4.3 = critical, DER:05:00',
